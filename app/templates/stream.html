@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wheel Tracker &#8212; Live Stream</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#0d0d0d;color:#e0e0e0;padding:1.5rem;max-width:980px;margin:0 auto}
+nav{margin-bottom:1.5rem}
+nav a{color:#00ff88;margin-right:1.5rem;font-size:.9rem;text-decoration:none}
+nav a:hover{text-decoration:underline}
+h1{color:#00ff88;font-size:1.6rem;margin-bottom:.25rem}
+.sub{color:#555;font-size:.85rem;margin-bottom:1.8rem}
+.row{display:flex;gap:1.2rem;flex-wrap:wrap}
+.col{flex:1;min-width:270px}
+.card{background:#161616;border:1px solid #252525;border-radius:12px;padding:1.3rem;margin-bottom:1.2rem}
+h2{color:#888;font-size:.8rem;text-transform:uppercase;letter-spacing:.07em;margin-bottom:.9rem}
+video{width:100%;border-radius:8px;background:#000;display:block;max-height:240px;object-fit:cover}
+label{color:#666;font-size:.78rem;display:block;margin-top:.6rem;margin-bottom:.2rem}
+select,input[type=number],input[type=email]{background:#1e1e1e;border:1px solid #2e2e2e;border-radius:6px;padding:.38rem .6rem;color:#ccc;font-size:.85rem}
+button{background:#00ff88;color:#000;border:none;border-radius:8px;padding:.5rem 1.2rem;font-size:.88rem;font-weight:700;cursor:pointer;margin-right:.4rem;margin-top:.5rem}
+button:hover{background:#00d977}
+button:disabled{background:#252525;color:#555;cursor:not-allowed}
+button.stop{background:#d93333;color:#fff}
+button.stop:hover{background:#b52828}
+button.ghost{background:#252525;color:#aaa}
+button.ghost:hover{background:#2e2e2e}
+.big{font-size:2.6rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+.green{color:#00ff88}.white{color:#e0e0e0}
+.lbl{color:#555;font-size:.7rem;margin-bottom:.2rem}
+.conf-t{background:#1e1e1e;border-radius:5px;height:9px;margin-top:.25rem}
+.conf-f{height:9px;border-radius:5px;transition:width .2s;background:linear-gradient(90deg,#f44,#ff0,#0f0)}
+canvas{display:block;border-radius:8px}
+#dial{background:#0a0a0a}
+#mini{background:#0a0a0a;width:100%;height:120px}
+#log-box{font-family:monospace;font-size:.75rem;background:#0a0a0a;border-radius:8px;padding:.7rem;height:100px;overflow-y:auto;border:1px solid #1a1a1a;line-height:1.6}
+</style>
+</head>
+<body>
+<nav><a href="/">Upload</a><a href="/stream-test">Live stream</a><a href="/docs" target="_blank">API docs</a></nav>
+<h1>Wheel Tracker &#8212; Live Stream</h1>
+<p class="sub">Push camera frames via WebSocket &#8212; get rotation data in real-time</p>
+
+<div class="row">
+  <div class="col">
+    <div class="card">
+      <h2>Camera</h2>
+      <video id="cam" autoplay muted playsinline></video>
+      <label>Camera <select id="cam-sel" onchange="switchCam()"></select></label>
+      <label>Direction
+        <select id="dir"><option value="auto">Auto</option><option value="cw">CW</option><option value="ccw">CCW</option><option value="cw+ccw">CW+CCW</option><option value="ccw+cw">CCW+CW</option></select>
+      </label>
+      <label>Medium <select id="med"><option value="air">Air</option><option value="water">Water</option></select></label>
+      <label>Info level <select id="info"><option value="basic">Basic</option><option value="full">Full</option></select></label>
+      <label>Email <input type="email" id="email" placeholder="user@example.com" style="width:100%"></label>
+      <label>FPS to server <input type="number" id="fps" value="15" min="1" max="30" style="width:70px"></label>
+      <div>
+        <button id="btn-go" onclick="start()">Start</button>
+        <button class="stop" id="btn-stop" onclick="stop()" disabled>Stop</button>
+        <button class="ghost" onclick="resetZero()">Reset 0&deg;</button>
+      </div>
+    </div>
+    <div class="card"><h2>Log</h2><div id="log-box"></div></div>
+  </div>
+
+  <div class="col">
+    <div class="card">
+      <h2>Rotation</h2>
+      <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem">
+        <div><div class="lbl">Current angle</div><div class="big green" id="v-ang">&#8212;</div></div>
+        <div><div class="lbl">Total rotation</div><div class="big white" id="v-cum">+0.0&deg;</div></div>
+      </div>
+      <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:.8rem">
+        <div style="flex:2">
+          <div class="lbl">Significance</div>
+          <div id="v-sig" style="font-size:1.1rem;font-weight:700">&#8212;</div>
+          <div class="conf-t"><div class="conf-f" id="sig-bar" style="width:0%"></div></div>
+        </div>
+        <div>
+          <div class="lbl">Angular velocity</div>
+          <div id="v-vel" style="font-size:.95rem;color:#aaa">&#8212;</div>
+        </div>
+        <div>
+          <div class="lbl">Source</div>
+          <div id="v-src" style="font-size:1rem;font-weight:700;color:#ff0">&#8212;</div>
+        </div>
+      </div>
+      <canvas id="dial" width="150" height="150"></canvas>
+    </div>
+    <div class="card"><h2>Live chart</h2><canvas id="mini"></canvas></div>
+  </div>
+</div>
+
+<script>
+let ws=null,camStream=null,loop=null,hist=[];
+const HMAX=120;
+
+async function listCams(){
+  try{
+    await navigator.mediaDevices.getUserMedia({video:true});
+    const devs=await navigator.mediaDevices.enumerateDevices();
+    const sel=document.getElementById('cam-sel');sel.innerHTML='';
+    devs.filter(d=>d.kind==='videoinput').forEach((d,i)=>{
+      const o=document.createElement('option');o.value=d.deviceId;
+      o.text=d.label||'Camera '+(i+1);sel.appendChild(o);
+    });
+  }catch(e){addLog('Camera permission: '+e.message)}
+}
+listCams();
+
+async function switchCam(){
+  if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null}
+  const id=document.getElementById('cam-sel').value;
+  try{
+    camStream=await navigator.mediaDevices.getUserMedia({video:{deviceId:id||undefined}});
+    document.getElementById('cam').srcObject=camStream;
+  }catch(e){addLog('Camera switch: '+e.message)}
+}
+
+function addLog(m){const e=document.getElementById('log-box');e.innerHTML+='<div>'+new Date().toLocaleTimeString()+' &#8212; '+m+'</div>';e.scrollTop=e.scrollHeight}
+
+function sigCol(p){return p>=80?'#00ff88':p>=50?'#ff0':'#f44'}
+
+function drawDial(ang,sig){
+  const c=document.getElementById('dial'),ctx=c.getContext('2d'),cx=75,cy=75,r=60;
+  ctx.clearRect(0,0,150,150);
+  ctx.fillStyle='#0a0a0a';ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='#252525';ctx.lineWidth=2;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.stroke();
+  if(sig!=null){ctx.beginPath();ctx.arc(cx,cy,r-4,-Math.PI/2,-Math.PI/2+(sig/100)*Math.PI*2);ctx.strokeStyle=sigCol(sig);ctx.lineWidth=5;ctx.lineCap='round';ctx.stroke()}
+  ctx.strokeStyle='#333';ctx.lineWidth=2;ctx.lineCap='butt';ctx.beginPath();ctx.moveTo(cx,cy-r+6);ctx.lineTo(cx,cy-r+13);ctx.stroke();
+  if(ang!=null){const rad=(ang-90)*Math.PI/180;ctx.strokeStyle=sigCol(sig||0);ctx.lineWidth=2.5;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(cx-7*Math.cos(rad),cy-7*Math.sin(rad));ctx.lineTo(cx+(r-16)*Math.cos(rad),cy+(r-16)*Math.sin(rad));ctx.stroke()}
+  ctx.fillStyle=sigCol(sig||0);ctx.beginPath();ctx.arc(cx,cy,4,0,Math.PI*2);ctx.fill();
+}
+drawDial(null,null);
+
+function drawMini(){
+  const c=document.getElementById('mini');
+  c.width=c.offsetWidth||400;c.height=120;
+  const ctx=c.getContext('2d'),W=c.width,H=c.height;
+  ctx.fillStyle='#0a0a0a';ctx.fillRect(0,0,W,H);
+  if(hist.length<2)return;
+  const pad={l:38,r:8,t:8,b:16},cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
+  const cs=hist.map(d=>d.c),vMin=Math.min(...cs,0),vMax=Math.max(...cs,1),vR=vMax-vMin||1;
+  [0,.5,1].forEach(f=>{const y=pad.t+f*cH,v=vMax-f*vR;ctx.strokeStyle='#1a1a1a';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();ctx.fillStyle='#444';ctx.font='9px system-ui';ctx.fillText(v.toFixed(0)+'°',2,y+3)});
+  ctx.strokeStyle='#00ff88';ctx.lineWidth=1.5;ctx.beginPath();
+  hist.forEach((d,i)=>{const x=pad.l+i/(hist.length-1)*cW,y=pad.t+(1-(d.c-vMin)/vR)*cH;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});
+  ctx.stroke();
+}
+
+function update(d){
+  const a=d.rotation_deg,c=d.cumulative_deg,s=d.confidence_pct;
+  document.getElementById('v-ang').innerHTML=a!=null?a.toFixed(1)+'&deg;':'&#8212;';
+  document.getElementById('v-cum').innerHTML=(c>=0?'+':'')+c.toFixed(1)+'&deg;';
+  document.getElementById('v-sig').textContent=s+'%';
+  document.getElementById('sig-bar').style.width=s+'%';
+  if(d.angular_vel_dps!=null)document.getElementById('v-vel').textContent=d.angular_vel_dps.toFixed(1)+' deg/s  '+d.angular_vel_rps.toFixed(4)+' rad/s';
+  document.getElementById('v-src').textContent=d.source||'&#8212;';
+  drawDial(a,s);
+  hist.push({c:c,s:s});if(hist.length>HMAX)hist.shift();
+  drawMini();
+}
+
+async function start(){
+  const constraints=[
+    {video:{facingMode:{exact:'environment'}}},
+    {video:{facingMode:'environment'}},
+    {video:{deviceId:document.getElementById('cam-sel').value||undefined}},
+    {video:true}
+  ];
+  let ok=false;
+  for(const con of constraints){
+    try{camStream=await navigator.mediaDevices.getUserMedia(con);ok=true;addLog('Camera: '+JSON.stringify(con.video));break}
+    catch(e){addLog('Tried '+JSON.stringify(con.video)+' > '+e.message)}
+  }
+  if(!ok){addLog('No camera available');return}
+  document.getElementById('cam').srcObject=camStream;
+
+  const fps=+document.getElementById('fps').value||15;
+  const dir=document.getElementById('dir').value;
+  const med=document.getElementById('med').value;
+  const inf=document.getElementById('info').value;
+  const em=encodeURIComponent(document.getElementById('email').value);
+  const proto=location.protocol==='https:'?'wss':'ws';
+  const url=`${proto}://${location.host}/stream?direction=${dir}&medium=${med}&info_level=${inf}&email=${em}`;
+
+  ws=new WebSocket(url);
+  ws.onopen=()=>addLog('Connected');
+  ws.onclose=()=>addLog('Disconnected');
+  ws.onerror=()=>addLog('WS error');
+  ws.onmessage=e=>{try{update(JSON.parse(e.data))}catch(x){}};
+
+  const canvas=document.createElement('canvas'),video=document.getElementById('cam');
+  loop=setInterval(()=>{
+    if(!ws||ws.readyState!==1)return;
+    canvas.width=video.videoWidth||640;canvas.height=video.videoHeight||480;
+    canvas.getContext('2d').drawImage(video,0,0);
+    canvas.toBlob(b=>b.arrayBuffer().then(buf=>ws.send(buf)),'image/jpeg',.82);
+  },1000/fps);
+
+  document.getElementById('btn-go').disabled=true;
+  document.getElementById('btn-stop').disabled=false;
+  addLog('Streaming at '+fps+' fps');
+}
+
+function stop(){
+  if(loop)clearInterval(loop);if(ws)ws.close();if(camStream)camStream.getTracks().forEach(t=>t.stop());
+  ws=camStream=loop=null;
+  document.getElementById('btn-go').disabled=false;
+  document.getElementById('btn-stop').disabled=true;
+  addLog('Stopped');
+}
+
+function resetZero(){if(ws&&ws.readyState===1){stop();setTimeout(start,400);addLog('Zero reset')}}
+</script>
+</body>
+</html>
