@@ -1,19 +1,18 @@
 """
 detector.py
-detector.py
 ===========
 Core wheel rotation detection.
 
 Detection priority:
-  1. YOLO center  → hub (wheel center)
-  2. YOLO orange  → rotation reference (color-verified)
-  3. OpenCV orange → fallback if YOLO misses orange
+  1. ONNX center  → hub (wheel center)   [best.onnx, no torch needed]
+  2. ONNX orange  → rotation reference (color-verified)
+  3. OpenCV orange → fallback if ONNX misses orange
   4. OpenCV yellow/red pair → hub fallback (DISABLED by USE_PAIR_FALLBACK)
 
 Pipeline per frame:
   1. Stabilize (ECC warp)
   2. Bilateral filter (denoise, preserve color edges)
-  3. YOLO detection (center + orange only)
+  3. ONNX detection (center + orange only)
   4. OpenCV HSV detection (orange fallback, pair fallback if enabled)
   5. Dynamic ROI mask (only search inside wheel disk)
   6. Orange angle from hub (raw, not smoothed line)
@@ -46,17 +45,20 @@ from app.database import make_sample, persist_samples
 log = logging.getLogger(__name__)
 
 # ── Feature flags ──────────────────────────────────────────────────────────
-USE_YOLO          = True    # use YOLO if best.pt available
+USE_YOLO          = True    # use ONNX model if best.onnx available
 USE_PAIR_FALLBACK = False   # DISABLED: use yellow/red pair as hub fallback
 
-# ── YOLO config ────────────────────────────────────────────────────────────
-YOLO_WEIGHTS = "best.pt"
+# ── ONNX config ────────────────────────────────────────────────────────────
+YOLO_WEIGHTS = "best.onnx"  # export: yolo export model=best.pt format=onnx
 YOLO_CONF    = 0.35
 YOLO_CLASSES = ["center", "orange"]
 
+# Input size must match what model was exported with (default 640)
+ONNX_INPUT_SIZE = 640
+
 # Orange HSV verification (OpenCV scale: H 0-180, S 0-255)
-ORANGE_H_LO = 8
-ORANGE_H_HI = 22
+ORANGE_H_LO  = 8
+ORANGE_H_HI  = 22
 ORANGE_S_MIN = 80
 
 # ── OpenCV HSV ranges ──────────────────────────────────────────────────────
@@ -85,73 +87,116 @@ MARKER_DEFS = {
 _kernel = np.ones((5, 5), np.uint8)
 
 
-# ── YOLO ───────────────────────────────────────────────────────────────────
+# ── ONNX loader ────────────────────────────────────────────────────────────
 
 def load_yolo():
+    """Load ONNX model with onnxruntime. No torch required."""
     if not USE_YOLO or not Path(YOLO_WEIGHTS).exists():
-        log.warning(f"[YOLO] not loaded — OpenCV only mode")
+        log.warning(f"[ONNX] {YOLO_WEIGHTS} not found — OpenCV only mode")
         return None
     try:
-        from ultralytics import YOLO
-        model = YOLO(YOLO_WEIGHTS)
-        log.info(f"[YOLO] loaded {YOLO_WEIGHTS}")
-        return model
+        import onnxruntime as ort
+        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        session = ort.InferenceSession(YOLO_WEIGHTS, providers=providers)
+        log.info(f"[ONNX] loaded {YOLO_WEIGHTS}  "
+                 f"provider={session.get_providers()[0]}")
+        return session
     except Exception as e:
-        log.warning(f"[YOLO] load failed: {e}")
+        log.warning(f"[ONNX] load failed: {e} — OpenCV only mode")
         return None
 
 
-def detect_yolo(model, frame, hsv) -> dict:
+def _preprocess_onnx(frame: np.ndarray):
+    """Resize + normalize frame for ONNX YOLOv8 input."""
+    h, w = frame.shape[:2]
+    # Letterbox resize to ONNX_INPUT_SIZE x ONNX_INPUT_SIZE
+    scale  = ONNX_INPUT_SIZE / max(h, w)
+    new_w  = int(w * scale)
+    new_h  = int(h * scale)
+    resized = cv2.resize(frame, (new_w, new_h))
+    # Pad to square
+    canvas  = np.zeros((ONNX_INPUT_SIZE, ONNX_INPUT_SIZE, 3), dtype=np.uint8)
+    canvas[:new_h, :new_w] = resized
+    # BGR → RGB, HWC → CHW, normalize 0-1
+    blob = canvas[:, :, ::-1].astype(np.float32) / 255.0
+    blob = blob.transpose(2, 0, 1)[np.newaxis]  # 1,3,H,W
+    return blob, scale, new_w, new_h
+
+
+def detect_yolo(session, frame, hsv) -> dict:
     """
-    Run YOLO inference for center + orange.
+    Run ONNX inference for center + orange.
     Orange is color-verified against HSV before accepting.
     Returns dict: {center: blob|None, orange: blob|None}
     blob = (cx, cy, area, sat, r)
     """
     result = {"center": None, "orange": None}
-    if model is None:
+    if session is None:
         return result
 
     try:
-        detections = model(frame, conf=YOLO_CONF, verbose=False)[0]
+        h_f, w_f = frame.shape[:2]
+        blob, scale, new_w, new_h = _preprocess_onnx(frame)
+
+        # Run inference
+        input_name = session.get_inputs()[0].name
+        outputs    = session.run(None, {input_name: blob})
+
+        # YOLOv8 ONNX output: [1, num_classes+4, num_boxes] — transposed
+        raw = outputs[0]  # shape: (1, 6, 8400) or (1, 8400, 6)
+        if raw.ndim == 3 and raw.shape[1] < raw.shape[2]:
+            # (1, 6, 8400) → (8400, 6)
+            preds = raw[0].T
+        else:
+            preds = raw[0]
+
         best = {}
-        for box in detections.boxes:
-            cls  = int(box.cls[0])
-            conf = float(box.conf[0])
+        for pred in preds:
+            # pred: [x_center, y_center, w, h, cls0_conf, cls1_conf, ...]
+            x_c, y_c, bw, bh = pred[0], pred[1], pred[2], pred[3]
+            class_scores = pred[4:]
+            cls  = int(np.argmax(class_scores))
+            conf = float(class_scores[cls])
+            if conf < YOLO_CONF: continue
             if cls >= len(YOLO_CLASSES): continue
             name = YOLO_CLASSES[cls]
-            x1,y1,x2,y2 = map(int, box.xyxy[0])
-            # Clamp to frame bounds
-            h_f, w_f = frame.shape[:2]
-            x1=max(0,x1); y1=max(0,y1); x2=min(w_f,x2); y2=min(h_f,y2)
-            if x2<=x1 or y2<=y1: continue
-            cx = (x1+x2)//2; cy = (y1+y2)//2
-            area = max(1,(x2-x1)*(y2-y1))
-            r    = max(5, int(math.sqrt(area/math.pi)))
+
+            # Scale coords back to original frame
+            cx = int(x_c / scale)
+            cy = int(y_c / scale)
+            bw_orig = int(bw / scale)
+            bh_orig = int(bh / scale)
+
+            # Clamp
+            cx = max(0, min(cx, w_f-1))
+            cy = max(0, min(cy, h_f-1))
+
+            area = max(1, bw_orig * bh_orig)
+            r    = max(5, int(math.sqrt(area / math.pi)))
 
             if name == "orange":
-                # Verify color in HSV — sample center pixel
+                # Color-verify: sample center pixel
                 h_val = int(hsv[cy, cx, 0])
                 s_val = int(hsv[cy, cx, 1])
                 if not (ORANGE_H_LO <= h_val <= ORANGE_H_HI and s_val >= ORANGE_S_MIN):
-                    # Sample patch average instead of single pixel
+                    # Try patch average
                     patch_h = hsv[max(0,cy-4):cy+4, max(0,cx-4):cx+4, 0]
                     patch_s = hsv[max(0,cy-4):cy+4, max(0,cx-4):cx+4, 1]
+                    if patch_h.size == 0: continue
                     h_val = int(np.median(patch_h))
                     s_val = int(np.median(patch_s))
                     if not (ORANGE_H_LO <= h_val <= ORANGE_H_HI and s_val >= ORANGE_S_MIN):
-                        log.debug(f"[YOLO] orange rejected: H={h_val} S={s_val}")
                         continue
 
             sat = int(hsv[cy, cx, 1])
             if name not in best or conf > best[name]["conf"]:
-                best[name] = {"blob": (cx,cy,area,sat,r), "conf": conf}
+                best[name] = {"blob": (cx, cy, area, sat, r), "conf": conf}
 
         for name, d in best.items():
             result[name] = d["blob"]
 
     except Exception as e:
-        log.warning(f"[YOLO] inference error: {e}")
+        log.warning(f"[ONNX] inference error: {e}")
 
     return result
 
@@ -331,10 +376,10 @@ def process(video_path: str, out_path: str, job_id: str = "local",
     log.info("[DETECT] Building HSV ranges:")
     markers = build_ranges(MARKER_DEFS)
 
-    log.info("[DETECT] Loading YOLO:")
+    log.info("[DETECT] Loading ONNX model:")
     yolo = load_yolo()
     yolo_active = yolo is not None
-    log.info(f"[DETECT] Mode: {'YOLO+OpenCV' if yolo_active else 'OpenCV only'}  "
+    log.info(f"[DETECT] Mode: {'ONNX+OpenCV' if yolo_active else 'OpenCV only'}  "
              f"pair_fallback={'ON' if USE_PAIR_FALLBACK else 'OFF'}")
 
     cap = cv2.VideoCapture(video_path)
@@ -369,22 +414,17 @@ def process(video_path: str, out_path: str, job_id: str = "local",
     zero_offset  = None
     vel_dps      = 0.0
     vel_rps      = 0.0
-
     hub_buf      = []
     hub_stable   = None
     hub_radius   = None
     hub_source   = None
-
     gap_hub      = 0
     gap_ora      = 0
     last_hub     = None
     last_ora     = None
-
-    # Pair fallback state (disabled, kept for future use)
     active_color = None
     last_ya      = None
     last_yb      = None
-
     conf_smooth  = 0.0
 
     sample_interval = 1.0 / SAMPLES_PER_SECOND
@@ -416,7 +456,7 @@ def process(video_path: str, out_path: str, job_id: str = "local",
         else:
             hsv_src = hsv
 
-        # ── YOLO: center + orange (color-verified) ─────────────────────────
+        # ── ONNX detection ─────────────────────────────────────────────────
         yolo_det = detect_yolo(yolo, preproc, hsv)
 
         # ── OpenCV orange fallback ─────────────────────────────────────────
@@ -444,12 +484,9 @@ def process(video_path: str, out_path: str, job_id: str = "local",
             red_pair, red_dist = pick_farthest_pair(cv_red)
             use_yellow = yel_pair is not None and yel_dist > MIN_PAIR_DIST
             use_red    = (not use_yellow) and red_pair is not None and red_dist > MIN_PAIR_DIST
-            if use_yellow:
-                active_pair, active_color = yel_pair, "YELLOW"
-            elif use_red:
-                active_pair, active_color = red_pair, "RED"
-            else:
-                active_pair = None
+            if use_yellow:   active_pair, active_color = yel_pair, "YELLOW"
+            elif use_red:    active_pair, active_color = red_pair,  "RED"
+            else:            active_pair = None
             if active_pair is not None:
                 b0,b1 = active_pair
                 hub_px_raw = wheel_hub(b0, b1)
@@ -459,12 +496,12 @@ def process(video_path: str, out_path: str, job_id: str = "local",
                 last_yb = b1 if b0[1]<=b1[1] else b0
             elif gap_hub < MAX_GAP_FRAMES and last_hub:
                 gap_hub += 1; hub_px_raw = last_hub
+
         elif gap_hub < MAX_GAP_FRAMES and last_hub:
             gap_hub   += 1
             hub_px_raw = last_hub
 
         # ── Orange source ──────────────────────────────────────────────────
-        # Priority: YOLO orange (color-verified) >> OpenCV >> gap fill
         if yolo_det["orange"] is not None:
             ora_blob = yolo_det["orange"]
             gap_ora  = 0; last_ora = ora_blob
@@ -493,16 +530,14 @@ def process(video_path: str, out_path: str, job_id: str = "local",
                                    ora_blob[1]-hub_stable[1])
                 hub_radius = max(hub_radius or 0, d_ora*1.3)
 
-        # ── Rotation angle (raw from current frame, not smoothed pos) ──────
+        # ── Rotation angle ─────────────────────────────────────────────────
         rot_raw = None
         if has_hub and has_orange:
-            # Use raw hub_px_raw (current frame), not smoothed hub_stable
-            # This ensures the line reflects actual current position
             rot_raw = orange_angle(ora_blob, hub_px_raw)
 
         if rot_raw is not None and zero_offset is None:
             zero_offset = rot_raw
-            log.info(f"[DETECT] Zero offset t={t_sec:.2f}s: {zero_offset:.1f}deg  hub={hub_source}")
+            log.info(f"[DETECT] Zero offset t={t_sec:.2f}s: {zero_offset:.1f}deg")
 
         rot_zeroed = ((rot_raw-zero_offset)%360
                       if (rot_raw is not None and zero_offset is not None)
@@ -553,40 +588,33 @@ def process(video_path: str, out_path: str, job_id: str = "local",
         # ── Draw ──────────────────────────────────────────────────────────
         ann = frame_stab.copy()
 
-        # YOLO detections
         if yolo_det["center"] is not None:
             cx,cy,_,_,r = yolo_det["center"]
             cv2.circle(ann,(cx,cy),r+4,(255,255,255),2,cv2.LINE_AA)
-            cv2.putText(ann,"Y:center",(cx+r+4,cy+5),
+            cv2.putText(ann,"center",(cx+r+4,cy+5),
                         cv2.FONT_HERSHEY_SIMPLEX,0.45,(255,255,255),1,cv2.LINE_AA)
         if yolo_det["orange"] is not None:
             cx,cy,_,_,r = yolo_det["orange"]
             cv2.circle(ann,(cx,cy),r+4,(0,140,255),2,cv2.LINE_AA)
-            cv2.putText(ann,"Y:orange",(cx+r+4,cy+5),
-                        cv2.FONT_HERSHEY_SIMPLEX,0.45,(0,140,255),1,cv2.LINE_AA)
 
-        # Stable hub dot
         if hub_px_raw is not None:
             hcol = (40,200,40) if hub_source=="YOLO" else (200,200,40)
             cv2.circle(ann,(int(hub_px_raw[0]),int(hub_px_raw[1])),7,hcol,-1,cv2.LINE_AA)
             cv2.circle(ann,(int(hub_px_raw[0]),int(hub_px_raw[1])),9,(0,0,0),1,cv2.LINE_AA)
 
-        # Orange neon circle
         if has_orange and ora_blob:
             draw_neon_circle(ann,(ora_blob[0],ora_blob[1]),ora_blob[4]+6,
                              TRACK_CIRCLE_COLOR,TRACK_CIRCLE_THICK,TRACK_CIRCLE_GLOW)
             cv2.putText(ann,"ORA",(ora_blob[0]+ora_blob[4]+8,ora_blob[1]+5),
                         cv2.FONT_HERSHEY_SIMPLEX,0.45,TRACK_CIRCLE_COLOR,1,cv2.LINE_AA)
 
-        # Line from raw hub to orange (not smoothed — shows real current position)
         if has_hub and has_orange and hub_px_raw:
             cv2.line(ann,
-                     (int(hub_px_raw[0]), int(hub_px_raw[1])),
-                     (ora_blob[0], ora_blob[1]),
+                     (int(hub_px_raw[0]),int(hub_px_raw[1])),
+                     (ora_blob[0],ora_blob[1]),
                      TRACK_CIRCLE_COLOR, 1, cv2.LINE_AA)
 
-        # Mode tag
-        mode_txt = "YOLO+CV" if yolo_active else "CV only"
+        mode_txt = "ONNX+CV" if yolo_active else "CV only"
         cv2.putText(ann,mode_txt,(W-110,24),cv2.FONT_HERSHEY_SIMPLEX,0.55,
                     (40,200,40) if yolo_active else (100,100,100),1)
 
