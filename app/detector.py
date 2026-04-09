@@ -1,5 +1,6 @@
 """
 detector.py
+detector.py
 ===========
 Core wheel rotation detection.
 
