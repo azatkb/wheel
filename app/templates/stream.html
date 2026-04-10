@@ -40,7 +40,7 @@ canvas{display:block;border-radius:8px}
 </head>
 <body>
 <nav><a href="/">Upload</a><a href="/stream-test">Live stream</a><a href="/docs" target="_blank">API docs</a></nav>
-<h1>Wheel Tracker &#8212; Live Stream</h1>
+<h1>Wheel Tracker 3&#8212; Live Stream</h1>
 <p class="sub">Push camera frames via WebSocket &#8212; get rotation data in real-time</p>
 
 <div class="row">
@@ -98,25 +98,88 @@ let ws=null,camStream=null,loop=null,hist=[];
 const HMAX=120;
 
 async function listCams(){
+  let tempStream = null;
+
   try{
-    await navigator.mediaDevices.getUserMedia({video:true});
-    const devs=await navigator.mediaDevices.enumerateDevices();
-    const sel=document.getElementById('cam-sel');sel.innerHTML='';
-    devs.filter(d=>d.kind==='videoinput').forEach((d,i)=>{
-      const o=document.createElement('option');o.value=d.deviceId;
-      o.text=d.label||'Camera '+(i+1);sel.appendChild(o);
-    });
-  }catch(e){addLog('Camera permission: '+e.message)}
+    // 1. Получаем доступ к камере (чтобы появились label)
+    tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+
+    // 2. Получаем список устройств
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const sel = document.getElementById('cam-sel');
+    sel.innerHTML = '';
+
+    let foundBackCam = false;
+
+    devs
+      .filter(d => d.kind === 'videoinput')
+      .forEach((d, i) => {
+        const o = document.createElement('option');
+        o.value = d.deviceId;
+
+        const label = (d.label || '').toLowerCase();
+        o.text = d.label || 'Camera ' + (i + 1);
+
+        // безопасная проверка label
+        if (
+          label.includes('back') ||
+          label.includes('rear') ||
+          label.includes('environment')
+        ){
+          o.selected = true;
+          foundBackCam = true;
+        }
+
+        sel.appendChild(o);
+      });
+
+    // 3. Если заднюю не нашли — выбираем первую
+    if (!foundBackCam && sel.options.length > 0) {
+      sel.selectedIndex = 0;
+    }
+
+  }catch(e){
+    console.error(e);
+    addLog('Camera error: ' + e.name + ' - ' + e.message);
+  }finally{
+    // 4. Обязательно освобождаем камеру
+    if (tempStream) {
+      tempStream.getTracks().forEach(t => t.stop());
+    }
+  }
+
+  // 5. Переключаемся на выбранную камеру
+  try{
+    await switchCam();
+  }catch(e){
+    addLog('SwitchCam error: ' + e.message);
+  }
 }
 listCams();
 
 async function switchCam(){
-  if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null}
-  const id=document.getElementById('cam-sel').value;
+  if(camStream){
+    camStream.getTracks().forEach(t=>t.stop());
+  }
+
+  const id = document.getElementById('cam-sel').value;
+
   try{
-    camStream=await navigator.mediaDevices.getUserMedia({video:{deviceId:id||undefined}});
-    document.getElementById('cam').srcObject=camStream;
-  }catch(e){addLog('Camera switch: '+e.message)}
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: id } }
+    });
+
+    document.getElementById('cam').srcObject = camStream;
+  }catch(e){
+    addLog('Camera switch failed, fallback to environment');
+
+    // fallback на заднюю камеру
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" }
+    });
+
+    document.getElementById('cam').srcObject = camStream;
+  }
 }
 
 function addLog(m){const e=document.getElementById('log-box');e.innerHTML+='<div>'+new Date().toLocaleTimeString()+' &#8212; '+m+'</div>';e.scrollTop=e.scrollHeight}
@@ -163,12 +226,11 @@ function update(d){
 }
 
 async function start(){
-  const constraints=[
-    {video:{facingMode:{exact:'environment'}}},
-    {video:{facingMode:'environment'}},
-    {video:{deviceId:document.getElementById('cam-sel').value||undefined}},
-    {video:true}
-  ];
+ const constraints = [
+  { video: { facingMode: { exact: "environment" } } },
+  { video: { facingMode: "environment" } },
+  { video: true }
+];
   let ok=false;
   for(const con of constraints){
     try{camStream=await navigator.mediaDevices.getUserMedia(con);ok=true;addLog('Camera: '+JSON.stringify(con.video));break}

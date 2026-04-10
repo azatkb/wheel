@@ -12,7 +12,7 @@ Detection priority:
 Pipeline per frame:
   1. Stabilize (ECC warp)
   2. Bilateral filter (denoise, preserve color edges)
-  3. ONNX detection (center + orange only)
+  3. ONNX detection every YOLO_EVERY frames (center + orange only)
   4. OpenCV HSV detection (orange fallback, pair fallback if enabled)
   5. Dynamic ROI mask (only search inside wheel disk)
   6. Orange angle from hub (raw, not smoothed line)
@@ -20,7 +20,8 @@ Pipeline per frame:
   8. Angle smoothing (circular mean)
   9. Cumulative rotation + angular velocity
  10. Sampling at SAMPLES_PER_SECOND rate
- 11. Draw overlay: neon green tracking circle, info bar
+ 11. Progress callback every frame → live UI updates
+ 12. Draw overlay: neon green tracking circle, info bar
 
 Output: annotated video  +  list of sample dicts
 """
@@ -49,21 +50,19 @@ USE_YOLO          = True    # use ONNX model if best.onnx available
 USE_PAIR_FALLBACK = False   # DISABLED: use yellow/red pair as hub fallback
 
 # ── ONNX config ────────────────────────────────────────────────────────────
-YOLO_WEIGHTS = "best.onnx"  # export: yolo export model=best.pt format=onnx
-YOLO_CONF    = 0.35
-YOLO_CLASSES = ["center", "orange"]
-
-# Input size must match what model was exported with (default 640)
+YOLO_WEIGHTS    = "best.onnx"
+YOLO_CONF       = 0.35
+YOLO_CLASSES    = ["center", "orange"]
+YOLO_EVERY      = 2         # run ONNX every N frames, gap fill between
 ONNX_INPUT_SIZE = 640
 
-# Orange HSV verification (OpenCV scale: H 0-180, S 0-255)
+# Orange HSV verification
 ORANGE_H_LO  = 8
 ORANGE_H_HI  = 22
 ORANGE_S_MIN = 80
 
 # ── OpenCV HSV ranges ──────────────────────────────────────────────────────
 def _u(h, s, v):
-    """H(0-360) S(0-100%) V(0-100%) → OpenCV HSV."""
     return round(h/2), round(s/100*255), round(v/100*255)
 
 MARKER_DEFS = {
@@ -90,7 +89,6 @@ _kernel = np.ones((5, 5), np.uint8)
 # ── ONNX loader ────────────────────────────────────────────────────────────
 
 def load_yolo():
-    """Load ONNX model with onnxruntime. No torch required."""
     if not USE_YOLO or not Path(YOLO_WEIGHTS).exists():
         log.warning(f"[ONNX] {YOLO_WEIGHTS} not found — OpenCV only mode")
         return None
@@ -107,52 +105,34 @@ def load_yolo():
 
 
 def _preprocess_onnx(frame: np.ndarray):
-    """Resize + normalize frame for ONNX YOLOv8 input."""
     h, w = frame.shape[:2]
-    # Letterbox resize to ONNX_INPUT_SIZE x ONNX_INPUT_SIZE
     scale  = ONNX_INPUT_SIZE / max(h, w)
     new_w  = int(w * scale)
     new_h  = int(h * scale)
     resized = cv2.resize(frame, (new_w, new_h))
-    # Pad to square
     canvas  = np.zeros((ONNX_INPUT_SIZE, ONNX_INPUT_SIZE, 3), dtype=np.uint8)
     canvas[:new_h, :new_w] = resized
-    # BGR → RGB, HWC → CHW, normalize 0-1
     blob = canvas[:, :, ::-1].astype(np.float32) / 255.0
-    blob = blob.transpose(2, 0, 1)[np.newaxis]  # 1,3,H,W
+    blob = blob.transpose(2, 0, 1)[np.newaxis]
     return blob, scale, new_w, new_h
 
 
 def detect_yolo(session, frame, hsv) -> dict:
-    """
-    Run ONNX inference for center + orange.
-    Orange is color-verified against HSV before accepting.
-    Returns dict: {center: blob|None, orange: blob|None}
-    blob = (cx, cy, area, sat, r)
-    """
     result = {"center": None, "orange": None}
     if session is None:
         return result
-
     try:
         h_f, w_f = frame.shape[:2]
         blob, scale, new_w, new_h = _preprocess_onnx(frame)
-
-        # Run inference
         input_name = session.get_inputs()[0].name
         outputs    = session.run(None, {input_name: blob})
-
-        # YOLOv8 ONNX output: [1, num_classes+4, num_boxes] — transposed
-        raw = outputs[0]  # shape: (1, 6, 8400) or (1, 8400, 6)
+        raw = outputs[0]
         if raw.ndim == 3 and raw.shape[1] < raw.shape[2]:
-            # (1, 6, 8400) → (8400, 6)
             preds = raw[0].T
         else:
             preds = raw[0]
-
         best = {}
         for pred in preds:
-            # pred: [x_center, y_center, w, h, cls0_conf, cls1_conf, ...]
             x_c, y_c, bw, bh = pred[0], pred[1], pred[2], pred[3]
             class_scores = pred[4:]
             cls  = int(np.argmax(class_scores))
@@ -160,44 +140,27 @@ def detect_yolo(session, frame, hsv) -> dict:
             if conf < YOLO_CONF: continue
             if cls >= len(YOLO_CLASSES): continue
             name = YOLO_CLASSES[cls]
-
-            # Scale coords back to original frame
-            cx = int(x_c / scale)
-            cy = int(y_c / scale)
-            bw_orig = int(bw / scale)
-            bh_orig = int(bh / scale)
-
-            # Clamp
-            cx = max(0, min(cx, w_f-1))
-            cy = max(0, min(cy, h_f-1))
-
+            cx = int(x_c / scale); cy = int(y_c / scale)
+            bw_orig = int(bw / scale); bh_orig = int(bh / scale)
+            cx = max(0, min(cx, w_f-1)); cy = max(0, min(cy, h_f-1))
             area = max(1, bw_orig * bh_orig)
             r    = max(5, int(math.sqrt(area / math.pi)))
-
             if name == "orange":
-                # Color-verify: sample center pixel
-                h_val = int(hsv[cy, cx, 0])
-                s_val = int(hsv[cy, cx, 1])
+                h_val = int(hsv[cy, cx, 0]); s_val = int(hsv[cy, cx, 1])
                 if not (ORANGE_H_LO <= h_val <= ORANGE_H_HI and s_val >= ORANGE_S_MIN):
-                    # Try patch average
                     patch_h = hsv[max(0,cy-4):cy+4, max(0,cx-4):cx+4, 0]
                     patch_s = hsv[max(0,cy-4):cy+4, max(0,cx-4):cx+4, 1]
                     if patch_h.size == 0: continue
-                    h_val = int(np.median(patch_h))
-                    s_val = int(np.median(patch_s))
+                    h_val = int(np.median(patch_h)); s_val = int(np.median(patch_s))
                     if not (ORANGE_H_LO <= h_val <= ORANGE_H_HI and s_val >= ORANGE_S_MIN):
                         continue
-
             sat = int(hsv[cy, cx, 1])
             if name not in best or conf > best[name]["conf"]:
                 best[name] = {"blob": (cx, cy, area, sat, r), "conf": conf}
-
         for name, d in best.items():
             result[name] = d["blob"]
-
     except Exception as e:
         log.warning(f"[ONNX] inference error: {e}")
-
     return result
 
 
@@ -268,8 +231,6 @@ def pick_farthest_pair(blobs: list):
     return best, best_d
 
 
-# ── Geometry ───────────────────────────────────────────────────────────────
-
 def wheel_hub(ya, yb):
     return ((ya[0]+yb[0])/2.0, (ya[1]+yb[1])/2.0)
 
@@ -314,7 +275,6 @@ def draw_info_bar(bar, W, t_sec, rot_deg, rot_rad, cum_deg, cum_rad,
         if p>=50: return (0,200,220)
         return (40,40,220)
     cc=conf_col(conf); c1,c2,c3=14,W//3,2*W//3
-
     cv2.putText(bar,"TIME",(c1,22),cv2.FONT_HERSHEY_SIMPLEX,0.38,GRAY,1)
     cv2.putText(bar,f"{t_sec:.2f} s",(c1,50),cv2.FONT_HERSHEY_SIMPLEX,0.85,WHITE,2,cv2.LINE_AA)
     cv2.putText(bar,"ROTATION",(c1,78),cv2.FONT_HERSHEY_SIMPLEX,0.38,GRAY,1)
@@ -333,7 +293,6 @@ def draw_info_bar(bar, W, t_sec, rot_deg, rot_rad, cum_deg, cum_rad,
                     (c1,228),cv2.FONT_HERSHEY_SIMPLEX,0.38,GRAY,1)
         cv2.putText(bar,f"dir: {direction}  medium: {medium}",
                     (c1,248),cv2.FONT_HERSHEY_SIMPLEX,0.36,GRAY,1)
-
     cv2.putText(bar,"SIGNIFICANCE",(c2,22),cv2.FONT_HERSHEY_SIMPLEX,0.38,GRAY,1)
     cv2.putText(bar,f"{conf}%",(c2,68),cv2.FONT_HERSHEY_SIMPLEX,1.15,cc,2,cv2.LINE_AA)
     bw=c3-c2-20
@@ -341,7 +300,6 @@ def draw_info_bar(bar, W, t_sec, rot_deg, rot_rad, cum_deg, cum_rad,
     fw=int(bw*conf/100)
     if fw>0: cv2.rectangle(bar,(c2,76),(c2+fw,92),cc,-1)
     cv2.rectangle(bar,(c2,76),(c2+bw,92),(70,70,70),1)
-
     def dot(ok,x,y): cv2.circle(bar,(x,y),5,(40,200,40) if ok else (60,60,60),-1)
     dot(source is not None,c2+8,118)
     cv2.putText(bar,"Hub found" if source else "No hub",
@@ -352,7 +310,6 @@ def draw_info_bar(bar, W, t_sec, rot_deg, rot_rad, cum_deg, cum_rad,
                 WHITE if conf>=85 else GRAY,1)
     if source:
         cv2.putText(bar,f"hub: {source}",(c2,172),cv2.FONT_HERSHEY_SIMPLEX,0.40,(40,200,40),1)
-
     dcx=c3+(W-c3)//2; dcy=100; dr=68
     cv2.circle(bar,(dcx,dcy),dr,(45,45,45),-1)
     cv2.circle(bar,(dcx,dcy),dr,(80,80,80),1)
@@ -371,16 +328,19 @@ def draw_info_bar(bar, W, t_sec, rot_deg, rot_rad, cum_deg, cum_rad,
 
 def process(video_path: str, out_path: str, job_id: str = "local",
             direction: str = "auto", medium: str = "air",
-            info_level: str = "basic") -> list:
-
+            info_level: str = "basic",
+            progress_cb=None) -> list:
+    """
+    Process a video file end-to-end.
+    progress_cb(dict) — called every frame with live data for UI updates.
+    """
     log.info("[DETECT] Building HSV ranges:")
     markers = build_ranges(MARKER_DEFS)
-
     log.info("[DETECT] Loading ONNX model:")
     yolo = load_yolo()
     yolo_active = yolo is not None
     log.info(f"[DETECT] Mode: {'ONNX+OpenCV' if yolo_active else 'OpenCV only'}  "
-             f"pair_fallback={'ON' if USE_PAIR_FALLBACK else 'OFF'}")
+             f"YOLO_EVERY={YOLO_EVERY}  pair_fallback={'ON' if USE_PAIR_FALLBACK else 'OFF'}")
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -398,7 +358,6 @@ def process(video_path: str, out_path: str, job_id: str = "local",
     elif rot_meta == 180: auto_rotate = cv2.ROTATE_180
     if auto_rotate in (cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_90_COUNTERCLOCKWISE):
         W, H = H, W
-        log.info(f"[DETECT] Auto-rotate {rot_meta}deg → {W}x{H}")
 
     max_y  = int(H * MAX_Y_FRAC)
     log.info(f"[DETECT] {W}x{H} @ {fps:.0f}fps  {total} frames ({total/fps:.1f}s)")
@@ -426,6 +385,9 @@ def process(video_path: str, out_path: str, job_id: str = "local",
     last_ya      = None
     last_yb      = None
     conf_smooth  = 0.0
+
+    # YOLO every N frames
+    _last_yolo_det = {"center": None, "orange": None}
 
     sample_interval = 1.0 / SAMPLES_PER_SECOND
     next_sample_at  = 0.0
@@ -456,29 +418,29 @@ def process(video_path: str, out_path: str, job_id: str = "local",
         else:
             hsv_src = hsv
 
-        # ── ONNX detection ─────────────────────────────────────────────────
-        yolo_det = detect_yolo(yolo, preproc, hsv)
+        # ONNX every YOLO_EVERY frames
+        if fi % YOLO_EVERY == 0:
+            _last_yolo_det = detect_yolo(yolo, preproc, hsv)
+        yolo_det = _last_yolo_det
 
-        # ── OpenCV orange fallback ─────────────────────────────────────────
+        # OpenCV orange fallback
         cv_ora = find_blobs(hsv_src, markers["ORANGE"], max_y)
 
-        # ── Pair fallback (DISABLED) ───────────────────────────────────────
+        # Pair fallback (DISABLED)
         if USE_PAIR_FALLBACK:
             cv_yel = find_blobs(hsv_src, markers["YELLOW"], max_y)
             cv_red = find_blobs(hsv_src, markers["RED"],    max_y)
         else:
             cv_yel = []; cv_red = []
 
-        # ── Hub source ─────────────────────────────────────────────────────
+        # Hub source
         hub_px_raw = None
-
         if yolo_det["center"] is not None:
             cx,cy,_,_,_ = yolo_det["center"]
             hub_px_raw  = (float(cx), float(cy))
             hub_source  = "YOLO"
             gap_hub     = 0
             last_hub    = hub_px_raw
-
         elif USE_PAIR_FALLBACK:
             yel_pair, yel_dist = pick_farthest_pair(cv_yel)
             red_pair, red_dist = pick_farthest_pair(cv_red)
@@ -496,12 +458,11 @@ def process(video_path: str, out_path: str, job_id: str = "local",
                 last_yb = b1 if b0[1]<=b1[1] else b0
             elif gap_hub < MAX_GAP_FRAMES and last_hub:
                 gap_hub += 1; hub_px_raw = last_hub
-
         elif gap_hub < MAX_GAP_FRAMES and last_hub:
             gap_hub   += 1
             hub_px_raw = last_hub
 
-        # ── Orange source ──────────────────────────────────────────────────
+        # Orange source
         if yolo_det["orange"] is not None:
             ora_blob = yolo_det["orange"]
             gap_ora  = 0; last_ora = ora_blob
@@ -517,7 +478,7 @@ def process(video_path: str, out_path: str, job_id: str = "local",
         has_hub    = hub_px_raw is not None
         has_orange = ora_blob is not None
 
-        # ── Stable hub ─────────────────────────────────────────────────────
+        # Stable hub
         if has_hub:
             hub_buf.append(np.array(hub_px_raw))
             if len(hub_buf) > 30: hub_buf.pop(0)
@@ -530,7 +491,7 @@ def process(video_path: str, out_path: str, job_id: str = "local",
                                    ora_blob[1]-hub_stable[1])
                 hub_radius = max(hub_radius or 0, d_ora*1.3)
 
-        # ── Rotation angle ─────────────────────────────────────────────────
+        # Rotation angle
         rot_raw = None
         if has_hub and has_orange:
             rot_raw = orange_angle(ora_blob, hub_px_raw)
@@ -569,6 +530,22 @@ def process(video_path: str, out_path: str, job_id: str = "local",
         conf_smooth = conf_smooth*0.6 + conf*0.4
         conf_disp   = int(round(conf_smooth))
 
+        # ── Progress callback ──────────────────────────────────────────
+        if progress_cb is not None:
+            pct = int(fi / total * 100) if total > 0 else 0
+            progress_cb({
+                "frame":        fi,
+                "total":        total,
+                "pct":          pct,
+                "t_sec":        round(t_sec, 2),
+                "rotation_deg": round(rot_smooth, 1) if rot_smooth is not None else None,
+                "cumulative_deg": round(-rot_cum, 1),
+                "angular_vel_dps": round(-vel_dps, 1),
+                "confidence_pct": conf_disp,
+                "hub_source":   hub_source,
+                "has_orange":   has_orange,
+            })
+
         if t_sec >= next_sample_at:
             sample = make_sample(
                 job_id          = job_id,
@@ -583,44 +560,35 @@ def process(video_path: str, out_path: str, job_id: str = "local",
             next_sample_at += sample_interval
             if len(all_samples) % FLUSH_EVERY == 0:
                 persist_samples(job_id, all_samples[-FLUSH_EVERY:])
-                log.debug(f"[DETECT] Flushed {FLUSH_EVERY} samples t={t_sec:.1f}s")
 
-        # ── Draw ──────────────────────────────────────────────────────────
+        # Draw
         ann = frame_stab.copy()
-
         if yolo_det["center"] is not None:
             cx,cy,_,_,r = yolo_det["center"]
             cv2.circle(ann,(cx,cy),r+4,(255,255,255),2,cv2.LINE_AA)
-            cv2.putText(ann,"center",(cx+r+4,cy+5),
-                        cv2.FONT_HERSHEY_SIMPLEX,0.45,(255,255,255),1,cv2.LINE_AA)
         if yolo_det["orange"] is not None:
             cx,cy,_,_,r = yolo_det["orange"]
             cv2.circle(ann,(cx,cy),r+4,(0,140,255),2,cv2.LINE_AA)
-
         if hub_px_raw is not None:
             hcol = (40,200,40) if hub_source=="YOLO" else (200,200,40)
             cv2.circle(ann,(int(hub_px_raw[0]),int(hub_px_raw[1])),7,hcol,-1,cv2.LINE_AA)
             cv2.circle(ann,(int(hub_px_raw[0]),int(hub_px_raw[1])),9,(0,0,0),1,cv2.LINE_AA)
-
         if has_orange and ora_blob:
             draw_neon_circle(ann,(ora_blob[0],ora_blob[1]),ora_blob[4]+6,
                              TRACK_CIRCLE_COLOR,TRACK_CIRCLE_THICK,TRACK_CIRCLE_GLOW)
             cv2.putText(ann,"ORA",(ora_blob[0]+ora_blob[4]+8,ora_blob[1]+5),
                         cv2.FONT_HERSHEY_SIMPLEX,0.45,TRACK_CIRCLE_COLOR,1,cv2.LINE_AA)
-
         if has_hub and has_orange and hub_px_raw:
             cv2.line(ann,
                      (int(hub_px_raw[0]),int(hub_px_raw[1])),
                      (ora_blob[0],ora_blob[1]),
                      TRACK_CIRCLE_COLOR, 1, cv2.LINE_AA)
-
         mode_txt = "ONNX+CV" if yolo_active else "CV only"
         cv2.putText(ann,mode_txt,(W-110,24),cv2.FONT_HERSHEY_SIMPLEX,0.55,
                     (40,200,40) if yolo_active else (100,100,100),1)
 
         bar = np.full((BAR_HEIGHT,W,3),(18,18,18),dtype=np.uint8)
         cv2.line(bar,(0,0),(W,0),(55,55,55),1)
-
         draw_info_bar(
             bar=bar, W=W, t_sec=t_sec,
             rot_deg    = rot_smooth,
@@ -631,14 +599,12 @@ def process(video_path: str, out_path: str, job_id: str = "local",
             conf       = conf_disp, source=hub_source,
             info_level = info_level, direction=direction, medium=medium,
         )
-
         out_vid.write(np.vstack([ann, bar]))
 
         if fi % 60 == 0:
             rot_str = f"{rot_smooth:.1f}" if rot_smooth is not None else "---"
             log.info(f"  [{fi:4d}/{total}]  t={t_sec:.1f}s  "
-                     f"rot={rot_str}  cum={-rot_cum:.1f}  "
-                     f"conf={conf_disp}%  hub={hub_source}")
+                     f"rot={rot_str}  cum={-rot_cum:.1f}  conf={conf_disp}%")
         fi += 1
 
     remainder = len(all_samples) % FLUSH_EVERY

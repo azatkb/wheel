@@ -22,11 +22,35 @@ input[type=email],select{width:100%;background:#1e1e1e;border:1px solid #2e2e2e;
 .row>div{flex:1;min-width:140px}
 button{background:#00ff88;color:#000;border:none;border-radius:8px;padding:.55rem 1.3rem;font-size:.9rem;font-weight:700;cursor:pointer;margin-right:.5rem;margin-top:.8rem}
 button:hover{background:#00d977}
+button:disabled{background:#252525;color:#555;cursor:not-allowed}
 button.sec{background:#252525;color:#aaa}
 button.sec:hover{background:#2e2e2e}
-pre#log{font-family:monospace;font-size:.77rem;background:#0a0a0a;border-radius:8px;padding:.8rem;min-height:60px;border:1px solid #1e1e1e;white-space:pre-wrap;max-height:200px;overflow-y:auto;line-height:1.7}
-.prog-wrap{background:#1e1e1e;border-radius:5px;height:7px;margin:.5rem 0 .8rem}
-.prog-fill{height:7px;border-radius:5px;background:#00ff88;width:0%;transition:width .4s}
+pre#log{font-family:monospace;font-size:.77rem;background:#0a0a0a;border-radius:8px;padding:.8rem;min-height:40px;border:1px solid #1e1e1e;white-space:pre-wrap;max-height:160px;overflow-y:auto;line-height:1.7}
+
+/* Progress */
+.prog-wrap{background:#1e1e1e;border-radius:5px;height:10px;margin:.4rem 0 .3rem;overflow:hidden}
+.prog-fill{height:10px;border-radius:5px;width:0%;transition:width .3s ease}
+.prog-fill.uploading {background:linear-gradient(90deg,#0088ff,#00ccff)}
+.prog-fill.processing{background:linear-gradient(90deg,#ff8800,#ffcc00)}
+.prog-fill.done      {background:#00ff88}
+.prog-fill.error     {background:#f44}
+.prog-label{font-size:.78rem;color:#888;margin-bottom:.3rem;min-height:1.3em}
+
+/* Live detection panel */
+#live-panel{display:none;margin-top:.8rem}
+.live-grid{display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.6rem}
+.live-box{background:#0f0f0f;border:1px solid #222;border-radius:8px;padding:.5rem .8rem;text-align:center;flex:1;min-width:90px}
+.live-box .lv{font-size:1.4rem;font-weight:700;color:#00ff88;font-variant-numeric:tabular-nums}
+.live-box .ll{font-size:.65rem;color:#555;margin-top:.1rem}
+.live-box.orange .lv{color:#ff8800}
+.live-box.blue   .lv{color:#44aaff}
+.live-box.yellow .lv{color:#ffcc00}
+
+/* Frame progress bar */
+.frame-bar-wrap{background:#1e1e1e;border-radius:3px;height:5px;margin:.3rem 0}
+.frame-bar-fill{height:5px;border-radius:3px;background:#ff8800;width:0%;transition:width .15s}
+
+/* Results */
 .metrics{display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1rem}
 .met{background:#0f0f0f;border:1px solid #222;border-radius:8px;padding:.65rem 1rem;text-align:center;min-width:110px;flex:1}
 .met .v{font-size:1.7rem;font-weight:700;color:#00ff88;display:block;font-variant-numeric:tabular-nums}
@@ -41,6 +65,7 @@ td{padding:.28rem .55rem;border-bottom:1px solid #181818}
 tr:hover td{background:#1a1a1a}
 .tag{display:inline-block;padding:.1rem .4rem;border-radius:4px;font-size:.7rem;font-weight:700}
 .ty{background:#332;color:#ff0}.tr{background:#322;color:#f44}.tn{background:#1e1e1e;color:#555}
+.tg{background:#133;color:#0f0}
 .cb{display:inline-block;height:6px;border-radius:3px;vertical-align:middle;background:linear-gradient(90deg,#f44,#ff0,#0f0)}
 </style>
 </head>
@@ -55,7 +80,8 @@ tr:hover td{background:#1a1a1a}
 
 <div class="card">
   <h2>Video + parameters</h2>
-  <input type="file" id="fi" accept="video/*">
+  <input type="file" id="fi" accept="video/*" onchange="onFileChange()">
+  <div id="file-info" style="font-size:.78rem;color:#555;margin-bottom:.3rem"></div>
 
   <div class="row">
     <div>
@@ -96,13 +122,43 @@ tr:hover td{background:#1a1a1a}
   </div>
 
   <button onclick="go()" id="btn">Upload &amp; Process</button>
-  <button class="sec" onclick="reset()">Clear</button>
+  <button class="sec" onclick="resetAll()">Clear</button>
 </div>
 
 <div class="card">
   <h2>Status</h2>
-  <pre id="log">Waiting...</pre>
+  <div class="prog-label" id="prog-label">Waiting...</div>
   <div class="prog-wrap"><div class="prog-fill" id="prog"></div></div>
+
+  <!-- Live detection data panel -->
+  <div id="live-panel">
+    <div class="frame-bar-wrap"><div class="frame-bar-fill" id="frame-bar"></div></div>
+    <div id="frame-label" style="font-size:.7rem;color:#555;margin-bottom:.5rem"></div>
+    <div class="live-grid">
+      <div class="live-box">
+        <div class="lv" id="lv-ang">---</div>
+        <div class="ll">Current angle</div>
+      </div>
+      <div class="live-box orange">
+        <div class="lv" id="lv-cum">+0.0°</div>
+        <div class="ll">Total rotation</div>
+      </div>
+      <div class="live-box blue">
+        <div class="lv" id="lv-vel">---</div>
+        <div class="ll">Velocity deg/s</div>
+      </div>
+      <div class="live-box yellow">
+        <div class="lv" id="lv-conf">0%</div>
+        <div class="ll">Significance</div>
+      </div>
+      <div class="live-box">
+        <div class="lv" id="lv-src" style="font-size:.9rem">---</div>
+        <div class="ll">Hub source</div>
+      </div>
+    </div>
+  </div>
+
+  <pre id="log"></pre>
 </div>
 
 <div class="card" id="res" style="display:none">
@@ -123,45 +179,178 @@ tr:hover td{background:#1a1a1a}
 </div>
 
 <script>
-let jid=null,timer=null;
-const P={queued:20,preprocessing:45,processing:75,done:100};
+let jid=null, statusTimer=null, progressTimer=null;
 
-function addLog(m){const e=document.getElementById('log');e.textContent+=m+'\n';e.scrollTop=e.scrollHeight}
-function setProg(p){document.getElementById('prog').style.width=p+'%'}
-function reset(){if(timer)clearInterval(timer);timer=jid=null;document.getElementById('log').textContent='';document.getElementById('res').style.display='none';setProg(0)}
-
-async function go(){
-  const f=document.getElementById('fi');
-  if(!f.files.length){alert('Select a video first');return}
-  reset();
-  const fd=new FormData();
-  fd.append('file',f.files[0]);
-  fd.append('user_email',document.getElementById('email').value);
-  fd.append('direction',document.getElementById('dir').value);
-  fd.append('medium',document.getElementById('med').value);
-  fd.append('hand_visible',document.getElementById('hand').value);
-  fd.append('info_level',document.getElementById('info').value);
-  document.getElementById('btn').disabled=true;
-  addLog('Uploading '+f.files[0].name+' ...');
-  setProg(10);
-  try{
-    const r=await fetch('/upload',{method:'POST',body:fd});
-    const d=await r.json();
-    if(!r.ok)throw new Error(d.detail||r.statusText);
-    jid=d.job_id;
-    addLog('Job: '+jid);
-    if(d.video_info){const vi=d.video_info;addLog('Video: '+vi.width+'x'+vi.height+' @ '+vi.fps+'fps  '+vi.duration+'s')}
-    timer=setInterval(poll,2000);
-  }catch(e){addLog('ERROR: '+e.message);document.getElementById('btn').disabled=false}
+function onFileChange(){
+  const f=document.getElementById('fi').files[0];
+  if(!f) return;
+  const mb=(f.size/1024/1024).toFixed(1);
+  document.getElementById('file-info').textContent=f.name+' — '+mb+' MB';
 }
 
-async function poll(){
-  if(!jid)return;
-  const d=await(await fetch('/status/'+jid)).json();
-  addLog('Status: '+d.status+(d.sample_count?' ('+d.sample_count+' samples)':''));
-  setProg(P[d.status]||30);
-  if(d.status==='done'){clearInterval(timer);document.getElementById('btn').disabled=false;showResults(jid,d)}
-  else if(d.status==='error'){clearInterval(timer);addLog('ERROR: '+(d.detail||'?'));document.getElementById('btn').disabled=false}
+function addLog(m){
+  const e=document.getElementById('log');
+  e.textContent+=m+'\n';
+  e.scrollTop=e.scrollHeight;
+}
+
+function setProg(p, phase='processing'){
+  const el=document.getElementById('prog');
+  el.style.width=Math.min(100,Math.max(0,p))+'%';
+  el.className='prog-fill '+phase;
+}
+
+function setLabel(txt){
+  document.getElementById('prog-label').textContent=txt;
+}
+
+function resetAll(){
+  if(statusTimer)   clearInterval(statusTimer);
+  if(progressTimer) clearInterval(progressTimer);
+  statusTimer=progressTimer=jid=null;
+  document.getElementById('log').textContent='';
+  document.getElementById('res').style.display='none';
+  document.getElementById('live-panel').style.display='none';
+  setProg(0); setLabel('Waiting...');
+  document.getElementById('btn').disabled=false;
+  document.getElementById('file-info').textContent='';
+  document.getElementById('frame-bar').style.width='0%';
+}
+
+function go(){
+  const f=document.getElementById('fi');
+  if(!f.files.length){alert('Select a video first');return}
+  resetAll();
+  document.getElementById('btn').disabled=true;
+
+  const fd=new FormData();
+  fd.append('file',           f.files[0]);
+  fd.append('user_email',     document.getElementById('email').value);
+  fd.append('direction',      document.getElementById('dir').value);
+  fd.append('medium',         document.getElementById('med').value);
+  fd.append('hand_visible',   document.getElementById('hand').value);
+  fd.append('info_level',     document.getElementById('info').value);
+
+  const xhr=new XMLHttpRequest();
+
+  // Upload progress
+  xhr.upload.addEventListener('progress', e=>{
+    if(!e.lengthComputable) return;
+    const pct=Math.round(e.loaded/e.total*100);
+    const done=(e.loaded/1024/1024).toFixed(1);
+    const total=(e.total/1024/1024).toFixed(1);
+    setProg(pct,'uploading');
+    setLabel('Uploading: '+pct+'%  ('+done+' / '+total+' MB)');
+  });
+
+  xhr.upload.addEventListener('load', ()=>{
+    setProg(100,'uploading');
+    setLabel('Upload complete — server processing...');
+  });
+
+  xhr.addEventListener('load', ()=>{
+    if(xhr.status!==200){
+      addLog('ERROR: '+xhr.status);
+      setProg(100,'error'); setLabel('Upload failed');
+      document.getElementById('btn').disabled=false;
+      return;
+    }
+    const d=JSON.parse(xhr.responseText);
+    jid=d.job_id;
+    addLog('Job: '+jid);
+    if(d.video_info){
+      const vi=d.video_info;
+      addLog('Video: '+vi.width+'x'+vi.height+' @ '+vi.fps+'fps  '+vi.duration+'s');
+    }
+    setProg(5,'processing');
+    setLabel('Queued...');
+    statusTimer   = setInterval(pollStatus,   2000);
+    progressTimer = setInterval(pollProgress, 500);
+  });
+
+  xhr.addEventListener('error', ()=>{
+    addLog('Network error');
+    setProg(100,'error'); setLabel('Network error');
+    document.getElementById('btn').disabled=false;
+  });
+
+  xhr.open('POST','/upload');
+  xhr.send(fd);
+  addLog('Uploading '+f.files[0].name+' ...');
+}
+
+// Status polling (every 2s)
+const STAGE_PCT={queued:5, preprocessing:25, processing:40, done:100};
+const STAGE_LBL={
+  queued:'Queued...',
+  preprocessing:'Preprocessing video...',
+  processing:'Detecting rotation...',
+  done:'Done! ✓',
+};
+
+async function pollStatus(){
+  if(!jid) return;
+  try{
+    const d=await(await fetch('/status/'+jid)).json();
+    const pct=STAGE_PCT[d.status]||30;
+    const lbl=STAGE_LBL[d.status]||d.status;
+    // Only update bar if not in processing (progress poll handles that)
+    if(d.status!=='processing'){
+      setProg(pct,'processing');
+      setLabel(lbl+(d.sample_count?' — '+d.sample_count+' samples':''));
+    }
+    if(d.status==='processing'){
+      document.getElementById('live-panel').style.display='block';
+    }
+    if(d.status==='done'){
+      clearInterval(statusTimer);
+      clearInterval(progressTimer);
+      setProg(100,'done'); setLabel('Done! ✓');
+      document.getElementById('btn').disabled=false;
+      showResults(jid,d);
+    } else if(d.status==='error'){
+      clearInterval(statusTimer);
+      clearInterval(progressTimer);
+      setProg(100,'error'); setLabel('Error: '+(d.detail||'?'));
+      addLog('ERROR: '+(d.detail||'?'));
+      document.getElementById('btn').disabled=false;
+    }
+  }catch(e){addLog('Poll error: '+e.message)}
+}
+
+// Progress polling (every 500ms) — live detection data
+async function pollProgress(){
+  if(!jid) return;
+  try{
+    const d=await(await fetch('/progress/'+jid)).json();
+    const p=d.progress||{};
+    if(!p.frame && p.frame!==0) return;
+
+    // Frame progress bar (40% to 100% of overall bar during processing)
+    const framePct=p.total>0?Math.round(p.frame/p.total*100):0;
+    const overallPct=40+Math.round(framePct*0.6);
+    setProg(overallPct,'processing');
+    setLabel('Detecting rotation... '+framePct+'%  (frame '+p.frame+' / '+p.total+')');
+
+    // Frame mini bar
+    document.getElementById('frame-bar').style.width=framePct+'%';
+    document.getElementById('frame-label').textContent=
+      'Frame '+p.frame+' / '+p.total+'  ('+framePct+'%)  t='+p.t_sec+'s';
+
+    // Live values
+    const ang=p.rotation_deg;
+    document.getElementById('lv-ang').textContent =
+      ang!=null ? ang.toFixed(1)+'°' : '---';
+    document.getElementById('lv-cum').textContent =
+      (p.cumulative_deg>=0?'+':'')+((p.cumulative_deg)||0).toFixed(1)+'°';
+    document.getElementById('lv-vel').textContent =
+      p.angular_vel_dps!=null ? p.angular_vel_dps.toFixed(1) : '---';
+    document.getElementById('lv-conf').textContent =
+      (p.confidence_pct||0)+'%';
+    document.getElementById('lv-src').textContent =
+      p.hub_source || '---';
+
+  }catch(e){}
 }
 
 async function showResults(jid,info){
@@ -180,13 +369,17 @@ async function showResults(jid,info){
       <div class="met"><span class="v">${avgS}%</span><span class="l">Avg significance</span></div>`;
   }
   document.getElementById('acts').innerHTML=`
-    <a href="/download/${jid}"><button>Download video</button></a>
-    <a href="/csv/${jid}"><button class="sec">Download CSV</button></a>`;
+    <a href="/download/${jid}"><button>&#8595; Download video</button></a>
+    <a href="/csv/${jid}"><button class="sec">&#8595; Download CSV</button></a>`;
   drawChart(samples);
   const tb=document.getElementById('tb');tb.innerHTML='';
   samples.forEach(s=>{
     const bw=Math.round((+s.confidence_pct)*55/100);
-    const tag=s.source==='YELLOW'?'<span class="tag ty">YEL</span>':s.source==='RED'?'<span class="tag tr">RED</span>':'<span class="tag tn">-</span>';
+    const src=s.source||'';
+    const tag=src==='YELLOW'?'<span class="tag ty">YEL</span>':
+              src==='RED'?'<span class="tag tr">RED</span>':
+              src==='YOLO'||src==='ONNX'?'<span class="tag tg">ONNX</span>':
+              '<span class="tag tn">-</span>';
     tb.innerHTML+=`<tr>
       <td>${(+s.timestamp_sec).toFixed(2)}</td>
       <td>${s.rotation_deg!=null?(+s.rotation_deg).toFixed(1):'--'}</td>
@@ -210,17 +403,21 @@ function drawChart(s){
   const tMin=Math.min(...ts),tMax=Math.max(...ts)||1,vMin=Math.min(...cs,0),vMax=Math.max(...cs,1),vR=vMax-vMin||1;
   const tx=t=>pad.l+(t-tMin)/(tMax-tMin)*cW,ty=v=>pad.t+(1-(v-vMin)/vR)*cH;
   ctx.strokeStyle='#1a1a1a';ctx.lineWidth=1;
-  [0,.25,.5,.75,1].forEach(f=>{const y=pad.t+f*cH,v=vMax-f*vR;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();ctx.fillStyle='#444';ctx.font='9px system-ui';ctx.fillText(v.toFixed(0)+'°',2,y+3)});
-  // Confidence shading
+  [0,.25,.5,.75,1].forEach(f=>{
+    const y=pad.t+f*cH,v=vMax-f*vR;
+    ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();
+    ctx.fillStyle='#444';ctx.font='9px system-ui';ctx.fillText(v.toFixed(0)+'°',2,y+3);
+  });
   ctx.fillStyle='rgba(0,255,136,0.05)';ctx.beginPath();ctx.moveTo(tx(ts[0]),pad.t+cH);
   s.forEach((x,i)=>ctx.lineTo(tx(ts[i]),pad.t+(1-qs[i]/100)*cH));
   ctx.lineTo(tx(ts[ts.length-1]),pad.t+cH);ctx.closePath();ctx.fill();
-  // Line
   ctx.strokeStyle='#00ff88';ctx.lineWidth=2;ctx.beginPath();
   s.forEach((x,i)=>{i===0?ctx.moveTo(tx(ts[i]),ty(cs[i])):ctx.lineTo(tx(ts[i]),ty(cs[i]))});
   ctx.stroke();
-  // Dots
-  s.forEach((x,i)=>{ctx.fillStyle=qs[i]===100?'#00ff88':qs[i]>=70?'#ff0':'#f44';ctx.beginPath();ctx.arc(tx(ts[i]),ty(cs[i]),2.2,0,Math.PI*2);ctx.fill()});
+  s.forEach((x,i)=>{
+    ctx.fillStyle=qs[i]===100?'#00ff88':qs[i]>=70?'#ff0':'#f44';
+    ctx.beginPath();ctx.arc(tx(ts[i]),ty(cs[i]),2.2,0,Math.PI*2);ctx.fill();
+  });
   ctx.fillStyle='#00ff88';ctx.font='10px system-ui';ctx.fillText('cumulative rotation (deg)',pad.l+4,pad.t+12);
   ctx.fillStyle='#444';ctx.fillText('time (s)',W/2-20,H-4);
 }

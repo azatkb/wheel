@@ -1,0 +1,5 @@
+*.csv
+*.pem
+/app/__pycache__
+/inputs
+/outputs

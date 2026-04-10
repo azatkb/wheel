@@ -7,6 +7,7 @@ FastAPI server.
   GET  /stream-test         Live stream UI
   POST /upload              Upload video + job params
   GET  /status/{id}         Poll job
+  GET  /progress/{id}       Live detection progress (frame, angle, etc.)
   GET  /download/{id}       Download processed video
   GET  /results/{id}        JSON samples
   GET  /csv/{id}            Download CSV
@@ -85,6 +86,8 @@ async def page_stream():
 def _run_job(job_id, raw_path, direction, medium, hand_visible, info_level):
     try:
         jobs[job_id]["status"] = "preprocessing"
+        jobs[job_id]["progress"] = {"pct": 0, "frame": 0, "total": 0}
+
         if PREPROCESS_ENABLED:
             prep = INPUTS_DIR / f"{job_id}_prep.mp4"
             preprocess_video(raw_path, prep)
@@ -92,10 +95,16 @@ def _run_job(job_id, raw_path, direction, medium, hand_visible, info_level):
             prep = raw_path
 
         jobs[job_id]["status"] = "processing"
-        out = OUTPUTS_DIR / f"{job_id}_tracked.mp4"
+
+        # Progress callback — called every frame from detector
+        def on_progress(data: dict):
+            jobs[job_id]["progress"] = data
+
         samples = process(
-            str(prep), str(out), job_id=job_id,
+            str(prep), str(out := OUTPUTS_DIR / f"{job_id}_tracked.mp4"),
+            job_id=job_id,
             direction=direction, medium=medium, info_level=info_level,
+            progress_cb=on_progress,
         )
 
         finish_job(job_id, len(samples) if samples else 0,
@@ -108,6 +117,7 @@ def _run_job(job_id, raw_path, direction, medium, hand_visible, info_level):
             "url":          f"/download/{job_id}",
             "csv_url":      f"/csv/{job_id}",
             "results_url":  f"/results/{job_id}",
+            "progress":     {"pct": 100, "frame": 0, "total": 0},
         }
         log.info(f"[{job_id}] done — {len(samples) if samples else 0} samples")
 
@@ -138,7 +148,7 @@ async def upload(
     info = get_video_info(raw_path)
     create_job(job_id, user_email, "upload", direction, medium,
                hand_visible, info_level)
-    jobs[job_id] = {"status": "queued"}
+    jobs[job_id] = {"status": "queued", "progress": {"pct": 0}}
 
     asyncio.get_event_loop().run_in_executor(
         executor, _run_job, job_id, raw_path,
@@ -154,6 +164,17 @@ def status(job_id: str):
     info = jobs.get(job_id)
     if not info: raise HTTPException(404, "Not found")
     return info
+
+
+@app.get("/progress/{job_id}")
+def progress(job_id: str):
+    """Live detection progress — poll this every 500ms during processing."""
+    info = jobs.get(job_id)
+    if not info: raise HTTPException(404, "Not found")
+    return {
+        "status":   info.get("status"),
+        "progress": info.get("progress", {}),
+    }
 
 
 @app.get("/download/{job_id}")
@@ -205,16 +226,16 @@ async def stream_ws(ws: WebSocket):
     rot_buf     = []
     zero_offset = None
     vel_dps     = 0.0
-
     hub_buf     = []
     hub_stable  = hub_radius = None
     hub_source  = None
-
     gap_hub     = gap_ora = 0
     last_hub    = last_ora = None
-
     conf_smooth = 0.0
     stab        = Stabilizer()
+
+    from app.detector import YOLO_EVERY as _YOLO_EVERY
+    _last_yolo_det = {"center": None, "orange": None}
 
     sample_interval = 1.0 / SAMPLES_PER_SECOND
     next_sample_at  = 0.0
@@ -238,34 +259,30 @@ async def stream_ws(ws: WebSocket):
             preproc = cv2.bilateralFilter(frame_s, 7, 50, 50)
             hsv     = cv2.cvtColor(preproc, cv2.COLOR_BGR2HSV)
 
-            # ROI
             if hub_stable is not None and hub_radius is not None:
                 roi = np.zeros(hsv.shape[:2], np.uint8)
-                cv2.circle(roi, (int(hub_stable[0]),int(hub_stable[1])),
+                cv2.circle(roi, (int(hub_stable[0]), int(hub_stable[1])),
                            int(hub_radius*1.15), 255, -1)
                 hsv_src = cv2.bitwise_and(hsv, hsv, mask=roi)
             else:
                 hsv_src = hsv
 
-            # ── YOLO ──────────────────────────────────────────────────────
-            yolo_det = detect_yolo(_yolo, preproc, hsv)
+            # ONNX every YOLO_EVERY frames
+            if frame_idx % _YOLO_EVERY == 0:
+                _last_yolo_det = detect_yolo(_yolo, preproc, hsv)
+            yolo_det = _last_yolo_det
 
-            # ── OpenCV orange fallback ─────────────────────────────────────
             cv_ora = find_blobs(hsv_src, _markers["ORANGE"], max_y)
 
-            # ── Hub: YOLO center >> gap fill ───────────────────────────────
             hub_px_raw = None
             if yolo_det["center"] is not None:
                 cx,cy,_,_,_ = yolo_det["center"]
                 hub_px_raw  = (float(cx), float(cy))
                 hub_source  = "YOLO"
-                gap_hub     = 0
-                last_hub    = hub_px_raw
+                gap_hub     = 0; last_hub = hub_px_raw
             elif gap_hub < MAX_GAP_FRAMES and last_hub:
-                gap_hub    += 1
-                hub_px_raw  = last_hub
+                gap_hub += 1; hub_px_raw = last_hub
 
-            # ── Orange: YOLO >> OpenCV >> gap fill ─────────────────────────
             if yolo_det["orange"] is not None:
                 ora_blob = yolo_det["orange"]
                 gap_ora  = 0; last_ora = ora_blob
@@ -275,13 +292,11 @@ async def stream_ws(ws: WebSocket):
             elif gap_ora < MAX_GAP_FRAMES and last_ora:
                 gap_ora += 1; ora_blob = last_ora
             else:
-                gap_ora  = min(gap_ora+1, MAX_GAP_FRAMES+1)
-                ora_blob = None
+                gap_ora = min(gap_ora+1, MAX_GAP_FRAMES+1); ora_blob = None
 
             has_hub    = hub_px_raw is not None
             has_orange = ora_blob is not None
 
-            # Stable hub
             if has_hub:
                 hub_buf.append(np.array(hub_px_raw))
                 if len(hub_buf) > 30: hub_buf.pop(0)
@@ -291,8 +306,7 @@ async def stream_ws(ws: WebSocket):
                                        ora_blob[1]-hub_stable[1])
                     hub_radius = max(hub_radius or 0, d_ora*1.3)
 
-            # Geometry
-            rot_raw  = None
+            rot_raw = None
             scale_mm = None
             if has_hub and has_orange:
                 rot_raw = orange_angle(ora_blob, hub_px_raw)
@@ -329,7 +343,7 @@ async def stream_ws(ws: WebSocket):
             conf_smooth = conf_smooth*0.6 + conf*0.4
             conf_disp   = int(round(conf_smooth))
 
-            hub_px = hub_px_raw  # для ответа
+            hub_px = hub_px_raw
 
             if t_sec >= next_sample_at:
                 s = make_sample(
