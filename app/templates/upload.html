@@ -156,6 +156,9 @@ tr:hover td{background:#1a1a1a}
 </div>
 
 <script>
+// ── API server address ─────────────────────────────────────────────────────
+const API = 'http://34.60.124.57:8000';
+
 let jid=null, statusTimer=null, sse=null, vidFile=null;
 let vidW=1, vidH=1, totalSec=0;
 
@@ -246,7 +249,7 @@ function go(){
     document.getElementById('btn').disabled=false;
   });
 
-  xhr.open('POST','/upload');
+  xhr.open('POST', API+'/upload');
   xhr.send(fd);
   addLog('Uploading '+f.files[0].name+' ...');
 }
@@ -260,7 +263,7 @@ const STAGE_LBL={
 async function pollStatus(){
   if(!jid) return;
   try{
-    const d=await(await fetch('/status/'+jid)).json();
+    const d=await(await fetch(API+'/status/'+jid)).json();
     if(d.status==='processing' && !sse){
       startProcessingUI();
     }
@@ -302,7 +305,7 @@ function startProcessingUI(){
 // ── SSE: on each frame → seek video + draw overlay immediately ─────────────
 function startSSE(job_id){
   if(sse) sse.close();
-  sse=new EventSource('/frames/'+job_id);
+  sse=new EventSource(API+'/frames/'+job_id);
 
   sse.onmessage=e=>{
     try{
@@ -432,7 +435,7 @@ function drawOverlay(d){
 
 // ── Results ────────────────────────────────────────────────────────────────
 async function showResults(jid,info){
-  const samples=await(await fetch('/results/'+jid)).json();
+  const samples=await(await fetch(API+'/results/'+jid)).json();
   addLog('Loaded '+samples.length+' samples');
   document.getElementById('res').style.display='block';
   if(samples.length){
@@ -447,8 +450,8 @@ async function showResults(jid,info){
       <div class="met"><span class="v">${avgS}%</span><span class="l">Avg significance</span></div>`;
   }
   document.getElementById('acts').innerHTML=`
-    <a href="/download/${jid}"><button>&#8595; Download video</button></a>
-    <a href="/csv/${jid}"><button class="sec">&#8595; Download CSV</button></a>`;
+    <a href="${API}/download/${jid}"><button>&#8595; Download video</button></a>
+    <a href="${API}/csv/${jid}"><button class="sec">&#8595; Download CSV</button></a>`;
   drawChart(samples);
   const tb=document.getElementById('tb'); tb.innerHTML='';
   samples.forEach(s=>{

@@ -1,280 +1,373 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Wheel Tracker &#8212; Live Stream</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,sans-serif;background:#0d0d0d;color:#e0e0e0;padding:1.5rem;max-width:980px;margin:0 auto}
-nav{margin-bottom:1.5rem}
-nav a{color:#00ff88;margin-right:1.5rem;font-size:.9rem;text-decoration:none}
-nav a:hover{text-decoration:underline}
-h1{color:#00ff88;font-size:1.6rem;margin-bottom:.25rem}
-.sub{color:#555;font-size:.85rem;margin-bottom:1.8rem}
-.row{display:flex;gap:1.2rem;flex-wrap:wrap}
-.col{flex:1;min-width:270px}
-.card{background:#161616;border:1px solid #252525;border-radius:12px;padding:1.3rem;margin-bottom:1.2rem}
-h2{color:#888;font-size:.8rem;text-transform:uppercase;letter-spacing:.07em;margin-bottom:.9rem}
-video{width:100%;border-radius:8px;background:#000;display:block;max-height:240px;object-fit:cover}
-label{color:#666;font-size:.78rem;display:block;margin-top:.6rem;margin-bottom:.2rem}
-select,input[type=number],input[type=email]{background:#1e1e1e;border:1px solid #2e2e2e;border-radius:6px;padding:.38rem .6rem;color:#ccc;font-size:.85rem}
-button{background:#00ff88;color:#000;border:none;border-radius:8px;padding:.5rem 1.2rem;font-size:.88rem;font-weight:700;cursor:pointer;margin-right:.4rem;margin-top:.5rem}
-button:hover{background:#00d977}
-button:disabled{background:#252525;color:#555;cursor:not-allowed}
-button.stop{background:#d93333;color:#fff}
-button.stop:hover{background:#b52828}
-button.ghost{background:#252525;color:#aaa}
-button.ghost:hover{background:#2e2e2e}
-.big{font-size:2.6rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
-.green{color:#00ff88}.white{color:#e0e0e0}
-.lbl{color:#555;font-size:.7rem;margin-bottom:.2rem}
-.conf-t{background:#1e1e1e;border-radius:5px;height:9px;margin-top:.25rem}
-.conf-f{height:9px;border-radius:5px;transition:width .2s;background:linear-gradient(90deg,#f44,#ff0,#0f0)}
-canvas{display:block;border-radius:8px}
-#dial{background:#0a0a0a}
-#mini{background:#0a0a0a;width:100%;height:120px}
-#log-box{font-family:monospace;font-size:.75rem;background:#0a0a0a;border-radius:8px;padding:.7rem;height:100px;overflow-y:auto;border:1px solid #1a1a1a;line-height:1.6}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0;
+       min-height: 100vh; padding: 2rem 1.5rem; max-width: 960px; margin: 0 auto; }
+nav { margin-bottom: 1.5rem; }
+nav a { color: #00ffb4; margin-right: 1.5rem; font-size: 0.9rem; text-decoration: none; }
+nav a:hover { text-decoration: underline; }
+h1 { color: #00ffb4; font-size: 1.7rem; margin-bottom: 0.3rem; }
+.subtitle { color: #555; margin-bottom: 2rem; font-size: 0.9rem; }
+
+/* ── Layout: two columns on wide screens ─────────────────────────── */
+.row { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+.col  { flex: 1; min-width: 280px; }
+
+.card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px;
+        padding: 1.5rem; margin-bottom: 1.5rem; }
+h2 { color: #aaa; font-size: 0.85rem; text-transform: uppercase;
+     letter-spacing: .06em; margin-bottom: 1rem; }
+
+/* ── Camera feed ─────────────────────────────────────────────────── */
+video { width: 100%; border-radius: 8px; background: #000; display: block;
+        max-height: 260px; object-fit: cover; }
+
+/* ── Controls ────────────────────────────────────────────────────── */
+.ctrl-row { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap;
+            margin-top: 1rem; }
+select, input[type=number] { background: #222; color: #ccc;
+  border: 1px solid #333; border-radius: 6px; padding: .4rem .6rem; }
+label.lbl { color: #666; font-size: .82rem; }
+button { background: #00ffb4; color: #000; border: none; border-radius: 8px;
+         padding: .55rem 1.3rem; font-size: .9rem; font-weight: 700; cursor: pointer; }
+button:hover { background: #00d99a; }
+button:disabled { background: #2a2a2a; color: #555; cursor: not-allowed; }
+button.stop { background: #e33; color: #fff; }
+button.stop:hover { background: #c22; }
+
+/* ── Big metrics ─────────────────────────────────────────────────── */
+.big { font-size: 2.8rem; font-weight: 700; font-variant-numeric: tabular-nums;
+       line-height: 1; }
+.big-green  { color: #00ffb4; }
+.big-white  { color: #e0e0e0; }
+.metric-row { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+.metric     { flex: 1; min-width: 110px; }
+.lbl-sm     { color: #555; font-size: .72rem; margin-bottom: .25rem; }
+
+/* ── Confidence bar ──────────────────────────────────────────────── */
+.conf-track { background: #222; border-radius: 6px; height: 10px; margin-top: .3rem; }
+.conf-fill  { height: 10px; border-radius: 6px; transition: width .2s;
+              background: linear-gradient(90deg,#f44 0%,#ff0 50%,#0f0 100%); }
+
+/* ── Dial canvas ─────────────────────────────────────────────────── */
+canvas#dial { display: block; border-radius: 8px; }
+
+/* ── Mini chart ──────────────────────────────────────────────────── */
+canvas#minichart { display: block; border-radius: 8px; background: #111;
+                   width: 100%; height: 130px; }
+
+/* ── Log ─────────────────────────────────────────────────────────── */
+#log { font-family: monospace; font-size: .77rem; background: #111;
+       border-radius: 8px; padding: .8rem; height: 110px; overflow-y: auto;
+       border: 1px solid #1e1e1e; line-height: 1.6; }
 </style>
 </head>
 <body>
-<nav><a href="/">Upload</a><a href="/stream-test">Live stream</a><a href="/docs" target="_blank">API docs</a></nav>
-<h1>Wheel Tracker 3&#8212; Live Stream</h1>
-<p class="sub">Push camera frames via WebSocket &#8212; get rotation data in real-time</p>
+
+<nav>
+  <a href="/">Upload test</a>
+  <a href="/stream-test">Stream test</a>
+  <a href="/docs" target="_blank">API docs</a>
+</nav>
+
+<h1>Wheel Tracker &#8212; Live Stream</h1>
+<p class="subtitle">Connect a camera, push frames via WebSocket, see rotation in real-time</p>
 
 <div class="row">
+  <!-- Left column: camera + controls -->
   <div class="col">
     <div class="card">
       <h2>Camera</h2>
       <video id="cam" autoplay muted playsinline></video>
-      <label>Camera <select id="cam-sel" onchange="switchCam()"></select></label>
-      <label>Direction
-        <select id="dir"><option value="auto">Auto</option><option value="cw">CW</option><option value="ccw">CCW</option><option value="cw+ccw">CW+CCW</option><option value="ccw+cw">CCW+CW</option></select>
-      </label>
-      <label>Medium <select id="med"><option value="air">Air</option><option value="water">Water</option></select></label>
-      <label>Info level <select id="info"><option value="basic">Basic</option><option value="full">Full</option></select></label>
-      <label>Email <input type="email" id="email" placeholder="user@example.com" style="width:100%"></label>
-      <label>FPS to server <input type="number" id="fps" value="15" min="1" max="30" style="width:70px"></label>
-      <div>
-        <button id="btn-go" onclick="start()">Start</button>
-        <button class="stop" id="btn-stop" onclick="stop()" disabled>Stop</button>
-        <button class="ghost" onclick="resetZero()">Reset 0&deg;</button>
+      <div class="ctrl-row">
+        <div>
+          <div class="lbl-sm">Camera</div>
+          <select id="cam-select" onchange="changeCamera()"></select>
+        </div>
+        <div>
+          <div class="lbl-sm">FPS</div>
+          <input type="number" id="fps-input" value="15" min="1" max="30" style="width:60px">
+        </div>
+      </div>
+      <div class="ctrl-row">
+        <button id="btn-start" onclick="startStream()">Start stream</button>
+        <button id="btn-stop" class="stop" onclick="stopStream()" disabled>Stop</button>
+        <button onclick="resetZero()" class="sec" style="background:#2a2a2a;color:#ccc">Reset 0°</button>
       </div>
     </div>
-    <div class="card"><h2>Log</h2><div id="log-box"></div></div>
+
+    <!-- Log -->
+    <div class="card">
+      <h2>Log</h2>
+      <div id="log"></div>
+    </div>
   </div>
 
+  <!-- Right column: readouts + dial -->
   <div class="col">
     <div class="card">
-      <h2>Rotation</h2>
-      <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem">
-        <div><div class="lbl">Current angle</div><div class="big green" id="v-ang">&#8212;</div></div>
-        <div><div class="lbl">Total rotation</div><div class="big white" id="v-cum">+0.0&deg;</div></div>
-      </div>
-      <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:.8rem">
-        <div style="flex:2">
-          <div class="lbl">Significance</div>
-          <div id="v-sig" style="font-size:1.1rem;font-weight:700">&#8212;</div>
-          <div class="conf-t"><div class="conf-f" id="sig-bar" style="width:0%"></div></div>
+      <h2>Real-time rotation</h2>
+
+      <div class="metric-row">
+        <div class="metric">
+          <div class="lbl-sm">Current angle</div>
+          <div class="big big-green" id="val-angle">&#8212;</div>
         </div>
-        <div>
-          <div class="lbl">Angular velocity</div>
-          <div id="v-vel" style="font-size:.95rem;color:#aaa">&#8212;</div>
-        </div>
-        <div>
-          <div class="lbl">Source</div>
-          <div id="v-src" style="font-size:1rem;font-weight:700;color:#ff0">&#8212;</div>
+        <div class="metric">
+          <div class="lbl-sm">Total rotation</div>
+          <div class="big big-white" id="val-cum">+0.0°</div>
         </div>
       </div>
+
+      <div class="metric-row">
+        <div class="metric">
+          <div class="lbl-sm">Confidence</div>
+          <div id="val-conf" style="font-size:1.1rem;font-weight:700">&#8212;</div>
+          <div class="conf-track"><div class="conf-fill" id="conf-fill" style="width:0%"></div></div>
+        </div>
+        <div class="metric">
+          <div class="lbl-sm">Source</div>
+          <div id="val-src" style="font-size:1.1rem;font-weight:700;color:#ff0">&#8212;</div>
+        </div>
+        <div class="metric">
+          <div class="lbl-sm">Frame</div>
+          <div id="val-frame" style="font-size:.9rem;color:#666">&#8212;</div>
+        </div>
+      </div>
+
+      <!-- Rotation dial -->
       <canvas id="dial" width="150" height="150"></canvas>
     </div>
-    <div class="card"><h2>Live chart</h2><canvas id="mini"></canvas></div>
+
+    <!-- Mini live chart -->
+    <div class="card">
+      <h2>Cumulative rotation (live)</h2>
+      <canvas id="minichart"></canvas>
+    </div>
   </div>
 </div>
 
 <script>
-let ws=null,camStream=null,loop=null,hist=[];
-const HMAX=120;
+/* ── State ──────────────────────────────────────────────────────────── */
+let ws       = null;
+let camStream = null;
+let sendLoop = null;
+const HISTORY = 120;         // number of points to show on mini chart
+let chartData = [];          // {t, cum, conf}
 
-async function listCams(){
-  let tempStream = null;
-
-  try{
-    // 1. Получаем доступ к камере (чтобы появились label)
-    tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
-
-    // 2. Получаем список устройств
+/* ── Camera enumerate ───────────────────────────────────────────────── */
+async function listCameras() {
+  try {
+    // Request permission first so labels are visible
+    await navigator.mediaDevices.getUserMedia({ video: true });
     const devs = await navigator.mediaDevices.enumerateDevices();
-    const sel = document.getElementById('cam-sel');
+    const sel  = document.getElementById('cam-select');
     sel.innerHTML = '';
-
-    let foundBackCam = false;
-
-    devs
-      .filter(d => d.kind === 'videoinput')
-      .forEach((d, i) => {
-        const o = document.createElement('option');
-        o.value = d.deviceId;
-
-        const label = (d.label || '').toLowerCase();
-        o.text = d.label || 'Camera ' + (i + 1);
-
-        // безопасная проверка label
-        if (
-          label.includes('back') ||
-          label.includes('rear') ||
-          label.includes('environment')
-        ){
-          o.selected = true;
-          foundBackCam = true;
-        }
-
-        sel.appendChild(o);
-      });
-
-    // 3. Если заднюю не нашли — выбираем первую
-    if (!foundBackCam && sel.options.length > 0) {
-      sel.selectedIndex = 0;
-    }
-
-  }catch(e){
-    console.error(e);
-    addLog('Camera error: ' + e.name + ' - ' + e.message);
-  }finally{
-    // 4. Обязательно освобождаем камеру
-    if (tempStream) {
-      tempStream.getTracks().forEach(t => t.stop());
-    }
-  }
-
-  // 5. Переключаемся на выбранную камеру
-  try{
-    await switchCam();
-  }catch(e){
-    addLog('SwitchCam error: ' + e.message);
+    devs.filter(d => d.kind === 'videoinput').forEach((d, i) => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.text  = d.label || 'Camera ' + (i+1);
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    addLog('Camera permission denied');
   }
 }
-listCams();
+listCameras();
 
-async function switchCam(){
-  if(camStream){
-    camStream.getTracks().forEach(t=>t.stop());
-  }
-
-  const id = document.getElementById('cam-sel').value;
-
-  try{
+async function changeCamera() {
+  if (camStream) {
+    camStream.getTracks().forEach(t => t.stop());
+    const sel = document.getElementById('cam-select');
     camStream = await navigator.mediaDevices.getUserMedia({
-      video: { deviceId: { exact: id } }
+      video: { deviceId: sel.value }
     });
-
-    document.getElementById('cam').srcObject = camStream;
-  }catch(e){
-    addLog('Camera switch failed, fallback to environment');
-
-    // fallback на заднюю камеру
-    camStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment" }
-    });
-
     document.getElementById('cam').srcObject = camStream;
   }
 }
 
-function addLog(m){const e=document.getElementById('log-box');e.innerHTML+='<div>'+new Date().toLocaleTimeString()+' &#8212; '+m+'</div>';e.scrollTop=e.scrollHeight}
-
-function sigCol(p){return p>=80?'#00ff88':p>=50?'#ff0':'#f44'}
-
-function drawDial(ang,sig){
-  const c=document.getElementById('dial'),ctx=c.getContext('2d'),cx=75,cy=75,r=60;
-  ctx.clearRect(0,0,150,150);
-  ctx.fillStyle='#0a0a0a';ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();
-  ctx.strokeStyle='#252525';ctx.lineWidth=2;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.stroke();
-  if(sig!=null){ctx.beginPath();ctx.arc(cx,cy,r-4,-Math.PI/2,-Math.PI/2+(sig/100)*Math.PI*2);ctx.strokeStyle=sigCol(sig);ctx.lineWidth=5;ctx.lineCap='round';ctx.stroke()}
-  ctx.strokeStyle='#333';ctx.lineWidth=2;ctx.lineCap='butt';ctx.beginPath();ctx.moveTo(cx,cy-r+6);ctx.lineTo(cx,cy-r+13);ctx.stroke();
-  if(ang!=null){const rad=(ang-90)*Math.PI/180;ctx.strokeStyle=sigCol(sig||0);ctx.lineWidth=2.5;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(cx-7*Math.cos(rad),cy-7*Math.sin(rad));ctx.lineTo(cx+(r-16)*Math.cos(rad),cy+(r-16)*Math.sin(rad));ctx.stroke()}
-  ctx.fillStyle=sigCol(sig||0);ctx.beginPath();ctx.arc(cx,cy,4,0,Math.PI*2);ctx.fill();
+/* ── Log helper ─────────────────────────────────────────────────────── */
+function addLog(msg) {
+  const el = document.getElementById('log');
+  const ts = new Date().toLocaleTimeString();
+  el.innerHTML += `<div>${ts} &#8212; ${msg}</div>`;
+  el.scrollTop  = el.scrollHeight;
 }
-drawDial(null,null);
 
-function drawMini(){
-  const c=document.getElementById('mini');
-  c.width=c.offsetWidth||400;c.height=120;
-  const ctx=c.getContext('2d'),W=c.width,H=c.height;
-  ctx.fillStyle='#0a0a0a';ctx.fillRect(0,0,W,H);
-  if(hist.length<2)return;
-  const pad={l:38,r:8,t:8,b:16},cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
-  const cs=hist.map(d=>d.c),vMin=Math.min(...cs,0),vMax=Math.max(...cs,1),vR=vMax-vMin||1;
-  [0,.5,1].forEach(f=>{const y=pad.t+f*cH,v=vMax-f*vR;ctx.strokeStyle='#1a1a1a';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();ctx.fillStyle='#444';ctx.font='9px system-ui';ctx.fillText(v.toFixed(0)+'°',2,y+3)});
-  ctx.strokeStyle='#00ff88';ctx.lineWidth=1.5;ctx.beginPath();
-  hist.forEach((d,i)=>{const x=pad.l+i/(hist.length-1)*cW,y=pad.t+(1-(d.c-vMin)/vR)*cH;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});
+/* ── Dial drawing ───────────────────────────────────────────────────── */
+function drawDial(angleDeg, conf) {
+  const c   = document.getElementById('dial');
+  const ctx = c.getContext('2d');
+  const cx = 75, cy = 75, r = 62;
+
+  ctx.clearRect(0, 0, 150, 150);
+
+  /* Outer track */
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2);
+  ctx.fillStyle = '#111'; ctx.fill();
+  ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 2; ctx.stroke();
+
+  /* Confidence arc (background) */
+  if (conf != null) {
+    const arcEnd = -Math.PI/2 + (conf/100) * Math.PI*2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r-5, -Math.PI/2, arcEnd);
+    ctx.strokeStyle = conf >= 80 ? '#00ffb4' : conf >= 50 ? '#ff0' : '#f44';
+    ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.stroke();
+  }
+
+  /* Tick at 12 o'clock */
+  ctx.strokeStyle = '#444'; ctx.lineWidth = 2; ctx.lineCap = 'butt';
+  ctx.beginPath(); ctx.moveTo(cx, cy-r+8); ctx.lineTo(cx, cy-r+16); ctx.stroke();
+
+  /* Needle */
+  if (angleDeg != null) {
+    const rad = (angleDeg - 90) * Math.PI / 180;
+    ctx.strokeStyle = '#00ffb4'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx - 8*Math.cos(rad), cy - 8*Math.sin(rad));
+    ctx.lineTo(cx + (r-18)*Math.cos(rad), cy + (r-18)*Math.sin(rad));
+    ctx.stroke();
+  }
+
+  /* Center dot */
+  ctx.fillStyle = '#00ffb4';
+  ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI*2); ctx.fill();
+}
+drawDial(null, null);
+
+/* ── Mini chart ─────────────────────────────────────────────────────── */
+function drawMiniChart() {
+  const canvas = document.getElementById('minichart');
+  canvas.width  = canvas.offsetWidth  || 400;
+  canvas.height = canvas.offsetHeight || 130;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  ctx.fillStyle = '#111'; ctx.fillRect(0, 0, W, H);
+  if (chartData.length < 2) return;
+
+  const pad = { l:40, r:8, t:10, b:18 };
+  const cW  = W - pad.l - pad.r;
+  const cH  = H - pad.t - pad.b;
+  const cums = chartData.map(d => d.cum);
+  const vMin = Math.min(...cums, 0), vMax = Math.max(...cums, 1);
+  const vR   = vMax - vMin || 1;
+
+  /* Grid */
+  ctx.strokeStyle = '#1e1e1e'; ctx.lineWidth = 1;
+  [0, .5, 1].forEach(f => {
+    const y = pad.t + f * cH;
+    const v = vMax - f * vR;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W-pad.r, y); ctx.stroke();
+    ctx.fillStyle = '#444'; ctx.font = '9px system-ui';
+    ctx.fillText(v.toFixed(0)+'°', 2, y+3);
+  });
+
+  /* Line */
+  ctx.strokeStyle = '#00ffb4'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  chartData.forEach((d, i) => {
+    const x = pad.l + i/(chartData.length-1)*cW;
+    const y = pad.t + (1-(d.cum-vMin)/vR)*cH;
+    i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+  });
   ctx.stroke();
 }
 
-function update(d){
-  const a=d.rotation_deg,c=d.cumulative_deg,s=d.confidence_pct;
-  document.getElementById('v-ang').innerHTML=a!=null?a.toFixed(1)+'&deg;':'&#8212;';
-  document.getElementById('v-cum').innerHTML=(c>=0?'+':'')+c.toFixed(1)+'&deg;';
-  document.getElementById('v-sig').textContent=s+'%';
-  document.getElementById('sig-bar').style.width=s+'%';
-  if(d.angular_vel_dps!=null)document.getElementById('v-vel').textContent=d.angular_vel_dps.toFixed(1)+' deg/s  '+d.angular_vel_rps.toFixed(4)+' rad/s';
-  document.getElementById('v-src').textContent=d.source||'&#8212;';
-  drawDial(a,s);
-  hist.push({c:c,s:s});if(hist.length>HMAX)hist.shift();
-  drawMini();
-}
+/* ── WebSocket stream ───────────────────────────────────────────────── */
+async function startStream() {
+  const sel = document.getElementById('cam-select');
+  const fps = +document.getElementById('fps-input').value || 15;
 
-async function start(){
- const constraints = [
-  { video: { facingMode: { exact: "environment" } } },
-  { video: { facingMode: "environment" } },
-  { video: true }
-];
-  let ok=false;
-  for(const con of constraints){
-    try{camStream=await navigator.mediaDevices.getUserMedia(con);ok=true;addLog('Camera: '+JSON.stringify(con.video));break}
-    catch(e){addLog('Tried '+JSON.stringify(con.video)+' > '+e.message)}
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: sel.value || undefined, width: 640, height: 480 }
+    });
+    document.getElementById('cam').srcObject = camStream;
+
+    const API_WS = 'ws://34.60.124.57:8000';
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`ws://34.60.124.57:8000/stream`);
+    ws.onopen  = () => addLog('WebSocket connected');
+    ws.onclose = () => addLog('WebSocket closed');
+    ws.onerror = () => addLog('WebSocket error');
+
+    ws.onmessage = (event) => {
+      const d = JSON.parse(event.data);
+      if (d.error) { addLog('Server: ' + d.error); return; }
+      updateDisplay(d);
+    };
+
+    /* Send frames at requested fps */
+    const canvas = document.createElement('canvas');
+    const video  = document.getElementById('cam');
+    sendLoop = setInterval(() => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      canvas.width  = video.videoWidth  || 640;
+      canvas.height = video.videoHeight || 480;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      canvas.toBlob(blob => blob.arrayBuffer().then(b => ws.send(b)),
+                    'image/jpeg', 0.82);
+    }, 1000 / fps);
+
+    document.getElementById('btn-start').disabled = true;
+    document.getElementById('btn-stop').disabled  = false;
+    addLog(`Streaming at ${fps} fps`);
+
+  } catch (e) {
+    addLog('Error: ' + e.message);
   }
-  if(!ok){addLog('No camera available');return}
-  document.getElementById('cam').srcObject=camStream;
-
-  const fps=+document.getElementById('fps').value||15;
-  const dir=document.getElementById('dir').value;
-  const med=document.getElementById('med').value;
-  const inf=document.getElementById('info').value;
-  const em=encodeURIComponent(document.getElementById('email').value);
-  const proto=location.protocol==='https:'?'wss':'ws';
-  const url=`${proto}://${location.host}/stream?direction=${dir}&medium=${med}&info_level=${inf}&email=${em}`;
-
-  ws=new WebSocket(url);
-  ws.onopen=()=>addLog('Connected');
-  ws.onclose=()=>addLog('Disconnected');
-  ws.onerror=()=>addLog('WS error');
-  ws.onmessage=e=>{try{update(JSON.parse(e.data))}catch(x){}};
-
-  const canvas=document.createElement('canvas'),video=document.getElementById('cam');
-  loop=setInterval(()=>{
-    if(!ws||ws.readyState!==1)return;
-    canvas.width=video.videoWidth||640;canvas.height=video.videoHeight||480;
-    canvas.getContext('2d').drawImage(video,0,0);
-    canvas.toBlob(b=>b.arrayBuffer().then(buf=>ws.send(buf)),'image/jpeg',.82);
-  },1000/fps);
-
-  document.getElementById('btn-go').disabled=true;
-  document.getElementById('btn-stop').disabled=false;
-  addLog('Streaming at '+fps+' fps');
 }
 
-function stop(){
-  if(loop)clearInterval(loop);if(ws)ws.close();if(camStream)camStream.getTracks().forEach(t=>t.stop());
-  ws=camStream=loop=null;
-  document.getElementById('btn-go').disabled=false;
-  document.getElementById('btn-stop').disabled=true;
-  addLog('Stopped');
+function stopStream() {
+  if (sendLoop)   clearInterval(sendLoop);
+  if (ws)         ws.close();
+  if (camStream)  camStream.getTracks().forEach(t => t.stop());
+  ws = camStream = sendLoop = null;
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-stop').disabled  = true;
+  addLog('Stream stopped');
 }
 
-function resetZero(){if(ws&&ws.readyState===1){stop();setTimeout(start,400);addLog('Zero reset')}}
+function resetZero() {
+  /* Tell server to reset zero by disconnecting + reconnecting
+     The server resets zero_offset = None on each new connection */
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    stopStream();
+    setTimeout(startStream, 300);
+    addLog('Zero reset &#8212; reconnecting...');
+  }
+}
+
+/* ── Update display from WS message ─────────────────────────────────── */
+function updateDisplay(d) {
+  const angle = d.rotation_deg;
+  const cum   = d.cumulative_deg;
+  const conf  = d.confidence_pct;
+
+  document.getElementById('val-angle').textContent =
+    angle != null ? angle.toFixed(1) + '°' : '&#8212;';
+  document.getElementById('val-cum').textContent =
+    (cum >= 0 ? '+' : '') + cum.toFixed(1) + '°';
+  document.getElementById('val-conf').textContent = conf + '%';
+  document.getElementById('conf-fill').style.width = conf + '%';
+  document.getElementById('val-src').textContent   = d.source || '&#8212;';
+  document.getElementById('val-frame').textContent  =
+    '#' + d.frame + (d.scale_mm_px ? '  ' + d.scale_mm_px.toFixed(4) + ' mm/px' : '');
+
+  drawDial(angle, conf);
+
+  /* Mini chart history */
+  chartData.push({ cum: cum, conf: conf });
+  if (chartData.length > HISTORY) chartData.shift();
+  drawMiniChart();
+}
 </script>
 </body>
 </html>

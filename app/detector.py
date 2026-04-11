@@ -34,6 +34,7 @@ from app.database import make_sample, persist_samples
 
 log = logging.getLogger(__name__)
 
+
 # ── Feature flags ──────────────────────────────────────────────────────────
 USE_YOLO          = True
 USE_PAIR_FALLBACK = False
