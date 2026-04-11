@@ -1,13 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Wheel Tracker &#8212; Upload</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,sans-serif;background:#0d0d0d;color:#e0e0e0;padding:1.5rem;max-width:980px;margin:0 auto}
+body{font-family:system-ui,sans-serif;background:#0d0d0d;color:#e0e0e0;padding:1.5rem;max-width:1100px;margin:0 auto}
 nav{margin-bottom:1.5rem}
 nav a{color:#00ff88;margin-right:1.5rem;font-size:.9rem;text-decoration:none}
 nav a:hover{text-decoration:underline}
@@ -25,47 +24,42 @@ button:hover{background:#00d977}
 button:disabled{background:#252525;color:#555;cursor:not-allowed}
 button.sec{background:#252525;color:#aaa}
 button.sec:hover{background:#2e2e2e}
-pre#log{font-family:monospace;font-size:.77rem;background:#0a0a0a;border-radius:8px;padding:.8rem;min-height:40px;border:1px solid #1e1e1e;white-space:pre-wrap;max-height:160px;overflow-y:auto;line-height:1.7}
-
-/* Progress */
+pre#log{font-family:monospace;font-size:.75rem;background:#0a0a0a;border-radius:8px;padding:.7rem;min-height:36px;border:1px solid #1e1e1e;white-space:pre-wrap;max-height:100px;overflow-y:auto;line-height:1.7;margin-top:.6rem}
 .prog-wrap{background:#1e1e1e;border-radius:5px;height:10px;margin:.4rem 0 .3rem;overflow:hidden}
-.prog-fill{height:10px;border-radius:5px;width:0%;transition:width .3s ease}
+.prog-fill{height:10px;border-radius:5px;width:0%;transition:width .25s}
 .prog-fill.uploading {background:linear-gradient(90deg,#0088ff,#00ccff)}
 .prog-fill.processing{background:linear-gradient(90deg,#ff8800,#ffcc00)}
 .prog-fill.done      {background:#00ff88}
 .prog-fill.error     {background:#f44}
-.prog-label{font-size:.78rem;color:#888;margin-bottom:.3rem;min-height:1.3em}
-
-/* Live detection panel */
-#live-panel{display:none;margin-top:.8rem}
-.live-grid{display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.6rem}
-.live-box{background:#0f0f0f;border:1px solid #222;border-radius:8px;padding:.5rem .8rem;text-align:center;flex:1;min-width:90px}
-.live-box .lv{font-size:1.4rem;font-weight:700;color:#00ff88;font-variant-numeric:tabular-nums}
+.prog-label{font-size:.78rem;color:#888;min-height:1.3em;margin-bottom:.25rem}
+.proc-layout{display:none;gap:1rem;flex-wrap:wrap;margin-top:.8rem}
+.proc-left{flex:1.4;min-width:280px}
+.proc-right{flex:1;min-width:220px;display:flex;flex-direction:column;gap:.5rem}
+.canvas-wrap{position:relative;background:#000;border-radius:8px;overflow:hidden;line-height:0}
+.canvas-wrap video{width:100%;display:block;border-radius:8px}
+.canvas-wrap canvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+#vid-placeholder{width:100%;aspect-ratio:16/9;background:#0a0a0a;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;color:#333;font-size:.85rem}
+.live-box{background:#0f0f0f;border:1px solid #222;border-radius:8px;padding:.6rem .9rem;text-align:center}
+.live-box .lv{font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums;color:#00ff88}
 .live-box .ll{font-size:.65rem;color:#555;margin-top:.1rem}
-.live-box.orange .lv{color:#ff8800}
-.live-box.blue   .lv{color:#44aaff}
-.live-box.yellow .lv{color:#ffcc00}
-
-/* Frame progress bar */
-.frame-bar-wrap{background:#1e1e1e;border-radius:3px;height:5px;margin:.3rem 0}
-.frame-bar-fill{height:5px;border-radius:3px;background:#ff8800;width:0%;transition:width .15s}
-
-/* Results */
+.live-box.ora .lv{color:#ff8800}
+.live-box.vel .lv{color:#44aaff}
+.live-box.sig .lv{color:#ffcc00}
+.live-time{font-size:.72rem;color:#555;text-align:center;margin-top:.3rem}
 .metrics{display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1rem}
-.met{background:#0f0f0f;border:1px solid #222;border-radius:8px;padding:.65rem 1rem;text-align:center;min-width:110px;flex:1}
-.met .v{font-size:1.7rem;font-weight:700;color:#00ff88;display:block;font-variant-numeric:tabular-nums}
+.met{background:#0f0f0f;border:1px solid #222;border-radius:8px;padding:.65rem 1rem;text-align:center;min-width:100px;flex:1}
+.met .v{font-size:1.6rem;font-weight:700;color:#00ff88;display:block;font-variant-numeric:tabular-nums}
 .met .l{font-size:.7rem;color:#555;margin-top:.15rem}
 canvas#chart{display:block;border-radius:8px;background:#0a0a0a;width:100%;height:200px}
-.acts{margin:.8rem 0}
-.acts a{text-decoration:none}
-.tbl-wrap{max-height:260px;overflow-y:auto;margin-top:.8rem}
+.acts{margin:.8rem 0}.acts a{text-decoration:none}
+.tbl-wrap{max-height:240px;overflow-y:auto;margin-top:.8rem}
 table{width:100%;border-collapse:collapse;font-size:.78rem}
 th{color:#555;text-align:left;padding:.3rem .55rem;border-bottom:1px solid #1e1e1e;position:sticky;top:0;background:#161616}
 td{padding:.28rem .55rem;border-bottom:1px solid #181818}
 tr:hover td{background:#1a1a1a}
 .tag{display:inline-block;padding:.1rem .4rem;border-radius:4px;font-size:.7rem;font-weight:700}
-.ty{background:#332;color:#ff0}.tr{background:#322;color:#f44}.tn{background:#1e1e1e;color:#555}
-.tg{background:#133;color:#0f0}
+.tg{background:#133;color:#0f0}.tn{background:#1e1e1e;color:#555}
 .cb{display:inline-block;height:6px;border-radius:3px;vertical-align:middle;background:linear-gradient(90deg,#f44,#ff0,#0f0)}
 </style>
 </head>
@@ -82,45 +76,25 @@ tr:hover td{background:#1a1a1a}
   <h2>Video + parameters</h2>
   <input type="file" id="fi" accept="video/*" onchange="onFileChange()">
   <div id="file-info" style="font-size:.78rem;color:#555;margin-bottom:.3rem"></div>
-
   <div class="row">
-    <div>
-      <label>User email</label>
-      <input type="email" id="email" placeholder="user@example.com">
-    </div>
-    <div>
-      <label>Direction</label>
+    <div><label>User email</label><input type="email" id="email" placeholder="user@example.com"></div>
+    <div><label>Direction</label>
       <select id="dir">
-        <option value="auto">Auto-detect</option>
-        <option value="cw">Clockwise</option>
-        <option value="ccw">Counter-clockwise</option>
-        <option value="cw+ccw">CW then CCW</option>
-        <option value="ccw+cw">CCW then CW</option>
+        <option value="auto">Auto-detect</option><option value="cw">Clockwise</option>
+        <option value="ccw">Counter-clockwise</option><option value="cw+ccw">CW+CCW</option>
+        <option value="ccw+cw">CCW+CW</option>
       </select>
     </div>
-    <div>
-      <label>Medium</label>
-      <select id="med">
-        <option value="air">Air</option>
-        <option value="water">Water</option>
-      </select>
+    <div><label>Medium</label>
+      <select id="med"><option value="air">Air</option><option value="water">Water</option></select>
     </div>
-    <div>
-      <label>Hand visible</label>
-      <select id="hand">
-        <option value="false">No hand</option>
-        <option value="true">Hand visible</option>
-      </select>
+    <div><label>Hand visible</label>
+      <select id="hand"><option value="false">No hand</option><option value="true">Hand visible</option></select>
     </div>
-    <div>
-      <label>Info level</label>
-      <select id="info">
-        <option value="basic">Basic (time + deg)</option>
-        <option value="full">Full (+ rad + velocity)</option>
-      </select>
+    <div><label>Info level</label>
+      <select id="info"><option value="basic">Basic</option><option value="full">Full</option></select>
     </div>
   </div>
-
   <button onclick="go()" id="btn">Upload &amp; Process</button>
   <button class="sec" onclick="resetAll()">Clear</button>
 </div>
@@ -130,31 +104,34 @@ tr:hover td{background:#1a1a1a}
   <div class="prog-label" id="prog-label">Waiting...</div>
   <div class="prog-wrap"><div class="prog-fill" id="prog"></div></div>
 
-  <!-- Live detection data panel -->
-  <div id="live-panel">
-    <div class="frame-bar-wrap"><div class="frame-bar-fill" id="frame-bar"></div></div>
-    <div id="frame-label" style="font-size:.7rem;color:#555;margin-bottom:.5rem"></div>
-    <div class="live-grid">
+  <div class="proc-layout" id="proc-layout">
+    <div class="proc-left">
+      <div class="canvas-wrap" id="canvas-wrap">
+        <div id="vid-placeholder">Waiting for video...</div>
+        <video id="vid" muted playsinline style="display:none"></video>
+        <canvas id="overlay"></canvas>
+      </div>
+      <div class="live-time" id="live-time">—</div>
+    </div>
+
+    <div class="proc-right">
       <div class="live-box">
         <div class="lv" id="lv-ang">---</div>
         <div class="ll">Current angle</div>
       </div>
-      <div class="live-box orange">
+      <div class="live-box ora">
         <div class="lv" id="lv-cum">+0.0°</div>
         <div class="ll">Total rotation</div>
       </div>
-      <div class="live-box blue">
+      <div class="live-box vel">
         <div class="lv" id="lv-vel">---</div>
-        <div class="ll">Velocity deg/s</div>
+        <div class="ll">Velocity °/s</div>
       </div>
-      <div class="live-box yellow">
+      <div class="live-box sig">
         <div class="lv" id="lv-conf">0%</div>
         <div class="ll">Significance</div>
       </div>
-      <div class="live-box">
-        <div class="lv" id="lv-src" style="font-size:.9rem">---</div>
-        <div class="ll">Hub source</div>
-      </div>
+      <div style="font-size:.7rem;color:#555;text-align:center" id="lv-src"></div>
     </div>
   </div>
 
@@ -179,42 +156,43 @@ tr:hover td{background:#1a1a1a}
 </div>
 
 <script>
-let jid=null, statusTimer=null, progressTimer=null;
+let jid=null, statusTimer=null, sse=null, vidFile=null;
+let vidW=1, vidH=1, totalSec=0;
 
 function onFileChange(){
   const f=document.getElementById('fi').files[0];
   if(!f) return;
-  const mb=(f.size/1024/1024).toFixed(1);
-  document.getElementById('file-info').textContent=f.name+' — '+mb+' MB';
+  vidFile=f;
+  document.getElementById('file-info').textContent=
+    f.name+' — '+(f.size/1024/1024).toFixed(1)+' MB';
 }
 
 function addLog(m){
   const e=document.getElementById('log');
-  e.textContent+=m+'\n';
-  e.scrollTop=e.scrollHeight;
+  e.textContent+=m+'\n'; e.scrollTop=e.scrollHeight;
 }
-
-function setProg(p, phase='processing'){
-  const el=document.getElementById('prog');
-  el.style.width=Math.min(100,Math.max(0,p))+'%';
-  el.className='prog-fill '+phase;
+function setProg(p,ph='processing'){
+  document.getElementById('prog').style.width=Math.min(100,Math.max(0,p))+'%';
+  document.getElementById('prog').className='prog-fill '+ph;
 }
-
-function setLabel(txt){
-  document.getElementById('prog-label').textContent=txt;
-}
+function setLabel(t){ document.getElementById('prog-label').textContent=t; }
 
 function resetAll(){
-  if(statusTimer)   clearInterval(statusTimer);
-  if(progressTimer) clearInterval(progressTimer);
-  statusTimer=progressTimer=jid=null;
+  if(statusTimer) clearInterval(statusTimer);
+  if(sse){ sse.close(); sse=null; }
+  statusTimer=jid=null;
+  vidW=1; vidH=1; totalSec=0;
   document.getElementById('log').textContent='';
   document.getElementById('res').style.display='none';
-  document.getElementById('live-panel').style.display='none';
+  document.getElementById('proc-layout').style.display='none';
+  const vid=document.getElementById('vid');
+  vid.pause(); vid.src=''; vid.style.display='none';
+  document.getElementById('vid-placeholder').style.display='flex';
+  const cvs=document.getElementById('overlay');
+  cvs.getContext('2d').clearRect(0,0,cvs.width,cvs.height);
   setProg(0); setLabel('Waiting...');
   document.getElementById('btn').disabled=false;
   document.getElementById('file-info').textContent='';
-  document.getElementById('frame-bar').style.width='0%';
 }
 
 function go(){
@@ -233,27 +211,24 @@ function go(){
 
   const xhr=new XMLHttpRequest();
 
-  // Upload progress
-  xhr.upload.addEventListener('progress', e=>{
+  xhr.upload.addEventListener('progress',e=>{
     if(!e.lengthComputable) return;
     const pct=Math.round(e.loaded/e.total*100);
-    const done=(e.loaded/1024/1024).toFixed(1);
-    const total=(e.total/1024/1024).toFixed(1);
     setProg(pct,'uploading');
-    setLabel('Uploading: '+pct+'%  ('+done+' / '+total+' MB)');
+    setLabel('Uploading: '+pct+'%  ('+
+      (e.loaded/1024/1024).toFixed(1)+' / '+
+      (e.total/1024/1024).toFixed(1)+' MB)');
   });
 
-  xhr.upload.addEventListener('load', ()=>{
+  xhr.upload.addEventListener('load',()=>{
     setProg(100,'uploading');
-    setLabel('Upload complete — server processing...');
+    setLabel('Upload complete — waiting for server...');
   });
 
-  xhr.addEventListener('load', ()=>{
+  xhr.addEventListener('load',()=>{
     if(xhr.status!==200){
-      addLog('ERROR: '+xhr.status);
-      setProg(100,'error'); setLabel('Upload failed');
-      document.getElementById('btn').disabled=false;
-      return;
+      addLog('ERROR: '+xhr.status); setProg(100,'error');
+      document.getElementById('btn').disabled=false; return;
     }
     const d=JSON.parse(xhr.responseText);
     jid=d.job_id;
@@ -262,15 +237,12 @@ function go(){
       const vi=d.video_info;
       addLog('Video: '+vi.width+'x'+vi.height+' @ '+vi.fps+'fps  '+vi.duration+'s');
     }
-    setProg(5,'processing');
-    setLabel('Queued...');
-    statusTimer   = setInterval(pollStatus,   2000);
-    progressTimer = setInterval(pollProgress, 500);
+    setProg(5,'processing'); setLabel('Queued...');
+    statusTimer=setInterval(pollStatus,2000);
   });
 
-  xhr.addEventListener('error', ()=>{
-    addLog('Network error');
-    setProg(100,'error'); setLabel('Network error');
+  xhr.addEventListener('error',()=>{
+    addLog('Network error'); setProg(100,'error');
     document.getElementById('btn').disabled=false;
   });
 
@@ -279,80 +251,186 @@ function go(){
   addLog('Uploading '+f.files[0].name+' ...');
 }
 
-// Status polling (every 2s)
-const STAGE_PCT={queued:5, preprocessing:25, processing:40, done:100};
+const STAGE_PCT={queued:5,preprocessing:25,processing:40,done:100};
 const STAGE_LBL={
-  queued:'Queued...',
-  preprocessing:'Preprocessing video...',
-  processing:'Detecting rotation...',
-  done:'Done! ✓',
+  queued:'Queued...',preprocessing:'Preprocessing video...',
+  processing:'Detecting rotation...',done:'Done! ✓',
 };
 
 async function pollStatus(){
   if(!jid) return;
   try{
     const d=await(await fetch('/status/'+jid)).json();
-    const pct=STAGE_PCT[d.status]||30;
-    const lbl=STAGE_LBL[d.status]||d.status;
-    // Only update bar if not in processing (progress poll handles that)
-    if(d.status!=='processing'){
-      setProg(pct,'processing');
-      setLabel(lbl+(d.sample_count?' — '+d.sample_count+' samples':''));
+    if(d.status==='processing' && !sse){
+      startProcessingUI();
     }
-    if(d.status==='processing'){
-      document.getElementById('live-panel').style.display='block';
+    if(d.status!=='processing'){
+      setProg(STAGE_PCT[d.status]||30,'processing');
+      setLabel(STAGE_LBL[d.status]||d.status);
     }
     if(d.status==='done'){
       clearInterval(statusTimer);
-      clearInterval(progressTimer);
+      if(sse){ sse.close(); sse=null; }
       setProg(100,'done'); setLabel('Done! ✓');
       document.getElementById('btn').disabled=false;
       showResults(jid,d);
     } else if(d.status==='error'){
       clearInterval(statusTimer);
-      clearInterval(progressTimer);
+      if(sse){ sse.close(); sse=null; }
       setProg(100,'error'); setLabel('Error: '+(d.detail||'?'));
       addLog('ERROR: '+(d.detail||'?'));
       document.getElementById('btn').disabled=false;
     }
-  }catch(e){addLog('Poll error: '+e.message)}
+  }catch(e){ addLog('Poll error: '+e.message); }
 }
 
-// Progress polling (every 500ms) — live detection data
-async function pollProgress(){
-  if(!jid) return;
-  try{
-    const d=await(await fetch('/progress/'+jid)).json();
-    const p=d.progress||{};
-    if(!p.frame && p.frame!==0) return;
+function startProcessingUI(){
+  document.getElementById('proc-layout').style.display='flex';
 
-    // Frame progress bar (40% to 100% of overall bar during processing)
-    const framePct=p.total>0?Math.round(p.frame/p.total*100):0;
-    const overallPct=40+Math.round(framePct*0.6);
-    setProg(overallPct,'processing');
-    setLabel('Detecting rotation... '+framePct+'%  (frame '+p.frame+' / '+p.total+')');
+  // Load local video — paused, we control currentTime
+  if(vidFile){
+    const vid=document.getElementById('vid');
+    vid.src=URL.createObjectURL(vidFile);
+    vid.style.display='block';
+    vid.pause();
+    document.getElementById('vid-placeholder').style.display='none';
+  }
 
-    // Frame mini bar
-    document.getElementById('frame-bar').style.width=framePct+'%';
-    document.getElementById('frame-label').textContent=
-      'Frame '+p.frame+' / '+p.total+'  ('+framePct+'%)  t='+p.t_sec+'s';
-
-    // Live values
-    const ang=p.rotation_deg;
-    document.getElementById('lv-ang').textContent =
-      ang!=null ? ang.toFixed(1)+'°' : '---';
-    document.getElementById('lv-cum').textContent =
-      (p.cumulative_deg>=0?'+':'')+((p.cumulative_deg)||0).toFixed(1)+'°';
-    document.getElementById('lv-vel').textContent =
-      p.angular_vel_dps!=null ? p.angular_vel_dps.toFixed(1) : '---';
-    document.getElementById('lv-conf').textContent =
-      (p.confidence_pct||0)+'%';
-    document.getElementById('lv-src').textContent =
-      p.hub_source || '---';
-
-  }catch(e){}
+  startSSE(jid);
 }
 
+// ── SSE: on each frame → seek video + draw overlay immediately ─────────────
+function startSSE(job_id){
+  if(sse) sse.close();
+  sse=new EventSource('/frames/'+job_id);
+
+  sse.onmessage=e=>{
+    try{
+      const d=JSON.parse(e.data);
+      if(d.done){ sse.close(); sse=null; return; }
+      if(d.error || d.t_sec===undefined) return;
+
+      // Store dims
+      if(d.vid_w) vidW=d.vid_w;
+      if(d.vid_h) vidH=d.vid_h;
+      if(d.total_sec) totalSec=d.total_sec;
+
+      // ── METHOD 2: seek video to exact detection time ───────────────────
+      const vid=document.getElementById('vid');
+      if(vid.readyState>=2){  // HAVE_CURRENT_DATA
+        vid.currentTime=d.t_sec;
+      }
+
+      // Draw overlay immediately — perfectly in sync
+      drawOverlay(d);
+
+      // Update progress bar
+      const pct=d.pct||0;
+      setProg(40+Math.round(pct*0.6),'processing');
+      setLabel('Detecting... '+pct+'%');
+
+      // Update time label
+      document.getElementById('live-time').textContent=
+        d.t_sec.toFixed(2)+'s  /  '+totalSec.toFixed(1)+'s';
+
+      // Update live numbers
+      document.getElementById('lv-ang').textContent=
+        d.rotation_deg!=null ? d.rotation_deg.toFixed(1)+'°' : '---';
+      document.getElementById('lv-cum').textContent=
+        (d.cumulative_deg>=0?'+':'')+d.cumulative_deg.toFixed(1)+'°';
+      document.getElementById('lv-vel').textContent=
+        d.angular_vel_dps!=null ? d.angular_vel_dps.toFixed(1) : '---';
+      document.getElementById('lv-conf').textContent=(d.confidence_pct||0)+'%';
+      document.getElementById('lv-src').textContent=
+        d.hub_source ? 'hub: '+d.hub_source : '';
+
+    }catch(ex){}
+  };
+
+  sse.onerror=()=>{ if(sse){ sse.close(); sse=null; } };
+}
+
+// ── Canvas drawing ─────────────────────────────────────────────────────────
+function drawOverlay(d){
+  const cvs=document.getElementById('overlay');
+  const wrap=document.getElementById('canvas-wrap');
+  const vid=document.getElementById('vid');
+
+  const dw=wrap.clientWidth||480;
+  const dh=vid.videoHeight>0
+    ? Math.round(dw*vid.videoHeight/vid.videoWidth)
+    : Math.round(dw*9/16);
+
+  if(cvs.width!==dw||cvs.height!==dh){ cvs.width=dw; cvs.height=dh; }
+
+  const ctx=cvs.getContext('2d');
+  ctx.clearRect(0,0,dw,dh);
+
+  // Scale: server coords → canvas pixels
+  const sx=dw/vidW, sy=dh/vidH;
+
+  // Hub dot (white)
+  if(d.hub){
+    const hx=d.hub[0]*sx, hy=d.hub[1]*sy;
+    ctx.beginPath(); ctx.arc(hx,hy,8,0,Math.PI*2);
+    ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.fill();
+    ctx.strokeStyle='#000'; ctx.lineWidth=1.5; ctx.stroke();
+
+    // Dashed line hub → orange
+    if(d.orange){
+      const ox=d.orange[0]*sx, oy=d.orange[1]*sy;
+      ctx.beginPath(); ctx.moveTo(hx,hy); ctx.lineTo(ox,oy);
+      ctx.strokeStyle='rgba(0,255,136,0.7)';
+      ctx.lineWidth=2; ctx.setLineDash([6,4]);
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+
+  // Orange neon circle
+  if(d.orange){
+    const ox=d.orange[0]*sx, oy=d.orange[1]*sy;
+    const r=Math.max(8,(d.orange[2]||10)*Math.min(sx,sy)+6);
+
+    // Glow rings
+    ctx.beginPath(); ctx.arc(ox,oy,r+8,0,Math.PI*2);
+    ctx.strokeStyle='rgba(0,255,136,0.12)'; ctx.lineWidth=10; ctx.stroke();
+    ctx.beginPath(); ctx.arc(ox,oy,r+4,0,Math.PI*2);
+    ctx.strokeStyle='rgba(0,255,136,0.25)'; ctx.lineWidth=5; ctx.stroke();
+    // Main circle
+    ctx.beginPath(); ctx.arc(ox,oy,r,0,Math.PI*2);
+    ctx.strokeStyle='#00ff88'; ctx.lineWidth=3; ctx.stroke();
+    // Center dot
+    ctx.beginPath(); ctx.arc(ox,oy,4,0,Math.PI*2);
+    ctx.fillStyle='#00ff88'; ctx.fill();
+    // Label
+    ctx.font='bold 12px system-ui';
+    ctx.shadowColor='rgba(0,255,136,0.7)'; ctx.shadowBlur=6;
+    ctx.fillStyle='#00ff88';
+    ctx.fillText('ORA',ox+r+6,oy+5);
+    ctx.shadowBlur=0;
+  }
+
+  // Angle + cumulative text (top-left box)
+  if(d.rotation_deg!=null){
+    const ang=d.rotation_deg.toFixed(1)+'°';
+    const cum=(d.cumulative_deg>=0?'+':'')+d.cumulative_deg.toFixed(1)+'°';
+    ctx.font='bold 15px system-ui';
+    const bw=Math.max(ctx.measureText(ang).width,ctx.measureText(cum).width)+18;
+    ctx.fillStyle='rgba(0,0,0,0.6)';
+    ctx.beginPath(); ctx.roundRect(6,6,bw,52,6); ctx.fill();
+    ctx.fillStyle='#ffcc00'; ctx.fillText(ang,13,26);
+    ctx.fillStyle='#00ff88'; ctx.fillText(cum,13,48);
+  }
+
+  // Confidence bar (bottom)
+  const bH=5, bY=dh-bH-1;
+  ctx.fillStyle='rgba(0,0,0,0.3)'; ctx.fillRect(0,bY,dw,bH);
+  const conf=d.confidence_pct||0;
+  ctx.fillStyle=conf>=80?'#00ff88':conf>=50?'#ffcc00':'#f44';
+  ctx.fillRect(0,bY,Math.round(dw*conf/100),bH);
+}
+
+// ── Results ────────────────────────────────────────────────────────────────
 async function showResults(jid,info){
   const samples=await(await fetch('/results/'+jid)).json();
   addLog('Loaded '+samples.length+' samples');
@@ -372,14 +450,11 @@ async function showResults(jid,info){
     <a href="/download/${jid}"><button>&#8595; Download video</button></a>
     <a href="/csv/${jid}"><button class="sec">&#8595; Download CSV</button></a>`;
   drawChart(samples);
-  const tb=document.getElementById('tb');tb.innerHTML='';
+  const tb=document.getElementById('tb'); tb.innerHTML='';
   samples.forEach(s=>{
     const bw=Math.round((+s.confidence_pct)*55/100);
     const src=s.source||'';
-    const tag=src==='YELLOW'?'<span class="tag ty">YEL</span>':
-              src==='RED'?'<span class="tag tr">RED</span>':
-              src==='YOLO'||src==='ONNX'?'<span class="tag tg">ONNX</span>':
-              '<span class="tag tn">-</span>';
+    const tag=src&&src!=='-'?`<span class="tag tg">${src}</span>`:'<span class="tag tn">-</span>';
     tb.innerHTML+=`<tr>
       <td>${(+s.timestamp_sec).toFixed(2)}</td>
       <td>${s.rotation_deg!=null?(+s.rotation_deg).toFixed(1):'--'}</td>
@@ -394,15 +469,15 @@ async function showResults(jid,info){
 
 function drawChart(s){
   const c=document.getElementById('chart');
-  c.width=c.offsetWidth||800;c.height=200;
+  c.width=c.offsetWidth||800; c.height=200;
   const ctx=c.getContext('2d'),W=c.width,H=c.height;
-  ctx.fillStyle='#0a0a0a';ctx.fillRect(0,0,W,H);
-  if(s.length<2)return;
+  ctx.fillStyle='#0a0a0a'; ctx.fillRect(0,0,W,H);
+  if(s.length<2) return;
   const pad={l:48,r:12,t:14,b:24},cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
   const ts=s.map(x=>+x.timestamp_sec),cs=s.map(x=>+x.cumulative_deg),qs=s.map(x=>+x.confidence_pct);
   const tMin=Math.min(...ts),tMax=Math.max(...ts)||1,vMin=Math.min(...cs,0),vMax=Math.max(...cs,1),vR=vMax-vMin||1;
-  const tx=t=>pad.l+(t-tMin)/(tMax-tMin)*cW,ty=v=>pad.t+(1-(v-vMin)/vR)*cH;
-  ctx.strokeStyle='#1a1a1a';ctx.lineWidth=1;
+  const tx=t=>pad.l+(t-tMin)/(tMax-tMin)*cW, ty=v=>pad.t+(1-(v-vMin)/vR)*cH;
+  ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=1;
   [0,.25,.5,.75,1].forEach(f=>{
     const y=pad.t+f*cH,v=vMax-f*vR;
     ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();
@@ -412,13 +487,14 @@ function drawChart(s){
   s.forEach((x,i)=>ctx.lineTo(tx(ts[i]),pad.t+(1-qs[i]/100)*cH));
   ctx.lineTo(tx(ts[ts.length-1]),pad.t+cH);ctx.closePath();ctx.fill();
   ctx.strokeStyle='#00ff88';ctx.lineWidth=2;ctx.beginPath();
-  s.forEach((x,i)=>{i===0?ctx.moveTo(tx(ts[i]),ty(cs[i])):ctx.lineTo(tx(ts[i]),ty(cs[i]))});
+  s.forEach((x,i)=>i===0?ctx.moveTo(tx(ts[i]),ty(cs[i])):ctx.lineTo(tx(ts[i]),ty(cs[i])));
   ctx.stroke();
   s.forEach((x,i)=>{
     ctx.fillStyle=qs[i]===100?'#00ff88':qs[i]>=70?'#ff0':'#f44';
     ctx.beginPath();ctx.arc(tx(ts[i]),ty(cs[i]),2.2,0,Math.PI*2);ctx.fill();
   });
-  ctx.fillStyle='#00ff88';ctx.font='10px system-ui';ctx.fillText('cumulative rotation (deg)',pad.l+4,pad.t+12);
+  ctx.fillStyle='#00ff88';ctx.font='10px system-ui';
+  ctx.fillText('cumulative rotation (deg)',pad.l+4,pad.t+12);
   ctx.fillStyle='#444';ctx.fillText('time (s)',W/2-20,H-4);
 }
 </script>

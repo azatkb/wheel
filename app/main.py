@@ -1,21 +1,8 @@
 """
-main.py
-=======
-FastAPI server.
+main.py — FastAPI server.
 
-  GET  /                    Upload UI
-  GET  /stream-test         Live stream UI
-  POST /upload              Upload video + job params
-  GET  /status/{id}         Poll job
-  GET  /progress/{id}       Live detection progress (frame, angle, etc.)
-  GET  /download/{id}       Download processed video
-  GET  /results/{id}        JSON samples
-  GET  /csv/{id}            Download CSV
-  WS   /stream              Real-time frame detection
-  GET  /health
-
-Run:
-  uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+GET  /frames/{id}  — SSE stream of detection JSON (coords only, no JPEG).
+                     Browser draws overlay on canvas using original video.
 """
 
 import uuid, shutil, asyncio, json, logging, math
@@ -25,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 import cv2
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, Form, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import (
@@ -43,6 +30,7 @@ from app.detector import (
     detect_yolo, load_yolo,
     MARKER_DEFS, process,
     ORANGE_H_LO, ORANGE_H_HI, ORANGE_S_MIN,
+    YOLO_EVERY,
 )
 from app.preprocessor import preprocess_video, get_video_info
 from app.database import (
@@ -59,34 +47,32 @@ app = FastAPI(title="Wheel Tracker", version="3.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
 
-executor    = ThreadPoolExecutor(max_workers=2)
-jobs: dict  = {}
-_markers    = build_ranges(MARKER_DEFS)
-_yolo       = load_yolo()
-_TMPL       = Path(__file__).parent / "templates"
+executor  = ThreadPoolExecutor(max_workers=2)
+jobs: dict = {}
+_markers  = build_ranges(MARKER_DEFS)
+_yolo     = load_yolo()
+_TMPL     = Path(__file__).parent / "templates"
 
 
-# ── Frontend pages ─────────────────────────────────────────────────────────
+# ── Frontend ───────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
 async def page_upload():
-    return HTMLResponse(
-        (_TMPL / "upload.html").read_text(encoding="utf-8"),
-        headers={"Content-Type": "text/html; charset=utf-8"})
+    return HTMLResponse((_TMPL/"upload.html").read_text(encoding="utf-8"),
+                        headers={"Content-Type":"text/html; charset=utf-8"})
 
 @app.get("/stream-test", response_class=HTMLResponse)
 async def page_stream():
-    return HTMLResponse(
-        (_TMPL / "stream.html").read_text(encoding="utf-8"),
-        headers={"Content-Type": "text/html; charset=utf-8"})
+    return HTMLResponse((_TMPL/"stream.html").read_text(encoding="utf-8"),
+                        headers={"Content-Type":"text/html; charset=utf-8"})
 
 
-# ── REST upload pipeline ───────────────────────────────────────────────────
+# ── Upload pipeline ────────────────────────────────────────────────────────
 
 def _run_job(job_id, raw_path, direction, medium, hand_visible, info_level):
     try:
-        jobs[job_id]["status"] = "preprocessing"
-        jobs[job_id]["progress"] = {"pct": 0, "frame": 0, "total": 0}
+        jobs[job_id]["status"]   = "preprocessing"
+        jobs[job_id]["progress"] = {"pct":0,"frame":0,"total":0}
 
         if PREPROCESS_ENABLED:
             prep = INPUTS_DIR / f"{job_id}_prep.mp4"
@@ -95,16 +81,15 @@ def _run_job(job_id, raw_path, direction, medium, hand_visible, info_level):
             prep = raw_path
 
         jobs[job_id]["status"] = "processing"
+        out = OUTPUTS_DIR / f"{job_id}_tracked.mp4"
 
-        # Progress callback — called every frame from detector
         def on_progress(data: dict):
             jobs[job_id]["progress"] = data
 
         samples = process(
-            str(prep), str(out := OUTPUTS_DIR / f"{job_id}_tracked.mp4"),
-            job_id=job_id,
-            direction=direction, medium=medium, info_level=info_level,
-            progress_cb=on_progress,
+            str(prep), str(out),
+            job_id=job_id, direction=direction, medium=medium,
+            info_level=info_level, progress_cb=on_progress,
         )
 
         finish_job(job_id, len(samples) if samples else 0,
@@ -117,13 +102,13 @@ def _run_job(job_id, raw_path, direction, medium, hand_visible, info_level):
             "url":          f"/download/{job_id}",
             "csv_url":      f"/csv/{job_id}",
             "results_url":  f"/results/{job_id}",
-            "progress":     {"pct": 100, "frame": 0, "total": 0},
+            "progress":     {"pct":100},
         }
         log.info(f"[{job_id}] done — {len(samples) if samples else 0} samples")
 
     except Exception as exc:
         log.error(f"[{job_id}] failed: {exc}", exc_info=True)
-        jobs[job_id] = {"status": "error", "detail": str(exc)}
+        jobs[job_id] = {"status":"error","detail":str(exc)}
 
 
 @app.post("/upload")
@@ -137,72 +122,95 @@ async def upload(
 ):
     suffix = Path(file.filename).suffix.lower()
     if suffix not in (".mp4",".avi",".mov",".mkv",".webm"):
-        raise HTTPException(400, f"Unsupported: {suffix}")
-
+        raise HTTPException(400,f"Unsupported: {suffix}")
     job_id   = str(uuid.uuid4())
     raw_path = INPUTS_DIR / f"{job_id}{suffix}"
-
-    with open(raw_path, "wb") as f:
+    with open(raw_path,"wb") as f:
         shutil.copyfileobj(file.file, f)
-
     info = get_video_info(raw_path)
-    create_job(job_id, user_email, "upload", direction, medium,
-               hand_visible, info_level)
-    jobs[job_id] = {"status": "queued", "progress": {"pct": 0}}
-
+    create_job(job_id, user_email, "upload", direction, medium, hand_visible, info_level)
+    jobs[job_id] = {"status":"queued","progress":{"pct":0}}
     asyncio.get_event_loop().run_in_executor(
         executor, _run_job, job_id, raw_path,
-        direction, medium, hand_visible, info_level
-    )
-
-    return {"job_id": job_id, "status": "queued",
-            "status_url": f"/status/{job_id}", "video_info": info}
+        direction, medium, hand_visible, info_level)
+    return {"job_id":job_id,"status":"queued",
+            "status_url":f"/status/{job_id}","video_info":info}
 
 
 @app.get("/status/{job_id}")
 def status(job_id: str):
     info = jobs.get(job_id)
-    if not info: raise HTTPException(404, "Not found")
-    return info
+    if not info: raise HTTPException(404,"Not found")
+    return {k:v for k,v in info.items() if k!="progress"}
 
 
 @app.get("/progress/{job_id}")
 def progress(job_id: str):
-    """Live detection progress — poll this every 500ms during processing."""
     info = jobs.get(job_id)
-    if not info: raise HTTPException(404, "Not found")
-    return {
-        "status":   info.get("status"),
-        "progress": info.get("progress", {}),
-    }
+    if not info: raise HTTPException(404,"Not found")
+    return {"status":info.get("status"),"progress":info.get("progress",{})}
+
+
+@app.get("/frames/{job_id}")
+async def frames_sse(job_id: str):
+    """
+    SSE stream — sends detection JSON every frame.
+    Each event contains: hub coords, orange coords, rotation data, progress.
+    Browser draws overlay on canvas — no image transfer.
+    """
+    async def gen():
+        last_frame = -1
+        while True:
+            info = jobs.get(job_id)
+            if not info:
+                yield f"data: {json.dumps({'error':'not found'})}\n\n"
+                break
+
+            p = info.get("progress", {})
+            fi = p.get("frame", -1)
+
+            # Send only when new frame available
+            if fi != last_frame and fi >= 0:
+                last_frame = fi
+                yield f"data: {json.dumps(p)}\n\n"
+
+            st = info.get("status")
+            if st in ("done","error"):
+                yield f"data: {json.dumps({'status':st,'done':True})}\n\n"
+                break
+
+            await asyncio.sleep(0.05)  # ~20 updates/sec max
+
+    return StreamingResponse(gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
 
 
 @app.get("/download/{job_id}")
 def download(job_id: str):
     info = jobs.get(job_id)
-    if not info: raise HTTPException(404, "Not found")
-    if info.get("status") != "done":
-        raise HTTPException(400, f"Not done: {info.get('status')}")
-    p = OUTPUTS_DIR / info["filename"]
-    if not p.exists(): raise HTTPException(500, "File missing")
-    return FileResponse(str(p), media_type="video/mp4", filename=p.name)
+    if not info: raise HTTPException(404,"Not found")
+    if info.get("status")!="done": raise HTTPException(400,f"Not done: {info.get('status')}")
+    p = OUTPUTS_DIR/info["filename"]
+    if not p.exists(): raise HTTPException(500,"File missing")
+    return FileResponse(str(p),media_type="video/mp4",filename=p.name)
 
 
 @app.get("/results/{job_id}")
-def results(job_id: str):
-    return read_samples(job_id)
+def results(job_id: str): return read_samples(job_id)
 
 
 @app.get("/csv/{job_id}")
 def csv_download(job_id: str):
     p = get_csv_path(job_id)
-    if not p.exists(): raise HTTPException(404, "CSV not found")
-    return FileResponse(str(p), media_type="text/csv", filename=p.name)
+    if not p.exists(): raise HTTPException(404,"CSV not found")
+    return FileResponse(str(p),media_type="text/csv",filename=p.name)
 
 
 @app.get("/jobs")
 def list_jobs():
-    return {"jobs": jobs}
+    return {"jobs":{k:{kk:vv for kk,vv in v.items() if kk!="progress"}
+                    for k,v in jobs.items()}}
 
 
 # ── WebSocket stream ───────────────────────────────────────────────────────
@@ -210,152 +218,115 @@ def list_jobs():
 @app.websocket("/stream")
 async def stream_ws(ws: WebSocket):
     await ws.accept()
+    params    = dict(ws.query_params)
+    direction = params.get("direction", DEFAULT_DIRECTION)
+    medium    = params.get("medium",    DEFAULT_MEDIUM)
+    info_level= params.get("info_level",DEFAULT_INFO_LEVEL)
+    email     = params.get("email",     "")
+    job_id    = str(uuid.uuid4())
 
-    params     = dict(ws.query_params)
-    direction  = params.get("direction",  DEFAULT_DIRECTION)
-    medium     = params.get("medium",     DEFAULT_MEDIUM)
-    info_level = params.get("info_level", DEFAULT_INFO_LEVEL)
-    email      = params.get("email",      "")
-    job_id     = str(uuid.uuid4())
-
-    create_job(job_id, email, "stream", direction, medium, False, info_level)
+    create_job(job_id,email,"stream",direction,medium,False,info_level)
     log.info(f"[WS] {ws.client}  job={job_id}")
 
-    rot_prev    = None
-    rot_cum     = 0.0
-    rot_buf     = []
-    zero_offset = None
-    vel_dps     = 0.0
-    hub_buf     = []
-    hub_stable  = hub_radius = None
-    hub_source  = None
-    gap_hub     = gap_ora = 0
-    last_hub    = last_ora = None
-    conf_smooth = 0.0
-    stab        = Stabilizer()
-
-    from app.detector import YOLO_EVERY as _YOLO_EVERY
-    _last_yolo_det = {"center": None, "orange": None}
-
-    sample_interval = 1.0 / SAMPLES_PER_SECOND
-    next_sample_at  = 0.0
-    all_samples     = []
-    frame_idx       = 0
-    fps_assumed     = 30.0
+    rot_prev=None; rot_cum=0.0; rot_buf=[]; zero_offset=None; vel_dps=0.0
+    hub_buf=[]; hub_stable=hub_radius=None; hub_source=None
+    gap_hub=gap_ora=0; last_hub=last_ora=None; conf_smooth=0.0
+    stab=Stabilizer()
+    _last_yolo_det={"center":None,"orange":None}
+    sample_interval=1.0/SAMPLES_PER_SECOND
+    next_sample_at=0.0; all_samples=[]; frame_idx=0; fps_assumed=30.0
 
     try:
         while True:
             data  = await ws.receive_bytes()
-            frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+            frame = cv2.imdecode(np.frombuffer(data,np.uint8),cv2.IMREAD_COLOR)
             if frame is None:
-                await ws.send_text(json.dumps({"error": "bad frame"}))
-                continue
+                await ws.send_text(json.dumps({"error":"bad frame"})); continue
 
-            h, w  = frame.shape[:2]
-            max_y = int(h * 0.90)
-            t_sec = frame_idx / fps_assumed
-
-            frame_s = stab.stabilize(frame)
-            preproc = cv2.bilateralFilter(frame_s, 7, 50, 50)
-            hsv     = cv2.cvtColor(preproc, cv2.COLOR_BGR2HSV)
+            h,w=frame.shape[:2]; max_y=int(h*0.90); t_sec=frame_idx/fps_assumed
+            frame_s=stab.stabilize(frame)
+            preproc=cv2.bilateralFilter(frame_s,7,50,50)
+            hsv=cv2.cvtColor(preproc,cv2.COLOR_BGR2HSV)
 
             if hub_stable is not None and hub_radius is not None:
-                roi = np.zeros(hsv.shape[:2], np.uint8)
-                cv2.circle(roi, (int(hub_stable[0]), int(hub_stable[1])),
-                           int(hub_radius*1.15), 255, -1)
-                hsv_src = cv2.bitwise_and(hsv, hsv, mask=roi)
+                roi=np.zeros(hsv.shape[:2],np.uint8)
+                cv2.circle(roi,(int(hub_stable[0]),int(hub_stable[1])),int(hub_radius*1.15),255,-1)
+                hsv_src=cv2.bitwise_and(hsv,hsv,mask=roi)
             else:
-                hsv_src = hsv
+                hsv_src=hsv
 
-            # ONNX every YOLO_EVERY frames
-            if frame_idx % _YOLO_EVERY == 0:
-                _last_yolo_det = detect_yolo(_yolo, preproc, hsv)
-            yolo_det = _last_yolo_det
+            if frame_idx%YOLO_EVERY==0:
+                _last_yolo_det=detect_yolo(_yolo,preproc,hsv)
+            yolo_det=_last_yolo_det
 
-            cv_ora = find_blobs(hsv_src, _markers["ORANGE"], max_y)
+            cv_ora=find_blobs(hsv_src,_markers["ORANGE"],max_y)
 
-            hub_px_raw = None
+            hub_px_raw=None
             if yolo_det["center"] is not None:
-                cx,cy,_,_,_ = yolo_det["center"]
-                hub_px_raw  = (float(cx), float(cy))
-                hub_source  = "YOLO"
-                gap_hub     = 0; last_hub = hub_px_raw
-            elif gap_hub < MAX_GAP_FRAMES and last_hub:
-                gap_hub += 1; hub_px_raw = last_hub
+                cx,cy,_,_,_=yolo_det["center"]
+                hub_px_raw=(float(cx),float(cy)); hub_source="YOLO"
+                gap_hub=0; last_hub=hub_px_raw
+            elif gap_hub<MAX_GAP_FRAMES and last_hub:
+                gap_hub+=1; hub_px_raw=last_hub
 
             if yolo_det["orange"] is not None:
-                ora_blob = yolo_det["orange"]
-                gap_ora  = 0; last_ora = ora_blob
+                ora_blob=yolo_det["orange"]; gap_ora=0; last_ora=ora_blob
             elif cv_ora:
-                ora_blob = cv_ora[0]
-                gap_ora  = 0; last_ora = ora_blob
-            elif gap_ora < MAX_GAP_FRAMES and last_ora:
-                gap_ora += 1; ora_blob = last_ora
+                ora_blob=cv_ora[0]; gap_ora=0; last_ora=ora_blob
+            elif gap_ora<MAX_GAP_FRAMES and last_ora:
+                gap_ora+=1; ora_blob=last_ora
             else:
-                gap_ora = min(gap_ora+1, MAX_GAP_FRAMES+1); ora_blob = None
+                gap_ora=min(gap_ora+1,MAX_GAP_FRAMES+1); ora_blob=None
 
-            has_hub    = hub_px_raw is not None
-            has_orange = ora_blob is not None
+            has_hub=hub_px_raw is not None; has_orange=ora_blob is not None
 
             if has_hub:
                 hub_buf.append(np.array(hub_px_raw))
-                if len(hub_buf) > 30: hub_buf.pop(0)
-                hub_stable = np.mean(hub_buf, axis=0)
+                if len(hub_buf)>30: hub_buf.pop(0)
+                hub_stable=np.mean(hub_buf,axis=0)
                 if has_orange:
-                    d_ora = math.hypot(ora_blob[0]-hub_stable[0],
-                                       ora_blob[1]-hub_stable[1])
-                    hub_radius = max(hub_radius or 0, d_ora*1.3)
+                    hub_radius=max(hub_radius or 0,
+                                   math.hypot(ora_blob[0]-hub_stable[0],
+                                              ora_blob[1]-hub_stable[1])*1.3)
 
-            rot_raw = None
-            scale_mm = None
+            rot_raw=None; scale_mm=None
             if has_hub and has_orange:
-                rot_raw = orange_angle(ora_blob, hub_px_raw)
-
+                rot_raw=orange_angle(ora_blob,hub_px_raw)
             if rot_raw is not None and zero_offset is None:
-                zero_offset = rot_raw
-
-            rot_z = ((rot_raw-zero_offset)%360
-                     if (rot_raw is not None and zero_offset is not None)
-                     else None)
+                zero_offset=rot_raw
+            rot_z=((rot_raw-zero_offset)%360
+                   if rot_raw is not None and zero_offset is not None else None)
 
             if rot_z is not None:
                 rot_buf.append(rot_z)
-                if len(rot_buf) > SMOOTH_N: rot_buf.pop(0)
-                rot_smooth = math.degrees(math.atan2(
+                if len(rot_buf)>SMOOTH_N: rot_buf.pop(0)
+                rot_smooth=math.degrees(math.atan2(
                     np.mean([math.sin(math.radians(x)) for x in rot_buf]),
-                    np.mean([math.cos(math.radians(x)) for x in rot_buf]),
-                )) % 360
+                    np.mean([math.cos(math.radians(x)) for x in rot_buf])))%360
             else:
-                rot_smooth = rot_buf[-1] if rot_buf else None
+                rot_smooth=rot_buf[-1] if rot_buf else None
 
             if rot_smooth is not None:
-                if rot_prev is not None:
-                    rot_cum = unwrap(rot_prev, rot_smooth, rot_cum)
-                rot_prev = rot_smooth
+                if rot_prev is not None: rot_cum=unwrap(rot_prev,rot_smooth,rot_cum)
+                rot_prev=rot_smooth
 
-            if len(rot_buf) >= 2:
-                d = rot_buf[-1]-rot_buf[-2]
-                if d >  180: d -= 360
-                if d < -180: d += 360
-                vel_dps = d * fps_assumed
+            if len(rot_buf)>=2:
+                d=rot_buf[-1]-rot_buf[-2]
+                if d>180: d-=360
+                if d<-180: d+=360
+                vel_dps=d*fps_assumed
 
-            conf = compute_confidence(has_hub, has_orange, hub_source or "")
-            conf_smooth = conf_smooth*0.6 + conf*0.4
-            conf_disp   = int(round(conf_smooth))
+            conf=compute_confidence(has_hub,has_orange,hub_source or "")
+            conf_smooth=conf_smooth*0.6+conf*0.4; conf_disp=int(round(conf_smooth))
 
-            hub_px = hub_px_raw
-
-            if t_sec >= next_sample_at:
-                s = make_sample(
-                    job_id=job_id, timestamp_sec=t_sec,
-                    rotation_deg=rot_smooth, cumulative_deg=-rot_cum,
-                    angular_vel_dps=-vel_dps, confidence_pct=conf_disp,
-                    source=hub_source,
-                )
-                all_samples.append(s)
-                next_sample_at += sample_interval
-                if len(all_samples) % 20 == 0:
-                    persist_samples(job_id, all_samples[-20:])
+            if t_sec>=next_sample_at:
+                all_samples.append(make_sample(
+                    job_id=job_id,timestamp_sec=t_sec,rotation_deg=rot_smooth,
+                    cumulative_deg=-rot_cum,angular_vel_dps=-vel_dps,
+                    confidence_pct=conf_disp,source=hub_source))
+                next_sample_at+=sample_interval
+                if len(all_samples)%20==0:
+                    persist_samples(job_id,all_samples[-20:])
 
             await ws.send_text(json.dumps({
                 "frame":           frame_idx,
@@ -366,30 +337,27 @@ async def stream_ws(ws: WebSocket):
                 "angular_vel_dps": round(-vel_dps,2),
                 "angular_vel_rps": round(math.radians(-vel_dps),5),
                 "confidence_pct":  conf_disp,
-                "hub_px":          [round(hub_px[0]),round(hub_px[1])] if hub_px else None,
+                "hub_px":          [round(hub_px_raw[0]),round(hub_px_raw[1])] if hub_px_raw else None,
                 "scale_mm_px":     round(scale_mm,5) if scale_mm else None,
                 "source":          hub_source,
             }))
-            frame_idx += 1
+            frame_idx+=1
 
     except WebSocketDisconnect:
         log.info(f"[WS] disconnected after {frame_idx} frames")
     except Exception as exc:
-        log.error(f"[WS] error: {exc}", exc_info=True)
-        try: await ws.send_text(json.dumps({"error": str(exc)}))
-        except Exception: pass
+        log.error(f"[WS] error: {exc}",exc_info=True)
+        try: await ws.send_text(json.dumps({"error":str(exc)}))
+        except: pass
     finally:
-        rem = len(all_samples) % 20
-        if rem: persist_samples(job_id, all_samples[-rem:])
-        finish_job(job_id, len(all_samples),
+        rem=len(all_samples)%20
+        if rem: persist_samples(job_id,all_samples[-rem:])
+        finish_job(job_id,len(all_samples),
                    all_samples[-1]["timestamp_sec"] if all_samples else 0)
 
 
 @app.get("/health")
 def health():
-    return {
-        "status":          "ok",
-        "jobs":            len(jobs),
-        "samples_per_sec": SAMPLES_PER_SECOND,
-        "supabase":        SUPABASE_URL[:35]+"...",
-    }
+    return {"status":"ok","jobs":len(jobs),
+            "samples_per_sec":SAMPLES_PER_SECOND,
+            "supabase":SUPABASE_URL[:35]+"..."}

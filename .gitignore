@@ -1,5 +1,10 @@
 *.csv
 *.pem
-/app/__pycache__
+# Ignore all __pycache__ directories
+__pycache__/
+
+# Ignore compiled Python files
+*.py[cod]
+*$py.class
 /inputs
 /outputs
