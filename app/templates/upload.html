@@ -65,9 +65,9 @@ tr:hover td{background:#1a1a1a}
 </head>
 <body>
 <nav>
-  <a href="/">Upload</a>
-  <a href="/stream-test">Live stream</a>
-  <a href="/docs" target="_blank">API docs</a>
+  <a href="/upload.html">Upload</a>
+  <a href="/stream.html">Live stream</a>
+  
 </nav>
 <h1>Wheel Tracker</h1>
 <p class="sub">Upload a video &#8212; detect wheel rotation using colored markers</p>
@@ -157,7 +157,7 @@ tr:hover td{background:#1a1a1a}
 
 <script>
 // ── API server address ─────────────────────────────────────────────────────
-const API = 'http://34.60.124.57:8000';
+const API = 'http://localhost:8000'//'https://schema-zone-completely-bundle.trycloudflare.com';
 
 let jid=null, statusTimer=null, sse=null, vidFile=null;
 let vidW=1, vidH=1, totalSec=0;
@@ -290,16 +290,28 @@ async function pollStatus(){
 function startProcessingUI(){
   document.getElementById('proc-layout').style.display='flex';
 
-  // Load local video — paused, we control currentTime
   if(vidFile){
     const vid=document.getElementById('vid');
     vid.src=URL.createObjectURL(vidFile);
     vid.style.display='block';
     vid.pause();
     document.getElementById('vid-placeholder').style.display='none';
-  }
 
-  startSSE(jid);
+    // Wait for video to be ready before starting SSE seeks
+    // This ensures video.currentTime = t_sec works immediately
+    const onReady = () => {
+      vid.removeEventListener('loadeddata', onReady);
+      startSSE(jid);
+    };
+    if(vid.readyState >= 2){
+      // Already ready
+      startSSE(jid);
+    } else {
+      vid.addEventListener('loadeddata', onReady);
+    }
+  } else {
+    startSSE(jid);
+  }
 }
 
 // ── SSE: on each frame → seek video + draw overlay immediately ─────────────
@@ -311,7 +323,8 @@ function startSSE(job_id){
     try{
       const d=JSON.parse(e.data);
       if(d.done){ sse.close(); sse=null; return; }
-      if(d.error || d.t_sec===undefined) return;
+      if(d.error) return;
+      if(d.t_sec===undefined && d.frame===undefined) return;
 
       // Store dims
       if(d.vid_w) vidW=d.vid_w;
@@ -320,12 +333,19 @@ function startSSE(job_id){
 
       // ── METHOD 2: seek video to exact detection time ───────────────────
       const vid=document.getElementById('vid');
-      if(vid.readyState>=2){  // HAVE_CURRENT_DATA
-        vid.currentTime=d.t_sec;
-      }
+      const det=d;  // capture for async use
 
-      // Draw overlay immediately — perfectly in sync
-      drawOverlay(d);
+      if(vid.readyState>=2 && d.t_sec!==undefined){
+        const onSeeked = () => {
+          vid.removeEventListener('seeked', onSeeked);
+          drawOverlay(det);
+        };
+        vid.addEventListener('seeked', onSeeked);
+        vid.currentTime = d.t_sec;
+      } else {
+        // No video or not ready — still draw overlay coords
+        drawOverlay(d);
+      }
 
       // Update progress bar
       const pct=d.pct||0;
@@ -334,13 +354,13 @@ function startSSE(job_id){
 
       // Update time label
       document.getElementById('live-time').textContent=
-        d.t_sec.toFixed(2)+'s  /  '+totalSec.toFixed(1)+'s';
+        (d.t_sec||0).toFixed(2)+'s  /  '+(totalSec||0).toFixed(1)+'s';
 
       // Update live numbers
       document.getElementById('lv-ang').textContent=
         d.rotation_deg!=null ? d.rotation_deg.toFixed(1)+'°' : '---';
       document.getElementById('lv-cum').textContent=
-        (d.cumulative_deg>=0?'+':'')+d.cumulative_deg.toFixed(1)+'°';
+        ((d.cumulative_deg||0)>=0?'+':'')+((d.cumulative_deg)||0).toFixed(1)+'°';
       document.getElementById('lv-vel').textContent=
         d.angular_vel_dps!=null ? d.angular_vel_dps.toFixed(1) : '---';
       document.getElementById('lv-conf').textContent=(d.confidence_pct||0)+'%';
@@ -350,7 +370,11 @@ function startSSE(job_id){
     }catch(ex){}
   };
 
-  sse.onerror=()=>{ if(sse){ sse.close(); sse=null; } };
+  sse.onerror=()=>{
+    // Cloudflare may close SSE after timeout — reconnect automatically
+    if(sse){ sse.close(); sse=null; }
+    if(jid) setTimeout(()=>{ if(jid && !sse) startSSE(jid); }, 1000);
+  };
 }
 
 // ── Canvas drawing ─────────────────────────────────────────────────────────
@@ -416,7 +440,7 @@ function drawOverlay(d){
   // Angle + cumulative text (top-left box)
   if(d.rotation_deg!=null){
     const ang=d.rotation_deg.toFixed(1)+'°';
-    const cum=(d.cumulative_deg>=0?'+':'')+d.cumulative_deg.toFixed(1)+'°';
+    const cum=((d.cumulative_deg||0)>=0?'+':'')+((d.cumulative_deg)||0).toFixed(1)+'°';
     ctx.font='bold 15px system-ui';
     const bw=Math.max(ctx.measureText(ang).width,ctx.measureText(cum).width)+18;
     ctx.fillStyle='rgba(0,0,0,0.6)';

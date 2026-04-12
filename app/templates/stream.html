@@ -70,9 +70,9 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
 <body>
 
 <nav>
-  <a href="/">Upload test</a>
-  <a href="/stream-test">Stream test</a>
-  <a href="/docs" target="_blank">API docs</a>
+  <a href="/upload.html">Upload</a>
+  <a href="/stream.html">Live stream</a>
+  
 </nav>
 
 <h1>Wheel Tracker &#8212; Live Stream</h1>
@@ -116,7 +116,7 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
       <div class="metric-row">
         <div class="metric">
           <div class="lbl-sm">Current angle</div>
-          <div class="big big-green" id="val-angle">&#8212;</div>
+          <div class="big big-green" id="val-angle">—</div>
         </div>
         <div class="metric">
           <div class="lbl-sm">Total rotation</div>
@@ -127,16 +127,16 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
       <div class="metric-row">
         <div class="metric">
           <div class="lbl-sm">Confidence</div>
-          <div id="val-conf" style="font-size:1.1rem;font-weight:700">&#8212;</div>
+          <div id="val-conf" style="font-size:1.1rem;font-weight:700">—</div>
           <div class="conf-track"><div class="conf-fill" id="conf-fill" style="width:0%"></div></div>
         </div>
         <div class="metric">
           <div class="lbl-sm">Source</div>
-          <div id="val-src" style="font-size:1.1rem;font-weight:700;color:#ff0">&#8212;</div>
+          <div id="val-src" style="font-size:1.1rem;font-weight:700;color:#ff0">—</div>
         </div>
         <div class="metric">
           <div class="lbl-sm">Frame</div>
-          <div id="val-frame" style="font-size:.9rem;color:#666">&#8212;</div>
+          <div id="val-frame" style="font-size:.9rem;color:#666">—</div>
         </div>
       </div>
 
@@ -195,7 +195,7 @@ async function changeCamera() {
 function addLog(msg) {
   const el = document.getElementById('log');
   const ts = new Date().toLocaleTimeString();
-  el.innerHTML += `<div>${ts} &#8212; ${msg}</div>`;
+  el.innerHTML += `<div>${ts} — ${msg}</div>`;
   el.scrollTop  = el.scrollHeight;
 }
 
@@ -291,9 +291,9 @@ async function startStream() {
     });
     document.getElementById('cam').srcObject = camStream;
 
-    const API_WS = 'ws://34.60.124.57:8000';
+    const API_WS = 'wss://schema-zone-completely-bundle.trycloudflare.com';
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    ws = new WebSocket(`ws://34.60.124.57:8000/stream`);
+    ws = new WebSocket(`wss://schema-zone-completely-bundle.trycloudflare.com/stream`);
     ws.onopen  = () => addLog('WebSocket connected');
     ws.onclose = () => addLog('WebSocket closed');
     ws.onerror = () => addLog('WebSocket error');
@@ -352,12 +352,12 @@ function updateDisplay(d) {
   const conf  = d.confidence_pct;
 
   document.getElementById('val-angle').textContent =
-    angle != null ? angle.toFixed(1) + '°' : '&#8212;';
+    angle != null ? angle.toFixed(1) + '°' : '—';
   document.getElementById('val-cum').textContent =
     (cum >= 0 ? '+' : '') + cum.toFixed(1) + '°';
   document.getElementById('val-conf').textContent = conf + '%';
   document.getElementById('conf-fill').style.width = conf + '%';
-  document.getElementById('val-src').textContent   = d.source || '&#8212;';
+  document.getElementById('val-src').textContent   = d.source || '—';
   document.getElementById('val-frame').textContent  =
     '#' + d.frame + (d.scale_mm_px ? '  ' + d.scale_mm_px.toFixed(4) + ' mm/px' : '');
 
