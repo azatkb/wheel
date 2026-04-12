@@ -160,36 +160,93 @@ let sendLoop = null;
 const HISTORY = 120;         // number of points to show on mini chart
 let chartData = [];          // {t, cum, conf}
 
+const HMAX=120;
 /* ── Camera enumerate ───────────────────────────────────────────────── */
-async function listCameras() {
-  try {
-    // Request permission first so labels are visible
-    await navigator.mediaDevices.getUserMedia({ video: true });
+async function listCams(){
+  let tempStream = null;
+
+  try{
+    // 1. Получаем доступ к камере (чтобы появились label)
+    tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+
+    // 2. Получаем список устройств
     const devs = await navigator.mediaDevices.enumerateDevices();
-    const sel  = document.getElementById('cam-select');
+    const sel = document.getElementById('cam-select');
     sel.innerHTML = '';
-    devs.filter(d => d.kind === 'videoinput').forEach((d, i) => {
-      const opt = document.createElement('option');
-      opt.value = d.deviceId;
-      opt.text  = d.label || 'Camera ' + (i+1);
-      sel.appendChild(opt);
-    });
-  } catch (e) {
-    addLog('Camera permission denied');
+
+    let foundBackCam = false;
+
+    devs
+      .filter(d => d.kind === 'videoinput')
+      .forEach((d, i) => {
+        const o = document.createElement('option');
+        o.value = d.deviceId;
+
+        const label = (d.label || '').toLowerCase();
+        o.text = d.label || 'Camera ' + (i + 1);
+
+        // безопасная проверка label
+        if (
+          label.includes('back') ||
+          label.includes('rear') ||
+          label.includes('environment')
+        ){
+          o.selected = true;
+          foundBackCam = true;
+        }
+
+        sel.appendChild(o);
+      });
+
+    // 3. Если заднюю не нашли — выбираем первую
+    if (!foundBackCam && sel.options.length > 0) {
+      sel.selectedIndex = 0;
+    }
+
+  }catch(e){
+    console.error(e);
+    addLog('Camera error: ' + e.name + ' - ' + e.message);
+  }finally{
+    // 4. Обязательно освобождаем камеру
+    if (tempStream) {
+      tempStream.getTracks().forEach(t => t.stop());
+    }
+  }
+
+  // 5. Переключаемся на выбранную камеру
+  try{
+    await switchCam();
+  }catch(e){
+    addLog('SwitchCam error: ' + e.message);
   }
 }
-listCameras();
+listCams();
 
-async function changeCamera() {
-  if (camStream) {
-    camStream.getTracks().forEach(t => t.stop());
-    const sel = document.getElementById('cam-select');
+async function switchCam(){
+  if(camStream){
+    camStream.getTracks().forEach(t=>t.stop());
+  }
+
+  const id = document.getElementById('cam-select').value;
+
+  try{
     camStream = await navigator.mediaDevices.getUserMedia({
-      video: { deviceId: sel.value }
+      video: { deviceId: { exact: id } }
     });
+
+    document.getElementById('cam').srcObject = camStream;
+  }catch(e){
+    addLog('Camera switch failed, fallback to environment');
+
+    // fallback на заднюю камеру
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" }
+    });
+
     document.getElementById('cam').srcObject = camStream;
   }
 }
+
 
 /* ── Log helper ─────────────────────────────────────────────────────── */
 function addLog(msg) {
