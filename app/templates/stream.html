@@ -291,9 +291,9 @@ async function startStream() {
     });
     document.getElementById('cam').srcObject = camStream;
 
-    const API_WS = 'wss://schema-zone-completely-bundle.trycloudflare.com';
+    const API_WS = 'wss://wheelttt.xyz';
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    ws = new WebSocket(`wss://schema-zone-completely-bundle.trycloudflare.com/stream`);
+    ws = new WebSocket(`wss://wheelttt.xyz/stream`);
     ws.onopen  = () => addLog('WebSocket connected');
     ws.onclose = () => addLog('WebSocket closed');
     ws.onerror = () => addLog('WebSocket error');
