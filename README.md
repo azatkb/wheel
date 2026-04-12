@@ -25,6 +25,7 @@ wheeltracker/
 
 ```bash
 pip install -r requirements.txt
+pip install onnxruntime-gpu
 # Optional but recommended: apt install ffmpeg
 ```
 
