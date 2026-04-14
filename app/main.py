@@ -371,6 +371,9 @@ async def stream_ws(ws: WebSocket):
                 "angular_vel_rps": round(math.radians(-vel_dps), 5),
                 "confidence_pct":  conf_disp,
                 "hub_px":          [round(hub_px_raw[0]), round(hub_px_raw[1])] if hub_px_raw else None,
+                "orange":          [ora_blob[0], ora_blob[1], ora_blob[4]] if ora_blob else None,
+                "vid_w":           w,
+                "vid_h":           h,
                 "source":          hub_source,
             }))
             frame_idx += 1
