@@ -449,6 +449,8 @@ async def stream_ws(ws: WebSocket):
 
     create_job(job_id,email,"stream",direction,medium,False,info_level)
     log.info(f"[WS] {ws.client}  job={job_id}")
+    # Send job_id to client so it can fetch physics after stream ends
+    await ws.send_text(json.dumps({"type":"init","job_id":job_id}))
 
     rot_prev=None; rot_cum=0.0; rot_buf=[]; zero_offset=None; vel_dps=0.0
     hub_buf=[]; hub_stable=hub_radius=None; hub_source=None
@@ -578,6 +580,34 @@ async def stream_ws(ws: WebSocket):
         if rem: persist_samples(job_id,all_samples[-rem:])
         finish_job(job_id,len(all_samples),
                    all_samples[-1]["timestamp_sec"] if all_samples else 0)
+        # Run physics on stream data and store in jobs for /physics/{id}
+        if all_samples:
+            try:
+                stream_params = dict(ws.query_params) if hasattr(ws,'query_params') else {}
+                stream_medium = stream_params.get("medium", DEFAULT_MEDIUM)
+                stream_dir    = stream_params.get("direction", DEFAULT_DIRECTION)
+                stream_ver    = stream_params.get("version", DEFAULT_VERSION)
+                stream_lang   = stream_params.get("lang", DEFAULT_LANG)
+                stream_email  = stream_params.get("email", "")
+                physics = _run_physics(
+                    samples    = all_samples,
+                    medium     = stream_medium,
+                    direction  = stream_dir,
+                    user_email = stream_email,
+                    job_id     = job_id,
+                    version    = stream_ver,
+                    lang       = stream_lang,
+                )
+                jobs[job_id] = {
+                    "status":      "done",
+                    "sample_count": len(all_samples),
+                    "message":     physics.get("message", {}),
+                    "physics":     physics.get("result",  {}),
+                    "phases":      physics.get("phases",  {}),
+                    "physics_url": f"/physics/{job_id}",
+                }
+            except Exception as e:
+                log.warning(f"[WS] physics failed: {e}")
 
 
 @app.get("/health")

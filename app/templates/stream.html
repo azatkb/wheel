@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Wheel Tracker — Live Stream</title>
+<title>Wheel Tracker &#8212; Live Stream</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0;
@@ -13,21 +13,21 @@ nav a { color: #00ffb4; margin-right: 1.5rem; font-size: 0.9rem; text-decoration
 nav a:hover { text-decoration: underline; }
 h1 { color: #00ffb4; font-size: 1.7rem; margin-bottom: 0.3rem; }
 .subtitle { color: #555; margin-bottom: 2rem; font-size: 0.9rem; }
+
+/* ── Layout: two columns on wide screens ─────────────────────────── */
 .row { display: flex; gap: 1.5rem; flex-wrap: wrap; }
 .col  { flex: 1; min-width: 280px; }
+
 .card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px;
         padding: 1.5rem; margin-bottom: 1.5rem; }
 h2 { color: #aaa; font-size: 0.85rem; text-transform: uppercase;
      letter-spacing: .06em; margin-bottom: 1rem; }
 
-/* Camera + canvas overlay */
-.cam-wrap { position: relative; background: #000; border-radius: 8px;
-            overflow: hidden; line-height: 0; }
-.cam-wrap video  { width: 100%; display: block; max-height: 260px;
-                   object-fit: cover; border-radius: 8px; }
-.cam-wrap canvas { position: absolute; top: 0; left: 0; width: 100%;
-                   height: 100%; pointer-events: none; }
+/* ── Camera feed ─────────────────────────────────────────────────── */
+video { width: 100%; border-radius: 8px; background: #000; display: block;
+        max-height: 260px; object-fit: cover; }
 
+/* ── Controls ────────────────────────────────────────────────────── */
 .ctrl-row { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap;
             margin-top: 1rem; }
 select, input[type=number] { background: #222; color: #ccc;
@@ -39,39 +39,32 @@ button:hover { background: #00d99a; }
 button:disabled { background: #2a2a2a; color: #555; cursor: not-allowed; }
 button.stop { background: #e33; color: #fff; }
 button.stop:hover { background: #c22; }
-button.sec { background: #2a2a2a; color: #ccc; }
 
-.big { font-size: 2.8rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
-.big-green { color: #00ffb4; }
-.big-white { color: #e0e0e0; }
+/* ── Big metrics ─────────────────────────────────────────────────── */
+.big { font-size: 2.8rem; font-weight: 700; font-variant-numeric: tabular-nums;
+       line-height: 1; }
+.big-green  { color: #00ffb4; }
+.big-white  { color: #e0e0e0; }
 .metric-row { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
-.metric { flex: 1; min-width: 110px; }
-.lbl-sm { color: #555; font-size: .72rem; margin-bottom: .25rem; }
+.metric     { flex: 1; min-width: 110px; }
+.lbl-sm     { color: #555; font-size: .72rem; margin-bottom: .25rem; }
+
+/* ── Confidence bar ──────────────────────────────────────────────── */
 .conf-track { background: #222; border-radius: 6px; height: 10px; margin-top: .3rem; }
 .conf-fill  { height: 10px; border-radius: 6px; transition: width .2s;
               background: linear-gradient(90deg,#f44 0%,#ff0 50%,#0f0 100%); }
+
+/* ── Dial canvas ─────────────────────────────────────────────────── */
 canvas#dial { display: block; border-radius: 8px; }
+
+/* ── Mini chart ──────────────────────────────────────────────────── */
 canvas#minichart { display: block; border-radius: 8px; background: #111;
                    width: 100%; height: 130px; }
+
+/* ── Log ─────────────────────────────────────────────────────────── */
 #log { font-family: monospace; font-size: .77rem; background: #111;
        border-radius: 8px; padding: .8rem; height: 110px; overflow-y: auto;
        border: 1px solid #1e1e1e; line-height: 1.6; }
-
-/* Test panel */
-.test-row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-.test-row input { flex: 1; background: #222; color: #ccc; border: 1px solid #333;
-                  border-radius: 6px; padding: .35rem .6rem; font-size: .82rem; min-width: 0; }
-.test-row button { padding: .35rem .9rem; font-size: .82rem; white-space: nowrap; }
-#test-canvas { display: block; width: 100%; border-radius: 8px;
-               background: #111; margin-top: 8px; }
-.test-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
-.test-box { background: #111; border-radius: 8px; padding: .5rem .7rem; text-align: center; }
-.test-box .tv { font-size: 1.3rem; font-weight: 700; color: #00ffb4;
-                font-variant-numeric: tabular-nums; }
-.test-box .tl { font-size: .65rem; color: #555; margin-top: 2px; }
-.test-box.ora .tv { color: #ff8800; }
-.test-box.vel .tv { color: #44aaff; }
-.test-box.sig .tv { color: #ffcc00; }
 </style>
 </head>
 <body>
@@ -79,20 +72,18 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
 <nav>
   <a href="/upload.html">Upload</a>
   <a href="/stream.html">Live stream</a>
+  
 </nav>
 
-<h1>Wheel Tracker — Live Stream</h1>
+<h1>Wheel Tracker &#8212; Live Stream</h1>
 <p class="subtitle">Connect a camera, push frames via WebSocket, see rotation in real-time</p>
 
 <div class="row">
-  <!-- Left: camera + overlay canvas + controls -->
+  <!-- Left column: camera + controls -->
   <div class="col">
     <div class="card">
       <h2>Camera</h2>
-      <div class="cam-wrap" id="cam-wrap">
-        <video id="cam" autoplay muted playsinline></video>
-        <canvas id="cam-overlay"></canvas>
-      </div>
+      <video id="cam" autoplay muted playsinline></video>
       <div class="ctrl-row">
         <div>
           <div class="lbl-sm">Camera</div>
@@ -104,22 +95,38 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
         </div>
       </div>
       <div class="ctrl-row">
+        <div>
+          <div class="lbl-sm">Medium</div>
+          <select id="cam-medium"><option value="air">Air</option><option value="water">Water</option></select>
+        </div>
+        <div>
+          <div class="lbl-sm">Version</div>
+          <select id="cam-version"><option value="free">Free</option><option value="paid">Paid</option></select>
+        </div>
+        <div>
+          <div class="lbl-sm">Lang</div>
+          <select id="cam-lang"><option value="en">EN</option><option value="hu">HU</option><option value="de">DE</option></select>
+        </div>
+      </div>
+      <div class="ctrl-row">
         <button id="btn-start" onclick="startStream()">Start stream</button>
         <button id="btn-stop" class="stop" onclick="stopStream()" disabled>Stop</button>
-        <button onclick="resetZero()" class="sec">Reset 0°</button>
+        <button onclick="resetZero()" class="sec" style="background:#2a2a2a;color:#ccc">Reset 0°</button>
       </div>
     </div>
 
+    <!-- Log -->
     <div class="card">
       <h2>Log</h2>
       <div id="log"></div>
     </div>
   </div>
 
-  <!-- Right: readouts + dial + chart + test panel -->
+  <!-- Right column: readouts + dial -->
   <div class="col">
     <div class="card">
       <h2>Real-time rotation</h2>
+
       <div class="metric-row">
         <div class="metric">
           <div class="lbl-sm">Current angle</div>
@@ -130,6 +137,7 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
           <div class="big big-white" id="val-cum">+0.0°</div>
         </div>
       </div>
+
       <div class="metric-row">
         <div class="metric">
           <div class="lbl-sm">Confidence</div>
@@ -145,268 +153,127 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
           <div id="val-frame" style="font-size:.9rem;color:#666">—</div>
         </div>
       </div>
+
+      <!-- Rotation dial -->
       <canvas id="dial" width="150" height="150"></canvas>
     </div>
 
+    <!-- Mini live chart -->
     <div class="card">
       <h2>Cumulative rotation (live)</h2>
       <canvas id="minichart"></canvas>
     </div>
 
-    <!-- Test panel -->
-    <div class="card">
-      <h2>API test — /stream</h2>
-      <div class="test-row">
-        <input id="test-url" value="http://localhost:8000" placeholder="API base URL">
-        <button onclick="testHealth()" style="background:#2a2a2a;color:#ccc">Health</button>
+    <!-- Physics result -->
+    <div class="card" id="phys-card" style="display:none;background:#0d1a0f;border:1px solid #1a3a20">
+      <h2>Physics result</h2>
+      <div id="phys-msg" style="font-size:1rem;font-weight:700;color:#00ffb4;margin-bottom:.7rem"></div>
+      <div id="phys-warn" style="display:none;background:#1a0a0a;border:1px solid #f44;border-radius:6px;padding:.5rem .8rem;color:#f44;font-size:.8rem;margin-bottom:.6rem"></div>
+      <div id="phys-display" style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:.7rem"></div>
+      <div id="phys-lajtner" style="display:none;font-size:.78rem;color:#555;padding:.4rem .6rem;background:#111;border-radius:5px;margin-bottom:.5rem"></div>
+      <div id="phys-rank"></div>
+      <button onclick="toggleStreamPhysTable()" id="phys-tbl-btn" style="background:#2a2a2a;color:#ccc;margin-top:.5rem;font-size:.78rem;padding:.3rem .8rem">Show 20 variables</button>
+      <div id="phys-tbl-wrap" style="display:none;overflow-x:auto;margin-top:.6rem;max-height:220px;overflow-y:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:.7rem;white-space:nowrap">
+          <thead><tr>
+            <th style="color:#555;padding:.2rem .4rem;border-bottom:1px solid #1e1e1e">#</th>
+            <th style="color:#555;padding:.2rem .4rem;border-bottom:1px solid #1e1e1e">Variable</th>
+            <th style="color:#555;padding:.2rem .4rem;border-bottom:1px solid #1e1e1e">Unit</th>
+            <th style="color:#44aaff;padding:.2rem .4rem;border-bottom:1px solid #1e1e1e">Ideal</th>
+            <th style="color:#00ffb4;padding:.2rem .4rem;border-bottom:1px solid #1e1e1e">Air</th>
+            <th style="color:#00bcd4;padding:.2rem .4rem;border-bottom:1px solid #1e1e1e">Water</th>
+          </tr></thead>
+          <tbody id="phys-tb"></tbody>
+        </table>
       </div>
-      <div class="test-row">
-        <input type="file" id="test-file" accept="video/*"
-               style="background:#222;color:#ccc;border:1px solid #333;border-radius:6px;
-                      padding:.35rem .6rem;font-size:.82rem;flex:1">
-      </div>
-      <div class="test-row" style="margin-top:4px">
-        <div style="font-size:.78rem;color:#666">FPS</div>
-        <input type="number" id="test-fps" value="10" min="1" max="30" style="width:55px">
-        <button onclick="startTestStream()" id="test-btn-start">Send frames via WS</button>
-        <button onclick="stopTestStream()" id="test-btn-stop" class="stop" disabled>Stop</button>
-      </div>
-      <div id="test-job" style="font-size:.75rem;color:#555;margin:4px 0">—</div>
-      <div class="test-grid">
-        <div class="test-box">
-          <div class="tv" id="t-ang">—</div>
-          <div class="tl">angle</div>
-        </div>
-        <div class="test-box ora">
-          <div class="tv" id="t-cum">—</div>
-          <div class="tl">total</div>
-        </div>
-        <div class="test-box vel">
-          <div class="tv" id="t-vel">—</div>
-          <div class="tl">vel °/s</div>
-        </div>
-        <div class="test-box sig">
-          <div class="tv" id="t-conf">—</div>
-          <div class="tl">confidence</div>
-        </div>
-      </div>
-      <canvas id="test-canvas" height="160"></canvas>
-      <div id="test-log" style="font-family:monospace;font-size:.72rem;color:#555;
-           margin-top:6px;max-height:120px;overflow-y:auto;line-height:1.5"></div>
     </div>
   </div>
 </div>
 
 <script>
 /* ── State ──────────────────────────────────────────────────────────── */
-let ws = null, camStream = null, sendLoop = null;
-let camWaitingReply = false, camFrozenCanvas = null;
-let testSse = null, testJid = null;
-let testVidW = 1, testVidH = 1;
-const HISTORY = 120;
-let chartData = [];
-let lastDet = null;   // latest detection data for cam overlay
+let ws       = null;
+let camStream = null;
+let sendLoop = null;
+const HISTORY = 120;         // number of points to show on mini chart
+let chartData = [];          // {t, cum, conf}
 
 /* ── Camera enumerate ───────────────────────────────────────────────── */
-async function listCams(){
-  let tmp = null;
+async function listCameras() {
   try {
-    tmp = await navigator.mediaDevices.getUserMedia({ video: true });
+    // Request permission first so labels are visible
+    await navigator.mediaDevices.getUserMedia({ video: true });
     const devs = await navigator.mediaDevices.enumerateDevices();
-    const sel = document.getElementById('cam-select');
+    const sel  = document.getElementById('cam-select');
     sel.innerHTML = '';
-    let foundBack = false;
     devs.filter(d => d.kind === 'videoinput').forEach((d, i) => {
-      const o = document.createElement('option');
-      o.value = d.deviceId;
-      o.text  = d.label || 'Camera ' + (i+1);
-      const lbl = (d.label || '').toLowerCase();
-      if (lbl.includes('back') || lbl.includes('rear') || lbl.includes('environment')) {
-        o.selected = true; foundBack = true;
-      }
-      sel.appendChild(o);
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.text  = d.label || 'Camera ' + (i+1);
+      sel.appendChild(opt);
     });
-    if (!foundBack && sel.options.length) sel.selectedIndex = 0;
-  } catch(e) {
-    addLog('Camera error: ' + e.message);
-  } finally {
-    if (tmp) tmp.getTracks().forEach(t => t.stop());
+  } catch (e) {
+    addLog('Camera permission denied');
   }
-  try { await switchCam(); } catch(e) { addLog('SwitchCam: ' + e.message); }
 }
-listCams();
+listCameras();
 
-async function switchCam(){
-  if (camStream) camStream.getTracks().forEach(t => t.stop());
-  const id = document.getElementById('cam-select').value;
-  try {
+async function changeCamera() {
+  if (camStream) {
+    camStream.getTracks().forEach(t => t.stop());
+    const sel = document.getElementById('cam-select');
     camStream = await navigator.mediaDevices.getUserMedia({
-      video: { deviceId: { exact: id } }
+      video: { deviceId: sel.value }
     });
-  } catch(e) {
-    camStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment' }
-    });
+    document.getElementById('cam').srcObject = camStream;
   }
-  document.getElementById('cam').srcObject = camStream;
 }
-async function changeCamera() { try { await switchCam(); } catch(e) { addLog(e.message); } }
 
-/* ── Log ────────────────────────────────────────────────────────────── */
+/* ── Log helper ─────────────────────────────────────────────────────── */
 function addLog(msg) {
   const el = document.getElementById('log');
-  el.innerHTML += `<div>${new Date().toLocaleTimeString()} — ${msg}</div>`;
-  el.scrollTop = el.scrollHeight;
-}
-function addTestLog(msg) {
-  const el = document.getElementById('test-log');
-  el.innerHTML += `<div>${msg}</div>`;
-  el.scrollTop = el.scrollHeight;
+  const ts = new Date().toLocaleTimeString();
+  el.innerHTML += `<div>${ts} — ${msg}</div>`;
+  el.scrollTop  = el.scrollHeight;
 }
 
-/* ── Cam overlay drawing ────────────────────────────────────────────── */
-function drawCamOverlay(d) {
-  const cvs  = document.getElementById('cam-overlay');
-  const wrap = document.getElementById('cam-wrap');
-  const vid  = document.getElementById('cam');
-  const dw   = wrap.clientWidth  || 480;
-  const dh   = vid.videoHeight > 0
-    ? Math.round(dw * vid.videoHeight / vid.videoWidth)
-    : Math.round(dw * 9/16);
-  if (cvs.width !== dw || cvs.height !== dh) { cvs.width = dw; cvs.height = dh; }
-  const ctx = cvs.getContext('2d');
-  ctx.clearRect(0, 0, dw, dh);
-  if (!d) return;
-
-  const W = d.hub_px ? (d.hub_px[0] > 100 ? 640 : 480) : 640;
-  const H = 480;
-  const sx = dw / W, sy = dh / H;
-
-  if (d.hub_px) {
-    const hx = d.hub_px[0]*sx, hy = d.hub_px[1]*sy;
-    ctx.beginPath(); ctx.arc(hx, hy, 8, 0, Math.PI*2);
-    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fill();
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.stroke();
-  }
-
-  // Draw angle text
-  if (d.rotation_deg != null) {
-    const ang = d.rotation_deg.toFixed(1) + '°';
-    const cum = ((d.cumulative_deg||0) >= 0 ? '+' : '') + (d.cumulative_deg||0).toFixed(1) + '°';
-    ctx.font = 'bold 15px system-ui';
-    const bw = Math.max(ctx.measureText(ang).width, ctx.measureText(cum).width) + 18;
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.beginPath(); ctx.roundRect(6, 6, bw, 52, 6); ctx.fill();
-    ctx.fillStyle = '#ffcc00'; ctx.fillText(ang, 13, 26);
-    ctx.fillStyle = '#00ffb4'; ctx.fillText(cum, 13, 48);
-  }
-
-  // Confidence bar
-  const conf = d.confidence_pct || 0;
-  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(0, dh-5, dw, 5);
-  ctx.fillStyle = conf>=80?'#00ffb4':conf>=50?'#ff0':'#f44';
-  ctx.fillRect(0, dh-5, Math.round(dw*conf/100), 5);
-}
-
-// Draw overlay on frozen cam frame (step mode)
-function drawCamOverlayFrozen(d) {
-  const cvs  = document.getElementById('cam-overlay');
-  const wrap = document.getElementById('cam-wrap');
-  const dw   = wrap.clientWidth || 480;
-  const src  = camFrozenCanvas;
-  const dh   = src ? Math.round(dw * src.height / src.width) : Math.round(dw*9/16);
-
-  if (cvs.width !== dw || cvs.height !== dh) { cvs.width = dw; cvs.height = dh; }
-  const ctx = cvs.getContext('2d');
-  ctx.clearRect(0, 0, dw, dh);
-
-  // Draw frozen frame as background
-  if (src) try { ctx.drawImage(src, 0, 0, dw, dh); } catch(e) {}
-
-  const vw = d.vid_w || src?.width  || 640;
-  const vh = d.vid_h || src?.height || 480;
-  const sx = dw / vw, sy = dh / vh;
-
-  // Hub dot
-  const hub = d.hub_px || d.hub;
-  if (hub) {
-    const hx = hub[0]*sx, hy = hub[1]*sy;
-    ctx.beginPath(); ctx.arc(hx, hy, 8, 0, Math.PI*2);
-    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fill();
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.stroke();
-    if (d.orange) {
-      const ox = d.orange[0]*sx, oy = d.orange[1]*sy;
-      ctx.beginPath(); ctx.moveTo(hx,hy); ctx.lineTo(ox,oy);
-      ctx.strokeStyle = 'rgba(0,255,180,0.7)'; ctx.lineWidth = 2;
-      ctx.setLineDash([6,4]); ctx.stroke(); ctx.setLineDash([]);
-    }
-  }
-
-  // Orange neon circle
-  if (d.orange) {
-    const ox = d.orange[0]*sx, oy = d.orange[1]*sy;
-    const r  = Math.max(8,(d.orange[2]||10)*Math.min(sx,sy)+6);
-    ctx.beginPath(); ctx.arc(ox,oy,r+6,0,Math.PI*2);
-    ctx.strokeStyle='rgba(0,255,136,0.2)'; ctx.lineWidth=8; ctx.stroke();
-    ctx.beginPath(); ctx.arc(ox,oy,r,0,Math.PI*2);
-    ctx.strokeStyle='#00ffb4'; ctx.lineWidth=3; ctx.stroke();
-    ctx.beginPath(); ctx.arc(ox,oy,4,0,Math.PI*2);
-    ctx.fillStyle='#00ffb4'; ctx.fill();
-    ctx.font='bold 12px system-ui'; ctx.fillStyle='#00ffb4';
-    ctx.fillText('ORA',ox+r+6,oy+5);
-  }
-
-  // Angle text
-  if (d.rotation_deg != null) {
-    const ang = d.rotation_deg.toFixed(1)+'°';
-    const cum = ((d.cumulative_deg||0)>=0?'+':'')+(d.cumulative_deg||0).toFixed(1)+'°';
-    ctx.font='bold 15px system-ui';
-    const bw=Math.max(ctx.measureText(ang).width,ctx.measureText(cum).width)+18;
-    ctx.fillStyle='rgba(0,0,0,0.6)';
-    ctx.beginPath(); ctx.roundRect(6,6,bw,52,6); ctx.fill();
-    ctx.fillStyle='#ffcc00'; ctx.fillText(ang,13,26);
-    ctx.fillStyle='#00ffb4'; ctx.fillText(cum,13,48);
-  }
-
-  // Confidence bar
-  const conf = d.confidence_pct||0;
-  ctx.fillStyle='rgba(0,0,0,0.3)'; ctx.fillRect(0,dh-5,dw,5);
-  ctx.fillStyle=conf>=80?'#00ffb4':conf>=50?'#ff0':'#f44';
-  ctx.fillRect(0,dh-5,Math.round(dw*conf/100),5);
-}
-
-// Old live overlay loop — keep for fallback when stream not active
-function camOverlayLoop() {
-  if (!camWaitingReply && !ws) drawCamOverlay(lastDet);
-  requestAnimationFrame(camOverlayLoop);
-}
-camOverlayLoop();
-
-/* ── Dial ───────────────────────────────────────────────────────────── */
+/* ── Dial drawing ───────────────────────────────────────────────────── */
 function drawDial(angleDeg, conf) {
-  const c = document.getElementById('dial');
+  const c   = document.getElementById('dial');
   const ctx = c.getContext('2d');
   const cx = 75, cy = 75, r = 62;
+
   ctx.clearRect(0, 0, 150, 150);
+
+  /* Outer track */
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2);
   ctx.fillStyle = '#111'; ctx.fill();
   ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 2; ctx.stroke();
+
+  /* Confidence arc (background) */
   if (conf != null) {
-    const arcEnd = -Math.PI/2 + (conf/100)*Math.PI*2;
-    ctx.beginPath(); ctx.arc(cx, cy, r-5, -Math.PI/2, arcEnd);
-    ctx.strokeStyle = conf>=80?'#00ffb4':conf>=50?'#ff0':'#f44';
+    const arcEnd = -Math.PI/2 + (conf/100) * Math.PI*2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r-5, -Math.PI/2, arcEnd);
+    ctx.strokeStyle = conf >= 80 ? '#00ffb4' : conf >= 50 ? '#ff0' : '#f44';
     ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.stroke();
   }
+
+  /* Tick at 12 o'clock */
   ctx.strokeStyle = '#444'; ctx.lineWidth = 2; ctx.lineCap = 'butt';
   ctx.beginPath(); ctx.moveTo(cx, cy-r+8); ctx.lineTo(cx, cy-r+16); ctx.stroke();
+
+  /* Needle */
   if (angleDeg != null) {
-    const rad = (angleDeg-90)*Math.PI/180;
+    const rad = (angleDeg - 90) * Math.PI / 180;
     ctx.strokeStyle = '#00ffb4'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(cx-8*Math.cos(rad), cy-8*Math.sin(rad));
-    ctx.lineTo(cx+(r-18)*Math.cos(rad), cy+(r-18)*Math.sin(rad));
+    ctx.moveTo(cx - 8*Math.cos(rad), cy - 8*Math.sin(rad));
+    ctx.lineTo(cx + (r-18)*Math.cos(rad), cy + (r-18)*Math.sin(rad));
     ctx.stroke();
   }
+
+  /* Center dot */
   ctx.fillStyle = '#00ffb4';
   ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI*2); ctx.fill();
 }
@@ -415,28 +282,37 @@ drawDial(null, null);
 /* ── Mini chart ─────────────────────────────────────────────────────── */
 function drawMiniChart() {
   const canvas = document.getElementById('minichart');
-  canvas.width  = canvas.offsetWidth || 400;
+  canvas.width  = canvas.offsetWidth  || 400;
   canvas.height = canvas.offsetHeight || 130;
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
+
   ctx.fillStyle = '#111'; ctx.fillRect(0, 0, W, H);
   if (chartData.length < 2) return;
-  const pad = {l:40,r:8,t:10,b:18};
-  const cW = W-pad.l-pad.r, cH = H-pad.t-pad.b;
+
+  const pad = { l:40, r:8, t:10, b:18 };
+  const cW  = W - pad.l - pad.r;
+  const cH  = H - pad.t - pad.b;
   const cums = chartData.map(d => d.cum);
-  const vMin = Math.min(...cums,0), vMax = Math.max(...cums,1), vR = vMax-vMin||1;
+  const vMin = Math.min(...cums, 0), vMax = Math.max(...cums, 1);
+  const vR   = vMax - vMin || 1;
+
+  /* Grid */
   ctx.strokeStyle = '#1e1e1e'; ctx.lineWidth = 1;
-  [0,.5,1].forEach(f => {
-    const y = pad.t+f*cH, v = vMax-f*vR;
-    ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(W-pad.r,y); ctx.stroke();
+  [0, .5, 1].forEach(f => {
+    const y = pad.t + f * cH;
+    const v = vMax - f * vR;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W-pad.r, y); ctx.stroke();
     ctx.fillStyle = '#444'; ctx.font = '9px system-ui';
     ctx.fillText(v.toFixed(0)+'°', 2, y+3);
   });
+
+  /* Line */
   ctx.strokeStyle = '#00ffb4'; ctx.lineWidth = 1.5;
   ctx.beginPath();
-  chartData.forEach((d,i) => {
-    const x = pad.l+i/(chartData.length-1)*cW;
-    const y = pad.t+(1-(d.cum-vMin)/vR)*cH;
+  chartData.forEach((d, i) => {
+    const x = pad.l + i/(chartData.length-1)*cW;
+    const y = pad.t + (1-(d.cum-vMin)/vR)*cH;
     i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
   });
   ctx.stroke();
@@ -446,307 +322,180 @@ function drawMiniChart() {
 async function startStream() {
   const sel = document.getElementById('cam-select');
   const fps = +document.getElementById('fps-input').value || 15;
+
   try {
     camStream = await navigator.mediaDevices.getUserMedia({
       video: { deviceId: sel.value || undefined, width: 640, height: 480 }
     });
     document.getElementById('cam').srcObject = camStream;
 
-    ws = new WebSocket('wss://wheelttt.xyz/stream');
+    const _med = document.getElementById('cam-medium')?.value || 'air';
+    const _ver = document.getElementById('cam-version')?.value || 'free';
+    const _lng = document.getElementById('cam-lang')?.value || 'en';
+    const _wsBase = 'wss://wheelttt.xyz';
+    ws = new WebSocket(`${_wsBase}/stream?medium=${_med}&version=${_ver}&lang=${_lng}&direction=auto`);
+    ws.onopen  = () => addLog('WebSocket connected');
+    ws.onclose = () => addLog('WebSocket closed');
+    ws.onerror = () => addLog('WebSocket error');
 
-    ws.onopen = () => {
-      addLog('WebSocket connected — step mode');
-      camWaitingReply = false;
-      camFrozenCanvas = document.createElement('canvas');
-      const video = document.getElementById('cam');
-      const frameInterval = 1000 / fps;
-
-      function sendNextCamFrame() {
-        if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        if (camWaitingReply) return;
-
-        camFrozenCanvas.width  = video.videoWidth  || 640;
-        camFrozenCanvas.height = video.videoHeight || 480;
-        camFrozenCanvas.getContext('2d').drawImage(video, 0, 0);
-
-        camFrozenCanvas.toBlob(b => {
-          if (!b || !ws || ws.readyState !== WebSocket.OPEN) return;
-          b.arrayBuffer().then(buf => {
-            ws.send(buf);
-            camWaitingReply = true;
-          });
-        }, 'image/jpeg', 0.82);
-      }
-
-      sendLoop = setInterval(sendNextCamFrame, frameInterval);
+    ws.onmessage = (event) => {
+      const d = JSON.parse(event.data);
+      if (d.error) { addLog('Server: ' + d.error); return; }
+      // First message contains job_id
+      if (d.type === 'init') { streamJobId = d.job_id; addLog('Job: '+streamJobId); return; }
+      updateDisplay(d);
     };
 
-    ws.onclose = () => { addLog('WebSocket closed'); camWaitingReply = false; };
-    ws.onerror = () => { addLog('WebSocket error'); camWaitingReply = false; };
-
-    ws.onmessage = event => {
-      try {
-        const d = JSON.parse(event.data);
-        if (d.error) { addLog('Server: ' + d.error); camWaitingReply = false; return; }
-
-        // Draw overlay on the frozen cam frame
-        drawCamOverlayFrozen(d);
-        updateDisplay(d);
-        camWaitingReply = false;
-      } catch(e) { camWaitingReply = false; }
-    };
+    /* Send frames at requested fps */
+    const canvas = document.createElement('canvas');
+    const video  = document.getElementById('cam');
+    sendLoop = setInterval(() => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      canvas.width  = video.videoWidth  || 640;
+      canvas.height = video.videoHeight || 480;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      canvas.toBlob(blob => blob.arrayBuffer().then(b => ws.send(b)),
+                    'image/jpeg', 0.82);
+    }, 1000 / fps);
 
     document.getElementById('btn-start').disabled = true;
     document.getElementById('btn-stop').disabled  = false;
-    addLog(`Streaming at ${fps} fps (step mode)`);
+    addLog(`Streaming at ${fps} fps`);
 
-  } catch(e) { addLog('Error: ' + e.message); }
-}
-
-function stopStream() {
-  if (sendLoop)  clearInterval(sendLoop);
-  if (ws)        ws.close();
-  if (camStream) camStream.getTracks().forEach(t => t.stop());
-  ws = camStream = sendLoop = camFrozenCanvas = null;
-  camWaitingReply = false; lastDet = null;
-  document.getElementById('btn-start').disabled = false;
-  document.getElementById('btn-stop').disabled  = true;
-  addLog('Stream stopped');
-}
-
-function resetZero() {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    stopStream();
-    setTimeout(startStream, 300);
-    addLog('Zero reset — reconnecting...');
+  } catch (e) {
+    addLog('Error: ' + e.message);
   }
 }
 
-/* ── Update display ─────────────────────────────────────────────────── */
+let streamJobId = null;
+
+function stopStream() {
+  if (sendLoop)   clearInterval(sendLoop);
+  if (ws)         ws.close();
+  if (camStream)  camStream.getTracks().forEach(t => t.stop());
+  ws = camStream = sendLoop = null;
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-stop').disabled  = true;
+  addLog('Stream stopped');
+  // Fetch physics after server finishes processing
+  if (streamJobId) {
+    addLog('Loading physics for job: ' + streamJobId);
+    setTimeout(() => fetchStreamPhysics(streamJobId), 2000);
+  }
+}
+
+async function fetchStreamPhysics(jobId) {
+  try {
+    const base = 'https://wheelttt.xyz';
+    const r = await fetch(base + '/physics/' + jobId);
+    if (!r.ok) { addLog('Physics not ready'); return; }
+    const p = await r.json();
+    if (p && p.message) renderStreamPhysics(p);
+  } catch(e) { addLog('Physics: ' + e.message); }
+}
+
+function renderStreamPhysics(p) {
+  const msg = p.message || {};
+  const card = document.getElementById('phys-card');
+  card.style.display = 'block';
+
+  document.getElementById('phys-msg').textContent = msg.message || '';
+
+  if (msg.warning) {
+    const w = document.getElementById('phys-warn');
+    w.style.display = 'block'; w.textContent = msg.warning;
+  }
+
+  const disp = msg.display || {};
+  const labels = {rotation_deg:'Rotation',force_N:'Force',power_W:'Power',work_J:'Work',planck_freq_Hz:'Planck Hz'};
+  const colors = {rotation_deg:'#00ffb4',force_N:'#ff8800',power_W:'#44aaff',work_J:'#ffcc00',planck_freq_Hz:'#f44'};
+  document.getElementById('phys-display').innerHTML = Object.entries(disp).map(([k,v]) =>
+    `<div style="background:#0f1f12;border:1px solid #1a3a20;border-radius:7px;padding:.5rem .8rem;text-align:center;flex:1;min-width:90px">
+      <div style="font-size:1rem;font-weight:700;color:${colors[k]||'#00ffb4'}">${v}</div>
+      <div style="font-size:.62rem;color:#555;margin-top:1px">${labels[k]||k}</div>
+    </div>`).join('');
+
+  if (msg.t_lajtner_s != null) {
+    const lEl = document.getElementById('phys-lajtner');
+    lEl.style.display = 'block';
+    lEl.innerHTML = 't_Lajtner: <span style="color:#ccc">'+msg.t_lajtner_s+'s</span>'
+      +' &nbsp; a_Lajtner: <span style="color:#ccc">'+(msg.a_lajtner||'—')+'</span>';
+  }
+
+  if (msg.rank_message) {
+    const c = msg.rank_medal==='gold'?'#ff8800':msg.rank_medal==='silver'?'#44aaff':'#cc6633';
+    document.getElementById('phys-rank').innerHTML =
+      `<div style="border-left:3px solid ${c};padding:.4rem .7rem;margin:.3rem 0;font-size:.82rem;color:${c}">${msg.rank_message}</div>`;
+  }
+
+  // Physics table
+  const result = p.result || {};
+  const VARS=['t_total','phi_total','omega_max','J','M_res','M_motor_accel','M_motor_const',
+    'M_avg_active','F_const','F_accel','F_avg_active','F_max','E_kin_max','E_kin_const',
+    'E_kin_avg_active','P_peak','P_const','P_avg','W_total','L_ang'];
+  const UNITS={t_total:'s',phi_total:'rad',omega_max:'rad/s',J:'kgm2',M_res:'Nm',M_motor_accel:'Nm',
+    M_motor_const:'Nm',M_avg_active:'Nm',F_const:'N',F_accel:'N',F_avg_active:'N',F_max:'N',
+    E_kin_max:'J',E_kin_const:'J',E_kin_avg_active:'J',P_peak:'W',P_const:'W',P_avg:'W',
+    W_total:'J',L_ang:'kgm2/s'};
+  const SI=[[1e24,'Y'],[1e21,'Z'],[1e18,'E'],[1e15,'P'],[1e12,'T'],[1e9,'G'],
+    [1e6,'M'],[1e3,'k'],[1,''],[1e-3,'m'],[1e-6,'µ'],[1e-9,'n'],[1e-12,'p'],[1e-15,'f']];
+  function fSI(v,u){
+    if(v==null||v===undefined)return'—';if(v===0)return'0 '+u;
+    const a=Math.abs(v);
+    for(const[f,px]of SI)if(a>=f)return(v/f).toFixed(3)+' '+px+u;
+    return v.toExponential(2)+' '+u;
+  }
+  if(result.ideal||result.air) {
+    document.getElementById('phys-tb').innerHTML = VARS.map((v,i)=>`<tr>
+      <td style="color:#333;padding:.18rem .35rem">${i+1}</td>
+      <td style="padding:.18rem .35rem">${v}</td>
+      <td style="color:#333;padding:.18rem .35rem">${UNITS[v]}</td>
+      <td style="color:#44aaff;padding:.18rem .35rem">${fSI(result.ideal?.[v],UNITS[v])}</td>
+      <td style="color:#00ffb4;padding:.18rem .35rem">${fSI(result.air?.[v],UNITS[v])}</td>
+      <td style="color:#00bcd4;padding:.18rem .35rem">${fSI(result.water?.[v],UNITS[v])}</td>
+    </tr>`).join('');
+  }
+}
+
+function toggleStreamPhysTable() {
+  const wrap = document.getElementById('phys-tbl-wrap');
+  const vis  = wrap.style.display === 'block';
+  wrap.style.display = vis ? 'none' : 'block';
+  document.getElementById('phys-tbl-btn').textContent = vis ? 'Show 20 variables' : 'Hide table';
+}
+
+function resetZero() {
+  /* Tell server to reset zero by disconnecting + reconnecting
+     The server resets zero_offset = None on each new connection */
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    stopStream();
+    setTimeout(startStream, 300);
+    addLog('Zero reset &#8212; reconnecting...');
+  }
+}
+
+/* ── Update display from WS message ─────────────────────────────────── */
 function updateDisplay(d) {
   const angle = d.rotation_deg;
   const cum   = d.cumulative_deg;
   const conf  = d.confidence_pct;
-  document.getElementById('val-angle').textContent = angle!=null ? angle.toFixed(1)+'°' : '—';
-  document.getElementById('val-cum').textContent   = (cum>=0?'+':'')+cum.toFixed(1)+'°';
-  document.getElementById('val-conf').textContent  = conf+'%';
-  document.getElementById('conf-fill').style.width = conf+'%';
+
+  document.getElementById('val-angle').textContent =
+    angle != null ? angle.toFixed(1) + '°' : '—';
+  document.getElementById('val-cum').textContent =
+    (cum >= 0 ? '+' : '') + cum.toFixed(1) + '°';
+  document.getElementById('val-conf').textContent = conf + '%';
+  document.getElementById('conf-fill').style.width = conf + '%';
   document.getElementById('val-src').textContent   = d.source || '—';
-  document.getElementById('val-frame').textContent =
-    '#'+d.frame+(d.scale_mm_px ? '  '+d.scale_mm_px.toFixed(4)+' mm/px' : '');
+  document.getElementById('val-frame').textContent  =
+    '#' + d.frame + (d.scale_mm_px ? '  ' + d.scale_mm_px.toFixed(4) + ' mm/px' : '');
+
   drawDial(angle, conf);
-  chartData.push({cum, conf});
+
+  /* Mini chart history */
+  chartData.push({ cum: cum, conf: conf });
   if (chartData.length > HISTORY) chartData.shift();
   drawMiniChart();
-}
-
-/* ── Test panel — send video frames via /stream WebSocket ───────────── */
-let testWs = null, testVidEl = null, testSendLoop = null;
-let testWaitingReply = false, testCanvas2d = null;
-
-function testBase() {
-  return (document.getElementById('test-url').value||'').replace(/\/$/,'');
-}
-
-async function testHealth() {
-  try {
-    const r = await fetch(testBase()+'/health');
-    const d = await r.json();
-    addTestLog('Health OK: '+JSON.stringify(d));
-  } catch(e) { addTestLog('Health error: '+e.message); }
-}
-
-function startTestStream() {
-  const f = document.getElementById('test-file').files[0];
-  if (!f) { addTestLog('Select a video file first'); return; }
-
-  // Create hidden video element to decode file frame by frame
-  testVidEl = document.createElement('video');
-  testVidEl.src = URL.createObjectURL(f);
-  testVidEl.muted = true;
-  testVidEl.playsInline = true;
-
-  testVidEl.addEventListener('loadedmetadata', () => {
-    testVidW = testVidEl.videoWidth  || 640;
-    testVidH = testVidEl.videoHeight || 480;
-    addTestLog('Video: '+testVidW+'x'+testVidH+' dur='+testVidEl.duration.toFixed(1)+'s');
-    connectTestWs();
-  });
-}
-
-function connectTestWs() {
-  const base = testBase();
-  const proto = base.startsWith('https') ? 'wss' : 'ws';
-  const host  = base.replace(/^https?:\/\//, '');
-  const url   = proto + '://' + host + '/stream';
-
-  addTestLog('Connecting WS: '+url);
-  testWs = new WebSocket(url);
-
-  testWs.onopen = () => {
-    addTestLog('WS connected — step mode (send → wait → draw → next)');
-    document.getElementById('test-btn-start').disabled = true;
-    document.getElementById('test-btn-stop').disabled  = false;
-    document.getElementById('test-job').textContent = 'WS stream active';
-
-    const fps = +document.getElementById('test-fps').value || 10;
-    const frameInterval = 1000 / fps;  // min ms between frames
-
-    // Step mode: send one frame, wait for response, draw, send next
-    testWaitingReply = false;
-    testCanvas2d = document.createElement('canvas');
-
-    function sendNextFrame() {
-      if (!testWs || testWs.readyState !== WebSocket.OPEN) return;
-      if (testWaitingReply) return;  // wait for server reply first
-
-      if (!testVidEl || testVidEl.ended) {
-        if (testVidEl) { testVidEl.currentTime = 0; testVidEl.play(); }
-        return;
-      }
-
-      // Capture current frame
-      testCanvas2d.width  = testVidEl.videoWidth  || 640;
-      testCanvas2d.height = testVidEl.videoHeight || 480;
-      testCanvas2d.getContext('2d').drawImage(testVidEl, 0, 0);
-
-      testCanvas2d.toBlob(b => {
-        if (!b || !testWs || testWs.readyState !== WebSocket.OPEN) return;
-        b.arrayBuffer().then(buf => {
-          testWs.send(buf);
-          testWaitingReply = true;
-        });
-      }, 'image/jpeg', 0.82);
-    }
-
-    // Tick loop — only sends if not waiting
-    testSendLoop = setInterval(sendNextFrame, frameInterval);
-    testVidEl.play();
-  };
-
-  testWs.onmessage = e => {
-    try {
-      const d = JSON.parse(e.data);
-      if (d.error) { addTestLog('Server: '+d.error); testWaitingReply=false; return; }
-
-      // Update metrics
-      document.getElementById('t-ang').textContent  =
-        d.rotation_deg!=null ? d.rotation_deg.toFixed(1)+'°' : '—';
-      document.getElementById('t-cum').textContent  =
-        ((d.cumulative_deg||0)>=0?'+':'')+(d.cumulative_deg||0).toFixed(1)+'°';
-      document.getElementById('t-vel').textContent  =
-        d.angular_vel_dps!=null ? d.angular_vel_dps.toFixed(1) : '—';
-      document.getElementById('t-conf').textContent = (d.confidence_pct||0)+'%';
-
-      // Draw overlay on the FROZEN frame that was sent (testCanvas2d has it)
-      drawTestCanvas(d, testCanvas2d);
-
-      // Also update main Real-time rotation display
-      updateDisplay(d);
-
-      // Ready to send next frame
-      testWaitingReply = false;
-
-    } catch(ex) { addTestLog('Parse error: '+ex.message); testWaitingReply=false; }
-  };
-
-  testWs.onclose = () => { addTestLog('WS closed'); stopTestStream(); };
-  testWs.onerror = () => { addTestLog('WS error'); stopTestStream(); };
-}
-
-function stopTestStream() {
-  if (testSendLoop) clearInterval(testSendLoop);
-  if (testWs)       testWs.close();
-  if (testVidEl)    { testVidEl.pause(); testVidEl.src = ''; }
-  testWs = testVidEl = testSendLoop = testCanvas2d = null;
-  testWaitingReply = false;
-  document.getElementById('test-btn-start').disabled = false;
-  document.getElementById('test-btn-stop').disabled  = true;
-  document.getElementById('test-job').textContent = 'stopped';
-  addTestLog('Test stream stopped');
-}
-
-/* ── Test canvas overlay ────────────────────────────────────────────── */
-function drawTestCanvas(d, src) {
-  const cvs  = document.getElementById('test-canvas');
-  const wrap = cvs.parentElement;
-  const dw   = wrap.clientWidth || 300;
-
-  // Use vid_w/vid_h from server response if available
-  const vw = d.vid_w || testVidW || 640;
-  const vh = d.vid_h || testVidH || 480;
-  const dh = Math.round(dw * vh / vw);
-
-  if (cvs.width !== dw || cvs.height !== dh) { cvs.width = dw; cvs.height = dh; }
-
-  const ctx = cvs.getContext('2d');
-  ctx.clearRect(0, 0, dw, dh);
-
-  // Draw frozen frame (canvas) or video as background
-  if (src && (src.tagName === 'CANVAS' || (src.tagName === 'VIDEO' && src.readyState >= 2))) {
-    try { ctx.drawImage(src, 0, 0, dw, dh); } catch(e) {
-      ctx.fillStyle = '#111'; ctx.fillRect(0, 0, dw, dh);
-    }
-  } else {
-    ctx.fillStyle = '#111'; ctx.fillRect(0, 0, dw, dh);
-  }
-
-  const sx = dw / vw, sy = dh / vh;
-
-  // Hub dot — WS sends hub_px field
-  const hub = d.hub_px || d.hub;
-  if (hub) {
-    const hx = hub[0]*sx, hy = hub[1]*sy;
-    ctx.beginPath(); ctx.arc(hx, hy, 8, 0, Math.PI*2);
-    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fill();
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.stroke();
-
-    if (d.orange) {
-      const ox = d.orange[0]*sx, oy = d.orange[1]*sy;
-      ctx.beginPath(); ctx.moveTo(hx,hy); ctx.lineTo(ox,oy);
-      ctx.strokeStyle = 'rgba(0,255,180,0.7)'; ctx.lineWidth = 2;
-      ctx.setLineDash([6,4]); ctx.stroke(); ctx.setLineDash([]);
-    }
-  }
-
-  // Orange neon circle
-  if (d.orange) {
-    const ox = d.orange[0]*sx, oy = d.orange[1]*sy;
-    const r  = Math.max(8, (d.orange[2]||10)*Math.min(sx,sy)+6);
-    ctx.beginPath(); ctx.arc(ox,oy,r+6,0,Math.PI*2);
-    ctx.strokeStyle = 'rgba(0,255,136,0.2)'; ctx.lineWidth = 8; ctx.stroke();
-    ctx.beginPath(); ctx.arc(ox,oy,r,0,Math.PI*2);
-    ctx.strokeStyle = '#00ffb4'; ctx.lineWidth = 3; ctx.stroke();
-    ctx.beginPath(); ctx.arc(ox,oy,4,0,Math.PI*2);
-    ctx.fillStyle = '#00ffb4'; ctx.fill();
-    ctx.font = 'bold 12px system-ui';
-    ctx.fillStyle = '#00ffb4';
-    ctx.fillText('ORA', ox+r+6, oy+5);
-  }
-
-  // Angle + cumulative text box
-  if (d.rotation_deg != null) {
-    const ang = d.rotation_deg.toFixed(1)+'°';
-    const cum = ((d.cumulative_deg||0)>=0?'+':'')+(d.cumulative_deg||0).toFixed(1)+'°';
-    ctx.font = 'bold 14px system-ui';
-    const bw = Math.max(ctx.measureText(ang).width, ctx.measureText(cum).width)+16;
-    ctx.fillStyle = 'rgba(0,0,0,0.65)';
-    ctx.beginPath(); ctx.roundRect(5,5,bw,48,5); ctx.fill();
-    ctx.fillStyle = '#ffcc00'; ctx.fillText(ang, 11, 23);
-    ctx.fillStyle = '#00ffb4'; ctx.fillText(cum, 11, 44);
-  }
-
-  // Frame counter top-right
-  ctx.font = '11px system-ui'; ctx.fillStyle = 'rgba(255,255,255,0.6)';
-  ctx.textAlign = 'right';
-  ctx.fillText('f:'+d.frame, dw-6, 18);
-  ctx.textAlign = 'left';
-
-  // Confidence bar bottom
-  const conf = d.confidence_pct || 0;
-  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(0, dh-5, dw, 5);
-  ctx.fillStyle = conf>=80?'#00ffb4':conf>=50?'#ff0':'#f44';
-  ctx.fillRect(0, dh-5, Math.round(dw*conf/100), 5);
 }
 </script>
 </body>
