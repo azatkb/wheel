@@ -34,7 +34,6 @@ from app.database import make_sample, persist_samples
 
 log = logging.getLogger(__name__)
 
-
 # ── Feature flags ──────────────────────────────────────────────────────────
 USE_YOLO          = True
 USE_PAIR_FALLBACK = False
@@ -47,7 +46,7 @@ YOLO_EVERY      = 2
 ONNX_INPUT_SIZE = 640
 
 # ── Speed config ───────────────────────────────────────────────────────────
-SKIP_FRAMES = 4   # 1=every frame, 4=4x faster
+SKIP_FRAMES = 1   # 1=every frame, 4=4x faster
 
 # Orange HSV verification
 ORANGE_H_LO  = 8
@@ -276,13 +275,17 @@ def draw_info_bar(bar,W,t_sec,rot_deg,rot_rad,cum_deg,cum_rad,
 def process(video_path: str, out_path: str, job_id: str = "local",
             direction: str = "auto", medium: str = "air",
             info_level: str = "basic",
-            progress_cb=None) -> list:
+            progress_cb=None,
+            watermark: str = "© enyem.com",
+            upload_dt: str = "",
+            hand_label: str = "") -> list:
     """
     Process video. progress_cb receives lightweight JSON dict with:
       - detection coordinates (hub, orange)
       - rotation data (angle, cumulative, velocity)
       - video dimensions (for canvas scaling in browser)
     No JPEG frames — browser draws overlay on original video.
+    Watermark, upload datetime, hand/medium labels are drawn on video.
     """
     log.info("[DETECT] Building HSV ranges:")
     markers = build_ranges(MARKER_DEFS)
@@ -494,6 +497,29 @@ def process(video_path: str, out_path: str, job_id: str = "local",
                       math.radians(rot_smooth) if rot_smooth is not None else None,
                       -rot_cum,math.radians(-rot_cum),
                       -vel_dps,-vel_rps,conf_disp,hub_source,info_level,direction,medium)
+        # ── Watermark + labels ────────────────────────────────────────────
+        font  = cv2.FONT_HERSHEY_SIMPLEX
+        scale = max(0.35, W/1280*0.55)
+        thick = 1
+        wcolor= (200,200,200); shadow=(0,0,0)
+        # Bottom-left: watermark
+        if watermark:
+            cv2.putText(ann,watermark,(8,H-8),font,scale,shadow,thick+1,cv2.LINE_AA)
+            cv2.putText(ann,watermark,(8,H-8),font,scale,wcolor,thick,  cv2.LINE_AA)
+        # Top-right: upload datetime
+        if upload_dt:
+            tw=cv2.getTextSize(upload_dt,font,scale*0.8,thick)[0][0]
+            cv2.putText(ann,upload_dt,(W-tw-6,20),font,scale*0.8,shadow,thick+1,cv2.LINE_AA)
+            cv2.putText(ann,upload_dt,(W-tw-6,20),font,scale*0.8,wcolor,thick,  cv2.LINE_AA)
+        # Top-left: medium + hand
+        labels = []
+        if medium: labels.append(medium)
+        if hand_label: labels.append(hand_label)
+        if labels:
+            lbl = "  ".join(labels)
+            cv2.putText(ann,lbl,(8,20),font,scale*0.8,shadow,thick+1,cv2.LINE_AA)
+            cv2.putText(ann,lbl,(8,20),font,scale*0.8,wcolor,thick,  cv2.LINE_AA)
+
         out_vid.write(np.vstack([ann,bar]))
 
         if fi%60==0:

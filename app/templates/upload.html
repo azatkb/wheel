@@ -61,6 +61,34 @@ tr:hover td{background:#1a1a1a}
 .tag{display:inline-block;padding:.1rem .4rem;border-radius:4px;font-size:.7rem;font-weight:700}
 .tg{background:#133;color:#0f0}.tn{background:#1e1e1e;color:#555}
 .cb{display:inline-block;height:6px;border-radius:3px;vertical-align:middle;background:linear-gradient(90deg,#f44,#ff0,#0f0)}
+
+/* Physics result block */
+.phys-card{background:#0d1a0f;border:1px solid #1a3a20;border-radius:12px;padding:1.4rem;margin-bottom:1.3rem;display:none}
+.phys-msg{font-size:1.15rem;font-weight:700;color:#00ff88;margin-bottom:.8rem;line-height:1.4}
+.phys-warn{background:#1a0a0a;border:1px solid #f44;border-radius:8px;padding:.6rem .9rem;color:#f44;font-size:.82rem;margin-bottom:.8rem}
+.phys-display{display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1rem}
+.phys-val{background:#0f1f12;border:1px solid #1a3a20;border-radius:8px;padding:.6rem 1rem;text-align:center;flex:1;min-width:110px}
+.phys-val .pv{font-size:1.3rem;font-weight:700;color:#00ff88;font-variant-numeric:tabular-nums}
+.phys-val .pl{font-size:.65rem;color:#555;margin-top:.1rem}
+.phys-val.amber .pv{color:#ff8800}
+.phys-val.blue .pv{color:#44aaff}
+.phys-val.yellow .pv{color:#ffcc00}
+.phys-val.red .pv{color:#f44}
+.phys-lajtner{font-size:.8rem;color:#555;margin:.4rem 0 .8rem;padding:.5rem .7rem;background:#111;border-radius:6px}
+.phys-lajtner span{color:#ccc}
+.rank-box{border-radius:8px;padding:.6rem 1rem;margin:.4rem 0;font-size:.85rem}
+.rank-gold{background:#1a1500;border:1px solid #ff8800;color:#ff8800}
+.rank-silver{background:#111520;border:1px solid #44aaff;color:#44aaff}
+.rank-bronze{background:#130d0a;border:1px solid #cc6633;color:#cc6633}
+.rank-group{border-left:3px solid #555;padding:.4rem .7rem;margin:.3rem 0;font-size:.8rem;color:#aaa}
+.phys-tbl-wrap{max-height:260px;overflow-y:auto;margin-top:.8rem}
+.phys-tbl{width:100%;border-collapse:collapse;font-size:.73rem}
+.phys-tbl th{color:#555;text-align:left;padding:.25rem .4rem;border-bottom:1px solid #1e1e1e;position:sticky;top:0;background:#0d1a0f;font-weight:400}
+.phys-tbl td{padding:.22rem .4rem;border-bottom:1px solid #141f16}
+.phys-tbl tr:hover td{background:#0f2012}
+.phys-tbl .ideal{color:#44aaff}
+.phys-tbl .air{color:#00ff88}
+.phys-tbl .water{color:#00bcd4}
 </style>
 </head>
 <body>
@@ -93,6 +121,12 @@ tr:hover td{background:#1a1a1a}
     </div>
     <div><label>Info level</label>
       <select id="info"><option value="basic">Basic</option><option value="full">Full</option></select>
+    </div>
+    <div><label>Version</label>
+      <select id="ver"><option value="free">Free</option><option value="paid">Paid</option></select>
+    </div>
+    <div><label>Language</label>
+      <select id="lang"><option value="en">English</option><option value="hu">Hungarian</option><option value="de">German</option></select>
     </div>
   </div>
   <button onclick="go()" id="btn">Upload &amp; Process</button>
@@ -138,6 +172,28 @@ tr:hover td{background:#1a1a1a}
   <pre id="log"></pre>
 </div>
 
+<div class="phys-card" id="phys-card">
+  <h2>Physics result</h2>
+  <div id="phys-msg" class="phys-msg"></div>
+  <div id="phys-warn" class="phys-warn" style="display:none"></div>
+  <div id="phys-display" class="phys-display"></div>
+  <div id="phys-lajtner" class="phys-lajtner" style="display:none"></div>
+  <div id="phys-rank"></div>
+  <div id="phys-group"></div>
+  <div id="phys-tbl-wrap" class="phys-tbl-wrap" style="display:none">
+    <table class="phys-tbl">
+      <thead><tr>
+        <th>#</th><th>Variable</th><th>Unit</th>
+        <th class="ideal">Ideal</th>
+        <th class="air">Air</th>
+        <th class="water">Water</th>
+      </tr></thead>
+      <tbody id="phys-tb"></tbody>
+    </table>
+  </div>
+  <button class="sec" onclick="togglePhysTable()" id="phys-tbl-btn" style="margin-top:.6rem">Show 20 variables</button>
+</div>
+
 <div class="card" id="res" style="display:none">
   <h2>Results</h2>
   <div class="metrics" id="mets"></div>
@@ -157,7 +213,7 @@ tr:hover td{background:#1a1a1a}
 
 <script>
 // ── API server address ─────────────────────────────────────────────────────
-const API = 'https://wheelttt.xyz';
+const API = "http://localhost:8000"//'https://schema-zone-completely-bundle.trycloudflare.com';
 
 let jid=null, statusTimer=null, sse=null, vidFile=null;
 let vidW=1, vidH=1, totalSec=0;
@@ -211,6 +267,8 @@ function go(){
   fd.append('medium',         document.getElementById('med').value);
   fd.append('hand_visible',   document.getElementById('hand').value);
   fd.append('info_level',     document.getElementById('info').value);
+  fd.append('version',        document.getElementById('ver').value);
+  fd.append('lang',           document.getElementById('lang').value);
 
   const xhr=new XMLHttpRequest();
 
@@ -290,28 +348,16 @@ async function pollStatus(){
 function startProcessingUI(){
   document.getElementById('proc-layout').style.display='flex';
 
+  // Load local video — paused, we control currentTime
   if(vidFile){
     const vid=document.getElementById('vid');
     vid.src=URL.createObjectURL(vidFile);
     vid.style.display='block';
     vid.pause();
     document.getElementById('vid-placeholder').style.display='none';
-
-    // Wait for video to be ready before starting SSE seeks
-    // This ensures video.currentTime = t_sec works immediately
-    const onReady = () => {
-      vid.removeEventListener('loadeddata', onReady);
-      startSSE(jid);
-    };
-    if(vid.readyState >= 2){
-      // Already ready
-      startSSE(jid);
-    } else {
-      vid.addEventListener('loadeddata', onReady);
-    }
-  } else {
-    startSSE(jid);
   }
+
+  startSSE(jid);
 }
 
 // ── SSE: on each frame → seek video + draw overlay immediately ─────────────
@@ -323,8 +369,7 @@ function startSSE(job_id){
     try{
       const d=JSON.parse(e.data);
       if(d.done){ sse.close(); sse=null; return; }
-      if(d.error) return;
-      if(d.t_sec===undefined && d.frame===undefined) return;
+      if(d.error || d.t_sec===undefined) return;
 
       // Store dims
       if(d.vid_w) vidW=d.vid_w;
@@ -333,19 +378,12 @@ function startSSE(job_id){
 
       // ── METHOD 2: seek video to exact detection time ───────────────────
       const vid=document.getElementById('vid');
-      const det=d;  // capture for async use
-
-      if(vid.readyState>=2 && d.t_sec!==undefined){
-        const onSeeked = () => {
-          vid.removeEventListener('seeked', onSeeked);
-          drawOverlay(det);
-        };
-        vid.addEventListener('seeked', onSeeked);
-        vid.currentTime = d.t_sec;
-      } else {
-        // No video or not ready — still draw overlay coords
-        drawOverlay(d);
+      if(vid.readyState>=2){  // HAVE_CURRENT_DATA
+        vid.currentTime=d.t_sec;
       }
+
+      // Draw overlay immediately — perfectly in sync
+      drawOverlay(d);
 
       // Update progress bar
       const pct=d.pct||0;
@@ -354,13 +392,13 @@ function startSSE(job_id){
 
       // Update time label
       document.getElementById('live-time').textContent=
-        (d.t_sec||0).toFixed(2)+'s  /  '+(totalSec||0).toFixed(1)+'s';
+        d.t_sec.toFixed(2)+'s  /  '+totalSec.toFixed(1)+'s';
 
       // Update live numbers
       document.getElementById('lv-ang').textContent=
         d.rotation_deg!=null ? d.rotation_deg.toFixed(1)+'°' : '---';
       document.getElementById('lv-cum').textContent=
-        ((d.cumulative_deg||0)>=0?'+':'')+((d.cumulative_deg)||0).toFixed(1)+'°';
+        (d.cumulative_deg>=0?'+':'')+d.cumulative_deg.toFixed(1)+'°';
       document.getElementById('lv-vel').textContent=
         d.angular_vel_dps!=null ? d.angular_vel_dps.toFixed(1) : '---';
       document.getElementById('lv-conf').textContent=(d.confidence_pct||0)+'%';
@@ -370,11 +408,7 @@ function startSSE(job_id){
     }catch(ex){}
   };
 
-  sse.onerror=()=>{
-    // Cloudflare may close SSE after timeout — reconnect automatically
-    if(sse){ sse.close(); sse=null; }
-    if(jid) setTimeout(()=>{ if(jid && !sse) startSSE(jid); }, 1000);
-  };
+  sse.onerror=()=>{ if(sse){ sse.close(); sse=null; } };
 }
 
 // ── Canvas drawing ─────────────────────────────────────────────────────────
@@ -440,7 +474,7 @@ function drawOverlay(d){
   // Angle + cumulative text (top-left box)
   if(d.rotation_deg!=null){
     const ang=d.rotation_deg.toFixed(1)+'°';
-    const cum=((d.cumulative_deg||0)>=0?'+':'')+((d.cumulative_deg)||0).toFixed(1)+'°';
+    const cum=(d.cumulative_deg>=0?'+':'')+d.cumulative_deg.toFixed(1)+'°';
     ctx.font='bold 15px system-ui';
     const bw=Math.max(ctx.measureText(ang).width,ctx.measureText(cum).width)+18;
     ctx.fillStyle='rgba(0,0,0,0.6)';
@@ -461,6 +495,12 @@ function drawOverlay(d){
 async function showResults(jid,info){
   const samples=await(await fetch(API+'/results/'+jid)).json();
   addLog('Loaded '+samples.length+' samples');
+
+  // Fetch and render physics results
+  try{
+    const pr=await(await fetch(API+'/physics/'+jid)).json();
+    if(pr && pr.message) renderPhysics(pr.message);
+  }catch(e){ addLog('Physics: '+e.message); }
   document.getElementById('res').style.display='block';
   if(samples.length){
     const last=samples[samples.length-1];
@@ -492,6 +532,129 @@ async function showResults(jid,info){
       <td><span class="cb" style="width:${bw}px"></span></td>
       <td>${tag}</td></tr>`;
   });
+}
+
+// ── Physics result rendering ──────────────────────────────────────────────
+function renderPhysics(msg){
+  if(!msg) return;
+  const card = document.getElementById('phys-card');
+  card.style.display = 'block';
+
+  // Main message
+  document.getElementById('phys-msg').textContent = msg.message || '';
+
+  // Warning
+  if(msg.warning){
+    const w = document.getElementById('phys-warn');
+    w.style.display = 'block';
+    w.textContent = msg.warning;
+  }
+
+  // Display values (free: rotation+force, paid: +power+work+Planck)
+  const disp = msg.display || {};
+  const dispEl = document.getElementById('phys-display');
+  const labels = {
+    rotation_deg:   ['Rotation',    ''],
+    force_N:        ['Force',       ''],
+    power_W:        ['Power',       'amber'],
+    work_J:         ['Work',        'blue'],
+    planck_freq_Hz: ['Planck freq', 'yellow'],
+  };
+  dispEl.innerHTML = Object.entries(disp).map(([k,v])=>{
+    const [lbl,cls] = labels[k] || [k, ''];
+    return `<div class="phys-val ${cls}">
+      <div class="pv">${v}</div>
+      <div class="pl">${lbl}</div>
+    </div>`;
+  }).join('');
+
+  // t_Lajtner + a_Lajtner
+  if(msg.t_lajtner_s != null){
+    const lEl = document.getElementById('phys-lajtner');
+    lEl.style.display = 'block';
+    lEl.innerHTML =
+      't_Lajtner: <span>'+msg.t_lajtner_s+'s</span>' +
+      ' &nbsp;&nbsp; a_Lajtner: <span>'+(msg.a_lajtner||'—')+'</span>';
+  }
+
+  // Personal ranking medal
+  const rankEl = document.getElementById('phys-rank');
+  if(msg.rank_message){
+    const cls = msg.rank_medal==='gold'?'rank-gold':msg.rank_medal==='silver'?'rank-silver':'rank-bronze';
+    const pct = msg.pct_vs_personal_avg!=null ? ' ('+( msg.pct_vs_personal_avg>0?'+':'')+msg.pct_vs_personal_avg+'% vs your avg)' : '';
+    rankEl.innerHTML = `<div class="rank-box ${cls}">${msg.rank_message}${pct}</div>`;
+  }
+
+  // Group ranking
+  const grpEl = document.getElementById('phys-group');
+  if(msg.group_intro || msg.group_message){
+    let html = '';
+    if(msg.group_intro) html += `<div style="font-size:.78rem;color:#555;margin:.4rem 0">${msg.group_intro}</div>`;
+    if(msg.group_message){
+      const cls = msg.group_medal==='gold'?'rank-gold':msg.group_medal==='silver'?'rank-silver':'rank-bronze';
+      const pct = msg.pct_vs_group_avg!=null ? ' ('+( msg.pct_vs_group_avg>0?'+':'')+msg.pct_vs_group_avg+'%)' : '';
+      html += `<div class="rank-box ${cls}">${msg.group_message}${pct}</div>`;
+    }
+    grpEl.innerHTML = html;
+  }
+
+  // Physics table — fetch full result separately for 20-var table
+  fetchPhysicsTable(jid);
+}
+
+async function fetchPhysicsTable(job_id){
+  try{
+    // Store jid on button for later toggle
+    const pr = await(await fetch(API+'/physics/'+job_id)).json();
+    const result = pr.result || {};
+    if(!result || !result.ideal) { 
+      document.getElementById('phys-tb').innerHTML = '<tr><td colspan="6" style="color:#555;text-align:center">No physics data available</td></tr>';
+      return; 
+    }
+
+    const VARS = [
+      ['t_total','s'],['phi_total','rad'],['omega_max','rad/s'],['J','kgm2'],
+      ['M_res','Nm'],['M_motor_accel','Nm'],['M_motor_const','Nm'],['M_avg_active','Nm'],
+      ['F_const','N'],['F_accel','N'],['F_avg_active','N'],['F_max','N'],
+      ['E_kin_max','J'],['E_kin_const','J'],['E_kin_avg_active','J'],
+      ['P_peak','W'],['P_const','W'],['P_avg','W'],['W_total','J'],['L_ang','kgm2/s'],
+    ];
+
+    const tb = document.getElementById('phys-tb');
+    tb.innerHTML = VARS.map(([v,u],i)=>{
+      const ideal = result.ideal?.[v];
+      const air   = result.air?.[v];
+      const water = result.water?.[v];
+      return `<tr>
+        <td style="color:#333">${i+1}</td>
+        <td>${v}</td>
+        <td style="color:#333">${u}</td>
+        <td class="ideal">${ideal!=null?fSI(ideal,u):'—'}</td>
+        <td class="air">${air!=null?fSI(air,u):'—'}</td>
+        <td class="water">${water!=null?fSI(water,u):'—'}</td>
+      </tr>`;
+    }).join('');
+  }catch(e){}
+}
+
+function togglePhysTable(){
+  const wrap = document.getElementById('phys-tbl-wrap');
+  const btn  = document.getElementById('phys-tbl-btn');
+  const vis  = wrap.style.display === 'block';
+  wrap.style.display = vis ? 'none' : 'block';
+  btn.textContent = vis ? 'Show 20 variables' : 'Hide table';
+}
+
+// SI prefix formatter for physics table
+const _SI=[
+  [1e12,'T'],[1e9,'G'],[1e6,'M'],[1e3,'k'],[1,''],
+  [1e-3,'m'],[1e-6,'\u00b5'],[1e-9,'n'],[1e-12,'p'],[1e-15,'f']
+];
+function fSI(v,u,d=3){
+  if(v===0||v==null) return '0';
+  const a=Math.abs(v);
+  for(const[f,p] of _SI) if(a>=f) return (v/f).toFixed(d)+' '+p+u;
+  return v.toExponential(2)+' '+u;
 }
 
 function drawChart(s){

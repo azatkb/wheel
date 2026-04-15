@@ -1,0 +1,737 @@
+"""
+physics.py
+==========
+Physical calculations for wheel rotation analysis.
+
+Calculates 20 variables × 3 cases (ideal / air / water).
+All configurable wheel parameters are at the top — change them freely.
+
+Usage:
+    from app.physics import calculate, detect_phases, format_si, build_user_message
+"""
+
+import math
+
+# ══════════════════════════════════════════════════════════════════════
+#  WHEEL PARAMETERS — change these freely
+# ══════════════════════════════════════════════════════════════════════
+
+PI = 3.1415926535
+
+# Geometry — all radii are correct; other values are examples
+# Change num_spokes to 6, 8, 10 etc. — recalculates everything
+R_spoke  = 0.031   # (m) spoke length
+r_hub    = 0.004   # (m) hub radius
+L_force  = R_spoke + r_hub  # = 0.035 m — radius where external force acts
+
+# Mass — examples, change freely
+m_hub      = 1.36e-4   # (kg) hub mass
+m_spoke    = 1.8e-5    # (kg) mass of ONE spoke
+num_spokes = 8         # number of spokes
+
+# Physical constants
+g                       = 9.81    # (m/s²) gravitational acceleration
+density_ratio_water_air = 816     # water resistance / air resistance ratio
+PLANCK                  = 6.626e-34  # (Js) Planck constant
+
+# ══════════════════════════════════════════════════════════════════════
+#  SI PREFIX FORMATTER
+# ══════════════════════════════════════════════════════════════════════
+
+_SI_PREFIXES = [
+    (1e24, "Y"),  # yotta
+    (1e21, "Z"),  # zetta
+    (1e18, "E"),  # exa
+    (1e15, "P"),  # peta
+    (1e12, "T"),  (1e9,  "G"),  (1e6,  "M"),
+    (1e3,  "k"),  (1e0,  ""),   (1e-3, "m"),
+    (1e-6, "µ"),  (1e-9, "n"),  (1e-12,"p"),
+    (1e-15,"f"),  (1e-18,"a"),  (1e-21,"z"),
+]
+
+def format_si(value: float, unit: str, decimals: int = 3) -> str:
+    """
+    Format value with SI prefix for user display.
+    Example: format_si(4.62e-9, "J") → "4.620 nJ"
+    """
+    if value == 0:
+        return f"0.000 {unit}"
+    abs_val = abs(value)
+    for factor, prefix in _SI_PREFIXES:
+        if abs_val >= factor:
+            scaled = value / factor
+            return f"{scaled:.{decimals}f} {prefix}{unit}"
+    return f"{value:.{decimals}e} {unit}"
+
+
+def format_sci(value: float, unit: str) -> str:
+    """
+    Format in scientific notation for database storage.
+    Example: 8.123e-3 → "8.123*10^-3 J"
+    """
+    if value == 0:
+        return f"0.000 {unit}"
+    exp  = int(math.floor(math.log10(abs(value))))
+    mant = value / (10 ** exp)
+    return f"{mant:.3f}*10^{exp} {unit}"
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  PHASE DETECTION
+# ══════════════════════════════════════════════════════════════════════
+
+def detect_phases(timestamps: list, angles_rad: list,
+                  min_move_thresh: float = 0.05,   # rad/s — min speed to count as movement (~3 deg/s)
+                  const_thresh:    float = 0.10,   # fraction of peak for constant phase detection
+                  direction_filter: str  = "auto") -> dict:
+    """
+    Detect motion phases from time-series angle data.
+
+    direction_filter: "auto" | "cw" | "ccw" | "cw+ccw" | "ccw+cw"
+      - "cw"      — only clockwise phases
+      - "ccw"     — only counter-clockwise phases
+      - "cw+ccw"  — CW first, then CCW (paid)
+      - "ccw+cw"  — CCW first, then CW (paid)
+      - "auto"    — detect dominant direction
+
+    Returns dict:
+      t_start    : time of first movement (s)  → t_Lajtner
+      t_accel    : duration of acceleration phase (s)
+      t_const    : duration of constant speed phase (s)  (0 if none)
+      t_decel    : duration of deceleration phase (s)
+      phi_accel  : angular displacement during acceleration (rad)
+      phi_const  : angular displacement during constant speed (rad)
+      phi_decel  : angular displacement during deceleration (rad)
+      omega_max  : max angular velocity reached (rad/s)
+      direction  : "CW" | "CCW" | "mixed"
+      all_phases : list of all detected direction phases (for paid multi-phase)
+    """
+    if len(timestamps) < 3:
+        return _empty_phases()
+
+    # Compute instantaneous angular velocities
+    # Use median filter to remove spikes from noisy angle data
+    omegas = []
+    for i in range(1, len(timestamps)):
+        dt = timestamps[i] - timestamps[i-1]
+        if dt <= 0: dt = 1e-6
+        omegas.append((angles_rad[i] - angles_rad[i-1]) / dt)
+    omegas.append(omegas[-1])
+
+    # Smooth velocities: 5-frame median filter removes detection spikes
+    if len(omegas) >= 5:
+        smoothed = []
+        for i in range(len(omegas)):
+            lo = max(0, i-2)
+            hi = min(len(omegas)-1, i+2)
+            window = sorted(omegas[lo:hi+1])
+            smoothed.append(window[len(window)//2])
+        omegas = smoothed
+
+    # Find first movement → t_Lajtner
+    # Require CONSECUTIVE frames above threshold to avoid noise spikes
+    # Use 3 consecutive frames moving in same direction
+    t_start = timestamps[0]
+    CONSEC_REQUIRED = 3
+    for i in range(len(omegas) - CONSEC_REQUIRED + 1):
+        window = omegas[i:i+CONSEC_REQUIRED]
+        # All frames must exceed threshold in same direction
+        if all(abs(o) >= min_move_thresh for o in window):
+            # Check same direction (all positive or all negative)
+            if all(o > 0 for o in window) or all(o < 0 for o in window):
+                t_start = timestamps[i]
+                break
+
+    # Determine overall direction
+    cw_count  = sum(1 for o in omegas if o >  min_move_thresh)
+    ccw_count = sum(1 for o in omegas if o < -min_move_thresh)
+    if cw_count > 0 and ccw_count > 0:
+        overall_dir = "mixed"
+    elif cw_count >= ccw_count:
+        overall_dir = "CW"
+    else:
+        overall_dir = "CCW"
+
+    # Detect all direction-change phases
+    all_phases = _detect_all_phases(timestamps, omegas, min_move_thresh)
+
+    # Filter phases by direction_filter
+    if direction_filter in ("cw", "ccw"):
+        want = "CW" if direction_filter == "cw" else "CCW"
+        filtered = [p for p in all_phases if p["direction"] == want]
+    elif direction_filter == "cw+ccw":
+        cw_phases  = [p for p in all_phases if p["direction"] == "CW"]
+        ccw_phases = [p for p in all_phases if p["direction"] == "CCW"]
+        filtered   = cw_phases[:1] + ccw_phases[:1]  # first of each
+    elif direction_filter == "ccw+cw":
+        cw_phases  = [p for p in all_phases if p["direction"] == "CW"]
+        ccw_phases = [p for p in all_phases if p["direction"] == "CCW"]
+        filtered   = ccw_phases[:1] + cw_phases[:1]
+    else:
+        filtered = all_phases  # auto: use all
+
+    # Use first phase for primary calculation (or sum all)
+    if filtered:
+        primary = filtered[0]
+    elif all_phases:
+        primary = all_phases[0]
+    else:
+        return _empty_phases()
+
+    # 3-phase segmentation on primary phase data
+    # Find start index (first real movement)
+    start_idx = 0
+    for i, ts in enumerate(timestamps):
+        if ts >= t_start:
+            start_idx = i
+            break
+
+    # Only segment from start_idx onward
+    sub_omegas    = omegas[start_idx:]
+    sub_timestamps= timestamps[start_idx:]
+    sub_angles    = angles_rad[start_idx:]
+
+    abs_omegas = [abs(o) for o in sub_omegas]
+    if not abs_omegas:
+        return _empty_phases()
+
+    peak_idx = abs_omegas.index(max(abs_omegas))
+    peak_val = abs_omegas[peak_idx]
+
+    const_end = peak_idx
+    for i in range(peak_idx, len(abs_omegas)):
+        if abs_omegas[i] < peak_val * (1.0 - const_thresh):
+            const_end = i
+            break
+
+    accel_slice = slice(0, peak_idx+1)
+    const_slice = slice(peak_idx, const_end+1)
+    decel_slice = slice(const_end, len(sub_timestamps))
+
+    def _phi(sl):
+        if sl.start >= len(sub_angles): return 0.0
+        stop = min(sl.stop-1, len(sub_angles)-1)
+        return abs(sub_angles[stop] - sub_angles[sl.start])
+
+    def _dt(sl):
+        start = min(sl.start, len(sub_timestamps)-1)
+        stop  = min(sl.stop-1, len(sub_timestamps)-1)
+        return max(0.0, sub_timestamps[stop] - sub_timestamps[start])
+
+    return {
+        "t_start":    t_start,
+        "t_accel":    _dt(accel_slice),
+        "t_const":    _dt(const_slice),
+        "t_decel":    _dt(decel_slice),
+        "phi_accel":  _phi(accel_slice),
+        "phi_const":  _phi(const_slice),
+        "phi_decel":  _phi(decel_slice),
+        "omega_max":  max(abs_omegas),
+        "direction":  overall_dir,
+        "all_phases": all_phases,
+        "filtered_phases": filtered,
+    }
+
+
+def _detect_all_phases(timestamps, omegas, thresh=0.01) -> list:
+    """
+    Detect all motion phases including direction changes.
+    Returns list of: {direction, t_start, t_end, phi_rad, omega_max}
+    """
+    phases = []
+    if not omegas: return phases
+
+    cur_dir  = None
+    seg_start = 0
+
+    for i, om in enumerate(omegas):
+        if abs(om) < thresh:
+            d = None
+        elif om > 0:
+            d = "CW"
+        else:
+            d = "CCW"
+
+        if d != cur_dir:
+            if cur_dir is not None and i > seg_start:
+                seg_omegas = omegas[seg_start:i]
+                phases.append({
+                    "direction": cur_dir,
+                    "t_start":   timestamps[seg_start],
+                    "t_end":     timestamps[min(i, len(timestamps)-1)],
+                    "phi_rad":   sum(abs(o) * (timestamps[min(j+seg_start+1, len(timestamps)-1)]
+                                               - timestamps[j+seg_start])
+                                     for j,o in enumerate(seg_omegas)),
+                    "omega_max": max(abs(o) for o in seg_omegas) if seg_omegas else 0,
+                })
+            cur_dir   = d
+            seg_start = i
+
+    # Last segment
+    if cur_dir is not None and seg_start < len(timestamps)-1:
+        seg_omegas = omegas[seg_start:]
+        phases.append({
+            "direction": cur_dir,
+            "t_start":   timestamps[seg_start],
+            "t_end":     timestamps[-1],
+            "phi_rad":   sum(abs(o) * (timestamps[min(j+seg_start+1, len(timestamps)-1)]
+                                       - timestamps[j+seg_start])
+                             for j,o in enumerate(seg_omegas)),
+            "omega_max": max(abs(o) for o in seg_omegas) if seg_omegas else 0,
+        })
+
+    return [p for p in phases if p["direction"] is not None]
+
+
+def _empty_phases() -> dict:
+    return {
+        "t_start":0,"t_accel":0,"t_const":0,"t_decel":0,
+        "phi_accel":0,"phi_const":0,"phi_decel":0,
+        "omega_max":0,"direction":"CW",
+        "all_phases":[],"filtered_phases":[],
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  MOMENT OF INERTIA
+# ══════════════════════════════════════════════════════════════════════
+
+def calc_inertia() -> dict:
+    """
+    Calculate wheel moment of inertia using Steiner's theorem for spokes.
+    J_total = J_hub + num_spokes * J_spoke
+    """
+    J_hub   = 0.5 * m_hub * (r_hub ** 2)
+    d_spoke = r_hub + (R_spoke / 2.0)
+    J_spoke = (1.0/12.0) * m_spoke * R_spoke**2 + m_spoke * d_spoke**2
+    J_total = J_hub + num_spokes * J_spoke
+    return {"J_hub": J_hub, "J_spoke": J_spoke, "J_total": J_total}
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  MAIN CALCULATION — 20 variables × 3 cases
+# ══════════════════════════════════════════════════════════════════════
+
+def calculate(phases: dict) -> dict:
+    """
+    Calculate all 20 physical variables for 3 cases:
+      ideal (frictionless), air, water.
+
+    Input:  phases dict from detect_phases()
+    Output: dict with:
+              inertia    — J_hub, J_spoke, J_total
+              kinematics — beta_accel, beta_decel, omega_max, t_total, phi_total
+              resistance — M_air, M_water
+              ideal / air / water — 20 variables each
+              t_lajtner  — time to first movement (s)
+              a_lajtner  — angular acceleration at first movement (rad/s²)
+    """
+    t_accel   = max(phases["t_accel"],   1e-6)
+    t_const   = phases["t_const"]
+    t_decel   = max(phases["t_decel"],   1e-6)
+    phi_accel = max(phases["phi_accel"], 1e-9)
+    phi_const = phases["phi_const"]
+    phi_decel = phases["phi_decel"]
+    omega_max = phases["omega_max"]
+
+    # ── Inertia ────────────────────────────────────────────────────────
+    inertia = calc_inertia()
+    J = inertia["J_total"]
+
+    # ── Kinematics ─────────────────────────────────────────────────────
+    # Angular acceleration: beta = 2*phi / t²
+    beta_accel = (2.0 * phi_accel) / (t_accel ** 2)
+
+    # Peak angular velocity from measurement or formula
+    om = omega_max if omega_max > 0 else beta_accel * t_accel
+
+    # Angular deceleration from deceleration phase
+    omega_start_decel = (2.0 * phi_decel) / t_decel if phi_decel > 0 else om
+    beta_decel_abs    = abs(omega_start_decel / t_decel)
+
+    # Constant phase time
+    t_const_calc = (phi_const / om) if (om > 0 and phi_const > 0) else t_const
+
+    # t_total = time from first movement to stop (excludes waiting period)
+    # t_start (t_Lajtner) is the waiting time before movement
+    t_total    = t_accel + t_const_calc + t_decel
+    phi_total  = phi_accel + phi_const + phi_decel
+    t_active   = max(t_accel + t_const_calc, 1e-6)
+    phi_active = max(phi_accel + phi_const,  1e-9)
+
+    # ── Resistance torques ─────────────────────────────────────────────
+    # Air:   M_air   = J * beta_decel
+    # Water: M_water = density_ratio * M_air
+    M_air   = J * beta_decel_abs
+    M_water = density_ratio_water_air * M_air
+
+    # ── Lajtner values ─────────────────────────────────────────────────
+    t_lajtner = phases.get("t_start", 0.0)
+    # a_Lajtner: angular acceleration at start of motion (rad/s²)
+    a_lajtner = beta_accel
+
+    # Correct t_total: physics time starts from first movement, not t=0
+    # t_total already = t_accel + t_const + t_decel which is relative to motion start
+    # But if t_start was detected late, t_accel may be too small
+    # Use: if t_start > 0, the real motion time is correct from phase segmentation
+
+    # ── Per-case calculation ───────────────────────────────────────────
+    def _case(M_res: float) -> dict:
+        """Calculate all 20 variables for one resistance case."""
+
+        # 6. Required Accelerating Torque
+        M_motor_accel = J * beta_accel + M_res
+
+        # 7. Constant Motion Torque
+        M_motor_const = M_res
+
+        # 10. Required Accelerating Force (at L_force radius)
+        F_accel = M_motor_accel / L_force
+
+        # 9. Constant Motion Driving Force
+        F_const = M_motor_const / L_force if L_force > 0 else 0.0
+
+        # 13. Rotational Kinetic Energy at max speed
+        E_kin_max = 0.5 * J * om**2
+
+        # 16. Peak Power
+        P_peak = M_motor_accel * om
+
+        # 12. Maximum Driving Force (same as F_accel at end of acceleration)
+        F_max = F_accel
+
+        # 17. Constant Motion Power
+        P_const = M_motor_const * om
+
+        # 19. Total Work Done
+        if M_res == 0:
+            # Ideal: only kinetic energy change
+            W_total = E_kin_max
+        else:
+            # With resistance: kinetic energy + work against friction
+            W_total = E_kin_max + M_res * phi_accel + M_res * phi_const
+
+        # 18. Average Power
+        P_avg = W_total / t_active
+
+        # 8. Average Torque (active phase)
+        M_avg_active = W_total / phi_active
+
+        # 11. Average Driving Force (active phase)
+        F_avg_active = M_avg_active / L_force
+
+        # 15. Average Rotational Energy (active phase)
+        # Time-weighted average: (E_avg_accel * t_accel + E_max * t_const) / t_active
+        E_kin_avg_accel  = (1.0/3.0) * E_kin_max
+        E_kin_avg_active = (E_kin_avg_accel * t_accel + E_kin_max * t_const_calc) / t_active
+
+        # 20. Angular Momentum
+        L_ang = J * om
+
+        # Planck hypothetical frequency (paid version)
+        planck_freq = W_total / PLANCK if W_total > 0 else 0.0
+
+        return {
+            "t_total":          t_total,           # 1
+            "phi_total":        phi_total,          # 2
+            "omega_max":        om,                 # 3
+            "J":                J,                  # 4
+            "M_res":            M_res,              # 5
+            "M_motor_accel":    M_motor_accel,      # 6
+            "M_motor_const":    M_motor_const,      # 7
+            "M_avg_active":     M_avg_active,       # 8
+            "F_const":          F_const,            # 9
+            "F_accel":          F_accel,            # 10
+            "F_avg_active":     F_avg_active,       # 11
+            "F_max":            F_max,              # 12
+            "E_kin_max":        E_kin_max,          # 13
+            "E_kin_const":      E_kin_max,          # 14 same at constant speed
+            "E_kin_avg_active": E_kin_avg_active,   # 15
+            "P_peak":           P_peak,             # 16
+            "P_const":          P_const,            # 17
+            "P_avg":            P_avg,              # 18
+            "W_total":          W_total,            # 19
+            "L_ang":            L_ang,              # 20
+            "planck_freq":      planck_freq,
+        }
+
+    return {
+        "inertia":    inertia,
+        "kinematics": {
+            "beta_accel": beta_accel,
+            "beta_decel": beta_decel_abs,
+            "omega_max":  om,
+            "t_total":    t_total,
+            "phi_total":  phi_total,
+            "t_active":   t_active,
+            "phi_active": phi_active,
+        },
+        "resistance": {"M_air": M_air, "M_water": M_water},
+        "t_lajtner":  t_lajtner,
+        "a_lajtner":  a_lajtner,
+        "ideal":      _case(M_res=0.0),
+        "air":        _case(M_res=M_air),
+        "water":      _case(M_res=M_water),
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  CSV ROW BUILDER
+# ══════════════════════════════════════════════════════════════════════
+
+UNITS = {
+    "t_total":"s",       "phi_total":"rad",      "omega_max":"rad/s",
+    "J":"kgm2",          "M_res":"Nm",           "M_motor_accel":"Nm",
+    "M_motor_const":"Nm","M_avg_active":"Nm",
+    "F_const":"N",       "F_accel":"N",          "F_avg_active":"N",  "F_max":"N",
+    "E_kin_max":"J",     "E_kin_const":"J",      "E_kin_avg_active":"J",
+    "P_peak":"W",        "P_const":"W",          "P_avg":"W",
+    "W_total":"J",       "L_ang":"kgm2_per_s",
+}
+
+VARIABLE_NAMES = [
+    "t_total","phi_total","omega_max","J","M_res",
+    "M_motor_accel","M_motor_const","M_avg_active",
+    "F_const","F_accel","F_avg_active","F_max",
+    "E_kin_max","E_kin_const","E_kin_avg_active",
+    "P_peak","P_const","P_avg","W_total","L_ang",
+]
+
+
+def build_csv_row(email: str, job_id: str, timestamp: str,
+                  sample_interval_ms: int, medium: str,
+                  phases: dict, result: dict) -> dict:
+    """
+    Build flat dict for CSV (semicolon-separated, UTF-8) and DB storage.
+    All values in scientific notation: 8.123*10^-3 J
+    Column headers include units.
+    """
+    row = {
+        "email":              email,
+        "job_id":             job_id,
+        "timestamp":          timestamp,
+        "sample_interval_ms": sample_interval_ms,
+        "medium":             medium,
+        "direction":          phases.get("direction", ""),
+        # Lajtner values
+        "t_lajtner_s":        format_sci(result["t_lajtner"], "s"),
+        "a_lajtner_rad_s2":   format_sci(result["a_lajtner"], "rad/s2"),
+        # Phase durations
+        "t_accel_s":          format_sci(phases["t_accel"],   "s"),
+        "t_const_s":          format_sci(phases["t_const"],   "s"),
+        "t_decel_s":          format_sci(phases["t_decel"],   "s"),
+        # Phase angles
+        "phi_accel_rad":      format_sci(phases["phi_accel"], "rad"),
+        "phi_const_rad":      format_sci(phases["phi_const"], "rad"),
+        "phi_decel_rad":      format_sci(phases["phi_decel"], "rad"),
+        # Inertia
+        "J_hub_kgm2":         format_sci(result["inertia"]["J_hub"],   "kgm2"),
+        "J_spoke_kgm2":       format_sci(result["inertia"]["J_spoke"], "kgm2"),
+        "J_total_kgm2":       format_sci(result["inertia"]["J_total"], "kgm2"),
+        # Resistance
+        "M_air_Nm":           format_sci(result["resistance"]["M_air"],   "Nm"),
+        "M_water_Nm":         format_sci(result["resistance"]["M_water"], "Nm"),
+    }
+
+    # 20 variables × 3 cases
+    for case_name in ("ideal", "air", "water"):
+        case = result[case_name]
+        for var in VARIABLE_NAMES:
+            unit = UNITS.get(var, "")
+            key  = f"{case_name}_{var}_{unit}"
+            row[key] = format_sci(case[var], unit)
+
+    return row
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  USER MESSAGE BUILDER
+# ══════════════════════════════════════════════════════════════════════
+
+# All user-facing messages — change text freely
+MESSAGES = {
+    "en": {
+        "rotated_free":  "Congrats, your power is great! 🏆",
+        "not_rotated":   "You need to practice a little more! 💪",
+        "suspicious":    "Are you sure this result came out correctly? ⚠️",
+        # Personal ranking (paid)
+        "above_avg":     "Congrats, You are excellent! 🥇",
+        "at_avg":        "Congrats, You are in good shape! 🥈",
+        "below_avg":     "Congrats, your power works! 🥉",
+        # Group ranking (paid)
+        "ranking_intro": "Let's see your ranking among people!",
+        "above_group":   "Congrats, this is above average! 🏆",
+        "at_group":      "Congrats, Your result is great, only a few will beat you! 🥈",
+        "below_group":   "Congrats, You're not above average yet, but with practice you'll soon be! 🥉",
+    },
+    "hu": {
+        "rotated_free":  "Gratulálok, nagy az erőd! 🏆",
+        "not_rotated":   "Még egy kicsit gyakorolni kell! 💪",
+        "suspicious":    "Biztos, hogy ez az eredmény helyes? ⚠️",
+        "above_avg":     "Gratulálok, kiváló vagy! 🥇",
+        "at_avg":        "Gratulálok, jó formában vagy! 🥈",
+        "below_avg":     "Gratulálok, az erőd működik! 🥉",
+        "ranking_intro": "Nézzük, hol állsz mások között!",
+        "above_group":   "Gratulálok, átlag feletti vagy! 🏆",
+        "at_group":      "Gratulálok, kiváló eredmény, kevesen előznek meg! 🥈",
+        "below_group":   "Gratulálok, még nem vagy átlag felett, de hamarosan ott leszel! 🥉",
+    },
+    "de": {
+        "rotated_free":  "Glückwunsch, deine Kraft ist toll! 🏆",
+        "not_rotated":   "Du musst noch etwas üben! 💪",
+        "suspicious":    "Bist du sicher, dass dieses Ergebnis korrekt ist? ⚠️",
+        "above_avg":     "Glückwunsch, du bist ausgezeichnet! 🥇",
+        "at_avg":        "Glückwunsch, du bist in guter Form! 🥈",
+        "below_avg":     "Glückwunsch, deine Kraft funktioniert! 🥉",
+        "ranking_intro": "Mal sehen, wie du im Vergleich abschneidest!",
+        "above_group":   "Glückwunsch, das ist überdurchschnittlich! 🏆",
+        "at_group":      "Glückwunsch, tolles Ergebnis! 🥈",
+        "below_group":   "Noch nicht überdurchschnittlich, aber bald! 🥉",
+    },
+}
+
+
+def build_user_message(result: dict, medium: str,
+                       version: str = "free",
+                       lang: str = "en",
+                       user_avg: dict = None,
+                       group_avg: dict = None) -> dict:
+    """
+    Build user-facing message dict.
+
+    Parameters:
+      result    : from calculate()
+      medium    : "air" | "water" | "ideal"
+      version   : "free" | "paid"
+      lang      : "en" | "hu" | "de"
+      user_avg  : dict of user's personal averages (paid, optional)
+      group_avg : dict of group averages (paid, optional)
+
+    Returns dict with:
+      moved        : bool
+      message      : main message string
+      display      : values to show user (free: rotation+force, paid: +power+work+planck)
+      t_lajtner_s  : float
+      a_lajtner    : SI string
+      warning      : suspicious result warning (if applicable)
+      rank_message : personal rank message (paid)
+      rank_medal   : "gold"|"silver"|"bronze" (paid)
+      group_message: group rank message (paid)
+      group_medal  : "gold"|"silver"|"bronze" (paid)
+    """
+    case    = result.get(medium) or result.get("air", {})
+    W_total = case.get("W_total", 0)
+    F_max   = case.get("F_max",   0)
+    P_peak  = case.get("P_peak",  0)
+    phi_rad = case.get("phi_total", 0)
+    phi_deg = math.degrees(abs(phi_rad))
+    # Use max observed cumulative if available — more accurate for user display
+    if result.get("max_cum_deg"):
+        phi_deg = abs(result["max_cum_deg"])
+    moved   = phi_deg > 0.5
+
+    msgs = MESSAGES.get(lang, MESSAGES["en"])
+
+    out = {
+        "moved":       moved,
+        "phi_deg":     round(phi_deg, 2),
+        "F_max_si":    format_si(F_max,  "N"),
+        "t_lajtner_s": round(result.get("t_lajtner", 0), 3),
+        "a_lajtner":   format_si(result.get("a_lajtner", 0), "rad/s²"),
+        "message":     msgs["rotated_free"] if moved else msgs["not_rotated"],
+    }
+
+    # ── Free version display ───────────────────────────────────────────
+    if version == "free":
+        out["display"] = {
+            "rotation_deg": f"{phi_deg:.2f} °",
+            "force_N":      format_si(F_max, "N"),
+        }
+        return out
+
+    # ── Paid version — full display ────────────────────────────────────
+    planck_freq = case.get("planck_freq", 0)
+    out["display"] = {
+        "rotation_deg":   f"{phi_deg:.2f} °",
+        "force_N":        format_si(F_max,       "N"),
+        "power_W":        format_si(P_peak,       "W"),
+        "work_J":         format_si(W_total,      "J"),
+        "planck_freq_Hz": format_si(planck_freq,  "Hz"),
+    }
+
+    # ── Personal ranking (paid) ────────────────────────────────────────
+    if user_avg:
+        avg_val = user_avg.get("cumulative_deg", phi_deg)
+        pct     = (phi_deg - avg_val) / avg_val * 100 if avg_val else 0
+        if pct > 5:
+            out["rank_message"] = msgs["above_avg"]
+            out["rank_medal"]   = "gold"
+        elif pct >= -5:
+            out["rank_message"] = msgs["at_avg"]
+            out["rank_medal"]   = "silver"
+        else:
+            out["rank_message"] = msgs["below_avg"]
+            out["rank_medal"]   = "bronze"
+        out["pct_vs_personal_avg"] = round(pct, 1)
+
+    # ── Group ranking (paid) ───────────────────────────────────────────
+    if group_avg:
+        out["group_intro"] = msgs["ranking_intro"]
+        avg_val = group_avg.get("cumulative_deg", phi_deg)
+        pct     = (phi_deg - avg_val) / avg_val * 100 if avg_val else 0
+        if pct > 5:
+            out["group_message"] = msgs["above_group"]
+            out["group_medal"]   = "gold"
+        elif pct >= -5:
+            out["group_message"] = msgs["at_group"]
+            out["group_medal"]   = "silver"
+        else:
+            out["group_message"] = msgs["below_group"]
+            out["group_medal"]   = "bronze"
+        out["pct_vs_group_avg"] = round(pct, 1)
+
+    return out
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  QUICK TEST
+# ══════════════════════════════════════════════════════════════════════
+
+if __name__ == "__main__":
+    phases = {
+        "t_start":   0.0,
+        "t_accel":   7.0,
+        "t_const":   0.175,
+        "t_decel":   3.0,
+        "phi_accel": math.radians(40.0),
+        "phi_const": math.radians(2.0),
+        "phi_decel": math.radians(3.0),
+        "omega_max": 0.199466,
+        "direction": "CW",
+        "all_phases": [],
+        "filtered_phases": [],
+    }
+
+    result = calculate(phases)
+
+    print("=" * 60)
+    print(f"J_total = {format_sci(result['inertia']['J_total'], 'kgm2')}")
+    print(f"M_air   = {format_sci(result['resistance']['M_air'], 'Nm')}")
+    print(f"M_water = {format_sci(result['resistance']['M_water'], 'Nm')}")
+    print()
+
+    for case_name in ("ideal", "air", "water"):
+        print(f"── {case_name.upper()} ──")
+        c = result[case_name]
+        for var in VARIABLE_NAMES:
+            unit = UNITS.get(var, "")
+            print(f"  {var:25s} = {format_sci(c[var], unit):20s}  {format_si(c[var], unit)}")
+        print()
+
+    msg = build_user_message(result, "air", version="paid", lang="en",
+                             user_avg={"cumulative_deg": 40.0},
+                             group_avg={"cumulative_deg": 35.0})
+    print("Message:", msg["message"])
+    print("Display:", msg["display"])
+    print("Rank:",    msg.get("rank_message"))
+    print("Group:",   msg.get("group_message"))

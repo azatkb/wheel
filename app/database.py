@@ -40,6 +40,7 @@ CREATE INDEX ON wt_samples (job_id, timestamp_sec);
 """
 
 import csv
+import json
 import logging
 import math
 from pathlib import Path
@@ -194,3 +195,72 @@ def read_samples(job_id: str) -> list:
 
 def get_csv_path(job_id: str) -> Path:
     return CSV_DIR / f"{job_id}.csv"
+
+def get_user_history(email: str) -> list:
+    """
+    Return list of past physics results for a user.
+    Each item: {"cumulative_deg": float, "W_total_air": float, "F_max_air": float}
+    Returns empty list if user has no history or DB unavailable.
+    """
+    try:
+        from app.database import _supabase  # your existing supabase client
+        if _supabase is None:
+            return []
+        resp = (_supabase.table("physics_results")
+                .select("cumulative_deg,W_total_air,F_max_air")
+                .eq("email", email)
+                .order("created_at", desc=True)
+                .limit(50)
+                .execute())
+        return resp.data or []
+    except Exception as e:
+        log.warning(f"[DB] get_user_history failed: {e}")
+        return []
+ 
+ 
+def save_physics_result(job_id: str, email: str, medium: str,
+                        result: dict, csv_row: dict) -> None:
+    """
+    Save physics calculation results to Supabase + CSV file.
+    csv_row is a flat dict from physics.build_csv_row().
+    """
+    # Save to CSV (semicolon separated, UTF-8)
+    try:
+        csv_path = CSV_DIR / f"{job_id}_physics.csv"
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=list(csv_row.keys()),
+                                    delimiter=";")
+            writer.writeheader()
+            writer.writerow(csv_row)
+        log.info(f"[DB] Physics CSV saved: {csv_path}")
+    except Exception as e:
+        log.warning(f"[DB] Physics CSV write failed: {e}")
+ 
+    # Save to Supabase
+    try:
+        from app.database import _supabase
+        if _supabase is None:
+            return
+ 
+        case = result.get("air", {})  # default to air case
+        record = {
+            "job_id":        job_id,
+            "email":         email,
+            "medium":        medium,
+            "cumulative_deg": abs(float(csv_row.get("phi_total_rad_rad", 0)) * 180 / 3.14159),
+            "W_total_air":   float(result.get("air",  {}).get("W_total", 0)),
+            "W_total_water": float(result.get("water",{}).get("W_total", 0)),
+            "F_max_air":     float(result.get("air",  {}).get("F_max",   0)),
+            "omega_max":     float(result.get("kinematics",{}).get("omega_max", 0)),
+            "t_lajtner":     float(result.get("t_lajtner", 0)),
+            "a_lajtner":     float(result.get("a_lajtner", 0)),
+            "physics_json":  json.dumps({
+                "ideal": result.get("ideal"),
+                "air":   result.get("air"),
+                "water": result.get("water"),
+            }),
+        }
+        _supabase.table("physics_results").insert(record).execute()
+        log.info(f"[DB] Physics saved to Supabase: {job_id}")
+    except Exception as e:
+        log.warning(f"[DB] Physics Supabase save failed: {e}")

@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wheel Tracker — Feature Test</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap');
+
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#080c10;--bg2:#0d1117;--bg3:#161b22;
+  --border:#21262d;--border2:#30363d;
+  --green:#00ff88;--green2:#00cc6a;
+  --orange:#ff8c00;--blue:#58a6ff;
+  --red:#f85149;--yellow:#e3b341;
+  --text:#e6edf3;--muted:#8b949e;--dim:#484f58;
+}
+body{font-family:'JetBrains Mono',monospace;background:var(--bg);color:var(--text);
+     min-height:100vh;padding:2rem 1.5rem;max-width:1200px;margin:0 auto}
+
+h1{font-family:'Syne',sans-serif;font-weight:800;font-size:2rem;
+   background:linear-gradient(135deg,var(--green),var(--blue));
+   -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+   margin-bottom:.25rem}
+.tagline{color:var(--muted);font-size:.8rem;margin-bottom:2rem;letter-spacing:.08em}
+
+/* Tabs */
+.tabs{display:flex;gap:4px;margin-bottom:1.5rem;border-bottom:1px solid var(--border)}
+.tab{padding:.5rem 1rem;font-family:'JetBrains Mono';font-size:.8rem;
+     background:none;border:none;color:var(--muted);cursor:pointer;
+     border-bottom:2px solid transparent;margin-bottom:-1px;transition:.15s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--green);border-color:var(--green)}
+
+.panel{display:none}
+.panel.active{display:block}
+
+/* Cards */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;
+      padding:1.25rem;margin-bottom:1rem}
+.card-title{font-family:'Syne',sans-serif;font-size:.75rem;font-weight:700;
+            text-transform:uppercase;letter-spacing:.1em;color:var(--muted);
+            margin-bottom:1rem}
+
+/* Grid */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem}
+@media(max-width:700px){.grid2,.grid3{grid-template-columns:1fr}}
+
+/* Inputs */
+label{display:block;color:var(--muted);font-size:.72rem;margin-bottom:.25rem;margin-top:.6rem}
+input,select,textarea{
+  width:100%;background:var(--bg3);border:1px solid var(--border2);
+  border-radius:6px;padding:.4rem .6rem;color:var(--text);
+  font-family:'JetBrains Mono';font-size:.82rem;outline:none}
+input:focus,select:focus{border-color:var(--green)}
+textarea{resize:vertical;min-height:80px}
+
+/* Buttons */
+button{font-family:'JetBrains Mono';cursor:pointer;border:none;border-radius:6px;
+       padding:.45rem 1rem;font-size:.82rem;transition:.15s}
+.btn-primary{background:var(--green);color:#000;font-weight:700}
+.btn-primary:hover{background:var(--green2)}
+.btn-secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border2)}
+.btn-secondary:hover{border-color:var(--muted)}
+.btn-danger{background:var(--red);color:#fff;font-weight:700}
+button:disabled{opacity:.4;cursor:not-allowed}
+
+/* Status dot */
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;
+     background:var(--dim);margin-right:6px;vertical-align:middle}
+.dot.ok{background:var(--green);box-shadow:0 0 6px var(--green)}
+.dot.err{background:var(--red);box-shadow:0 0 6px var(--red)}
+.dot.warn{background:var(--yellow);box-shadow:0 0 6px var(--yellow)}
+
+/* Result boxes */
+.result-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.6rem;margin-top:.8rem}
+.result-box{background:var(--bg3);border:1px solid var(--border);border-radius:8px;
+            padding:.7rem .9rem;text-align:center}
+.result-box .rv{font-size:1.1rem;font-weight:700;color:var(--green);font-variant-numeric:tabular-nums}
+.result-box .rl{font-size:.65rem;color:var(--muted);margin-top:.15rem}
+.result-box.orange .rv{color:var(--orange)}
+.result-box.blue .rv{color:var(--blue)}
+.result-box.yellow .rv{color:var(--yellow)}
+.result-box.red .rv{color:var(--red)}
+
+/* Log */
+.log{font-size:.72rem;background:var(--bg);border:1px solid var(--border);
+     border-radius:6px;padding:.7rem;max-height:180px;overflow-y:auto;
+     line-height:1.7;color:var(--muted)}
+.log .ok{color:var(--green)}
+.log .err{color:var(--red)}
+.log .warn{color:var(--yellow)}
+.log .info{color:var(--blue)}
+
+/* Table */
+.tbl-wrap{overflow-x:auto;margin-top:.8rem}
+table{width:100%;border-collapse:collapse;font-size:.72rem;white-space:nowrap}
+th{color:var(--muted);text-align:left;padding:.3rem .5rem;
+   border-bottom:1px solid var(--border);font-weight:400}
+td{padding:.25rem .5rem;border-bottom:1px solid var(--border);color:var(--text)}
+tr:hover td{background:var(--bg3)}
+.ideal{color:var(--blue)}
+.air{color:var(--green)}
+.water{color:#00bcd4}
+
+/* Phase vis */
+.phase-bar{display:flex;height:28px;border-radius:6px;overflow:hidden;margin:.6rem 0;gap:2px}
+.phase-seg{display:flex;align-items:center;justify-content:center;
+           font-size:.65rem;font-weight:700;color:#000;transition:flex .4s}
+.phase-seg.accel{background:var(--yellow)}
+.phase-seg.const{background:var(--green)}
+.phase-seg.decel{background:var(--orange)}
+.phase-seg.stop{background:var(--dim);color:var(--muted)}
+
+/* Medal */
+.medal{font-size:1.8rem;display:inline-block;margin:.3rem}
+
+/* URL bar */
+.url-bar{display:flex;gap:6px;margin-bottom:1rem}
+.url-bar input{flex:1}
+.url-bar button{white-space:nowrap}
+.ping{font-size:.72rem;color:var(--muted);margin-left:8px}
+</style>
+</head>
+<body>
+
+<h1>Wheel Tracker — Feature Test</h1>
+<p class="tagline">TEST CONSOLE · physics · phases · messages · api · watermark</p>
+
+<div class="tabs">
+  <button class="tab active" onclick="showTab('physics')">⚛ Physics</button>
+  <button class="tab" onclick="showTab('phases')">📊 Phases</button>
+  <button class="tab" onclick="showTab('messages')">💬 Messages</button>
+  <button class="tab" onclick="showTab('api')">🔌 API</button>
+  <button class="tab" onclick="showTab('preprocess')">🎬 Preprocess</button>
+</div>
+
+<!-- ══ TAB 1: Physics ════════════════════════════════════════════════ -->
+<div class="panel active" id="tab-physics">
+  <div class="grid2">
+    <div>
+      <div class="card">
+        <div class="card-title">Wheel parameters</div>
+        <label>R_spoke (m)</label><input id="p-rspoke" value="0.031">
+        <label>r_hub (m)</label><input id="p-rhub" value="0.004">
+        <label>m_hub (kg)</label><input id="p-mhub" value="0.000136">
+        <label>m_spoke (kg)</label><input id="p-mspoke" value="0.000018">
+        <label>num_spokes</label><input id="p-nspoke" value="8">
+        <label>density_ratio_water_air</label><input id="p-dratio" value="816">
+      </div>
+      <div class="card">
+        <div class="card-title">Motion phases (input)</div>
+        <label>t_accel (s)</label><input id="p-taccel" value="7.0">
+        <label>phi_accel (°)</label><input id="p-phiaccel" value="40.0">
+        <label>t_const (s)</label><input id="p-tconst" value="0.175">
+        <label>phi_const (°)</label><input id="p-phiconst" value="2.0">
+        <label>t_decel (s)</label><input id="p-tdecel" value="3.0">
+        <label>phi_decel (°)</label><input id="p-phidecel" value="3.0">
+        <label>omega_max (rad/s)</label><input id="p-omega" value="0.199466">
+        <br><br>
+        <button class="btn-primary" onclick="calcPhysics()" style="width:100%">Calculate 20 × 3 variables</button>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title">Results</div>
+        <div id="phys-summary" style="color:var(--muted);font-size:.78rem">Run calculation to see results</div>
+        <div id="phys-boxes" class="result-grid"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">20 variables table</div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th>#</th><th>Variable</th><th>Unit</th>
+              <th class="ideal">Ideal</th>
+              <th class="air">Air</th>
+              <th class="water">Water</th>
+            </tr></thead>
+            <tbody id="phys-table"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TAB 2: Phases ═════════════════════════════════════════════════ -->
+<div class="panel" id="tab-phases">
+  <div class="grid2">
+    <div>
+      <div class="card">
+        <div class="card-title">Simulate rotation data</div>
+        <label>Duration (s)</label><input id="ph-dur" value="15">
+        <label>Pattern</label>
+        <select id="ph-pattern">
+          <option value="accel_const_decel">Accel → Const → Decel</option>
+          <option value="accel_decel">Accel → Decel (no const)</option>
+          <option value="cw_ccw">CW then CCW</option>
+          <option value="multi">Multi-phase (CW+CCW+CW)</option>
+        </select>
+        <label>Direction filter</label>
+        <select id="ph-filter">
+          <option value="auto">Auto</option>
+          <option value="cw">CW only</option>
+          <option value="ccw">CCW only</option>
+          <option value="cw+ccw">CW + CCW (paid)</option>
+          <option value="ccw+cw">CCW + CW (paid)</option>
+        </select>
+        <label>Samples/sec</label><input id="ph-sps" value="10">
+        <br><br>
+        <button class="btn-primary" onclick="testPhases()" style="width:100%">Detect phases</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Phase result</div>
+        <div id="phase-bar" class="phase-bar">
+          <div class="phase-seg stop" style="flex:1">no data</div>
+        </div>
+        <div id="phase-details" style="font-size:.75rem;color:var(--muted)">—</div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title">All detected phases</div>
+        <div id="phase-all" style="font-size:.75rem;color:var(--muted)">—</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Angle chart</div>
+        <canvas id="phase-chart" style="width:100%;height:160px;background:var(--bg);border-radius:6px"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TAB 3: Messages ═══════════════════════════════════════════════ -->
+<div class="panel" id="tab-messages">
+  <div class="grid2">
+    <div>
+      <div class="card">
+        <div class="card-title">Message settings</div>
+        <label>Version</label>
+        <select id="msg-version">
+          <option value="free">Free</option>
+          <option value="paid">Paid</option>
+        </select>
+        <label>Language</label>
+        <select id="msg-lang">
+          <option value="en">English</option>
+          <option value="hu">Hungarian</option>
+          <option value="de">German</option>
+        </select>
+        <label>Medium</label>
+        <select id="msg-medium">
+          <option value="air">Air</option>
+          <option value="water">Water</option>
+          <option value="ideal">Ideal</option>
+        </select>
+        <label>Simulated phi_deg (total rotation)</label>
+        <input id="msg-phi" value="45.0">
+        <label>Personal avg cumulative_deg</label>
+        <input id="msg-pavg" value="40.0">
+        <label>Group avg cumulative_deg</label>
+        <input id="msg-gavg" value="35.0">
+        <br><br>
+        <button class="btn-primary" onclick="testMessage()" style="width:100%">Generate message</button>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title">Output</div>
+        <div id="msg-out" style="min-height:200px">
+          <div style="color:var(--dim)">Run to see message output</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TAB 4: API ═════════════════════════════════════════════════════ -->
+<div class="panel" id="tab-api">
+  <div class="url-bar">
+    <input id="api-url" value="http://localhost:8000" placeholder="API base URL">
+    <button class="btn-secondary" onclick="pingHealth()">Health check</button>
+    <span class="ping" id="ping-out"></span>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <div class="card">
+        <div class="card-title">Upload video + test pipeline</div>
+        <label>Video file</label>
+        <input type="file" id="api-file" accept="video/*"
+               style="color:var(--muted)">
+        <label>Email</label><input id="api-email" value="test@test.com">
+        <label>Direction</label>
+        <select id="api-dir">
+          <option value="auto">Auto</option>
+          <option value="cw">CW</option>
+          <option value="ccw">CCW</option>
+          <option value="cw+ccw">CW+CCW (paid)</option>
+          <option value="ccw+cw">CCW+CW (paid)</option>
+        </select>
+        <label>Medium</label>
+        <select id="api-medium">
+          <option value="air">Air</option>
+          <option value="water">Water</option>
+        </select>
+        <label>Version</label>
+        <select id="api-version">
+          <option value="free">Free</option>
+          <option value="paid">Paid</option>
+        </select>
+        <label>Language</label>
+        <select id="api-lang">
+          <option value="en">English</option>
+          <option value="hu">Hungarian</option>
+          <option value="de">German</option>
+        </select>
+        <div style="display:flex;gap:6px;margin-top:.8rem">
+          <button class="btn-primary" onclick="apiUpload()" style="flex:1">Upload & Process</button>
+          <button class="btn-danger" onclick="apiStop()" id="api-stop-btn" disabled style="flex:0 0 auto">Stop</button>
+        </div>
+        <div id="api-prog" style="height:4px;background:var(--border);border-radius:2px;margin-top:6px;overflow:hidden">
+          <div id="api-prog-fill" style="height:4px;width:0%;background:var(--green);transition:width .3s"></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title">Live detection</div>
+        <div class="result-grid" style="grid-template-columns:1fr 1fr">
+          <div class="result-box">
+            <div class="rv" id="api-ang">—</div>
+            <div class="rl">angle</div>
+          </div>
+          <div class="result-box orange">
+            <div class="rv" id="api-cum">—</div>
+            <div class="rl">total</div>
+          </div>
+          <div class="result-box blue">
+            <div class="rv" id="api-conf">—</div>
+            <div class="rl">confidence</div>
+          </div>
+          <div class="result-box yellow">
+            <div class="rv" id="api-frame">—</div>
+            <div class="rl">frame</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Physics result</div>
+        <div id="api-physics" style="font-size:.75rem;color:var(--muted)">—</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Log</div>
+        <div class="log" id="api-log"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TAB 5: Preprocess ═════════════════════════════════════════════ -->
+<div class="panel" id="tab-preprocess">
+  <div class="grid2">
+    <div>
+      <div class="card">
+        <div class="card-title">Watermark test</div>
+        <label>Watermark text</label>
+        <input id="wm-text" value="© enyem.com">
+        <label>Upload datetime</label>
+        <input id="wm-dt" value="2026.04.15.10.30">
+        <label>Medium label</label>
+        <input id="wm-medium" value="air">
+        <label>Hand label</label>
+        <input id="wm-hand" value="no hand">
+        <br><br>
+        <p style="font-size:.75rem;color:var(--muted);line-height:1.6">
+          Watermark is applied in <code>detector.py process()</code>.<br>
+          Parameters: <code>watermark</code>, <code>upload_dt</code>, <code>hand_label</code><br>
+          Visible on annotated output video bottom-left + top-right.
+        </p>
+      </div>
+      <div class="card">
+        <div class="card-title">Preprocess settings</div>
+        <p style="font-size:.75rem;color:var(--muted);line-height:1.8">
+          Set in <code>app/config.py</code>:<br>
+          <code>PREPROCESS_ENABLED = True</code> — enables preprocessing<br>
+          <code>MAX_DURATION_SEC = 120</code> — max video length<br>
+          <code>OUTPUT_HEIGHT = 480</code> — resize to 480p<br>
+          <code>MUTE_AUDIO = True</code> — removes audio<br><br>
+          Currently: <span id="prep-status" style="color:var(--yellow)">check server /health</span>
+        </p>
+        <button class="btn-secondary" onclick="checkPreprocess()" style="margin-top:.5rem">Check via /health</button>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title">Sample interval test</div>
+        <p style="font-size:.75rem;color:var(--muted);line-height:1.6;margin-bottom:.8rem">
+          Set in <code>main.py</code>:<br>
+          <code>SAMPLE_INTERVAL_MS = 1000</code><br>
+          Range: 33ms (30fps) to 6000ms.<br>
+          Lower = more data points, slower CSV.
+        </p>
+        <label>Simulate interval (ms)</label>
+        <input id="si-ms" value="1000" type="number" min="33" max="6000">
+        <label>Video duration (s)</label>
+        <input id="si-dur" value="30" type="number">
+        <br><br>
+        <button class="btn-secondary" onclick="calcSamples()">Calculate sample count</button>
+        <div id="si-out" style="margin-top:.6rem;font-size:.8rem;color:var(--green)"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Direction filter test</div>
+        <p style="font-size:.75rem;color:var(--muted);line-height:1.6">
+          Free version: CW or CCW<br>
+          Paid version: CW, CCW, CW+CCW, CCW+CW<br><br>
+          Values stored in DB with sign (negative = CCW).<br>
+          Values shown to user are absolute (always positive).
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── Tab switching ───────────────────────────────────────────────── */
+function showTab(id){
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    t.classList.toggle('active', t.getAttribute('onclick').includes(id));
+  });
+  document.querySelectorAll('.panel').forEach(p=>{
+    p.classList.toggle('active', p.id==='tab-'+id);
+  });
+}
+
+/* ── Physics calculation (JS port of physics.py) ────────────────── */
+function calcPhysics(){
+  const R  = +document.getElementById('p-rspoke').value;
+  const r  = +document.getElementById('p-rhub').value;
+  const L  = R + r;
+  const mh = +document.getElementById('p-mhub').value;
+  const ms = +document.getElementById('p-mspoke').value;
+  const ns = +document.getElementById('p-nspoke').value;
+  const dr = +document.getElementById('p-dratio').value;
+  const PLANCK = 6.626e-34;
+
+  const ta  = +document.getElementById('p-taccel').value;
+  const pa  = +document.getElementById('p-phiaccel').value * Math.PI/180;
+  const tc  = +document.getElementById('p-tconst').value;
+  const pc  = +document.getElementById('p-phiconst').value * Math.PI/180;
+  const td  = +document.getElementById('p-tdecel').value;
+  const pd  = +document.getElementById('p-phidecel').value * Math.PI/180;
+  const om  = +document.getElementById('p-omega').value;
+
+  // Inertia
+  const Jh  = 0.5 * mh * r*r;
+  const ds  = r + R/2;
+  const Js  = (1/12)*ms*R*R + ms*ds*ds;
+  const J   = Jh + ns*Js;
+
+  // Kinematics
+  const beta_a = 2*pa/(ta*ta);
+  const omega  = om > 0 ? om : beta_a*ta;
+  const beta_d = pd > 0 ? (2*pd/td)/td : omega/td;
+  const t_total= ta+tc+td;
+  const ph_tot = pa+pc+pd;
+  const t_act  = Math.max(ta+tc, 1e-6);
+  const ph_act = Math.max(pa+pc, 1e-9);
+
+  // Resistance
+  const M_air   = J * beta_d;
+  const M_water = dr * M_air;
+
+  function oneCase(M_res){
+    const Ma  = J*beta_a + M_res;
+    const Mc  = M_res;
+    const Fa  = Ma/L;
+    const Fc  = Mc/L;
+    const Ek  = 0.5*J*omega*omega;
+    const Pp  = Ma*omega;
+    const Pc2 = Mc*omega;
+    const Wt  = M_res===0 ? Ek : Ek + M_res*pa + M_res*pc;
+    const Pavg= Wt/t_act;
+    const Mavg= Wt/ph_act;
+    const Favg= Mavg/L;
+    const Eka = (1/3)*Ek;
+    const Eact= (Eka*ta + Ek*tc)/t_act;
+    const La  = J*omega;
+    const pf  = Wt/PLANCK;
+    return {t_total,phi_total:ph_tot,omega_max:omega,J,M_res,
+            M_motor_accel:Ma,M_motor_const:Mc,M_avg_active:Mavg,
+            F_const:Fc,F_accel:Fa,F_avg_active:Favg,F_max:Fa,
+            E_kin_max:Ek,E_kin_const:Ek,E_kin_avg_active:Eact,
+            P_peak:Pp,P_const:Pc2,P_avg:Pavg,W_total:Wt,L_ang:La,
+            planck_freq:pf};
+  }
+
+  const ideal = oneCase(0);
+  const air   = oneCase(M_air);
+  const water = oneCase(M_water);
+
+  // Summary boxes
+  document.getElementById('phys-summary').innerHTML =
+    `<span class="dot ok"></span>J_total = ${fSci(J,'kgm²')} &nbsp;|&nbsp; `+
+    `M_air = ${fSci(M_air,'Nm')} &nbsp;|&nbsp; M_water = ${fSci(M_water,'Nm')}`;
+
+  const boxes = document.getElementById('phys-boxes');
+  boxes.innerHTML = `
+    <div class="result-box blue"><div class="rv">${fSI(J,'kgm²')}</div><div class="rl">Inertia J</div></div>
+    <div class="result-box"><div class="rv">${fSI(air.W_total,'J')}</div><div class="rl">W_total air</div></div>
+    <div class="result-box orange"><div class="rv">${fSI(water.W_total,'J')}</div><div class="rl">W_total water</div></div>
+    <div class="result-box yellow"><div class="rv">${fSI(air.F_max,'N')}</div><div class="rl">F_max air</div></div>
+    <div class="result-box"><div class="rv">${fSI(air.P_peak,'W')}</div><div class="rl">P_peak air</div></div>
+    <div class="result-box blue"><div class="rv">${fSI(air.planck_freq,'Hz')}</div><div class="rl">Planck freq</div></div>
+  `;
+
+  // Table
+  const VARS = ['t_total','phi_total','omega_max','J','M_res',
+    'M_motor_accel','M_motor_const','M_avg_active',
+    'F_const','F_accel','F_avg_active','F_max',
+    'E_kin_max','E_kin_const','E_kin_avg_active',
+    'P_peak','P_const','P_avg','W_total','L_ang'];
+  const UNITS_MAP = {
+    t_total:'s',phi_total:'rad',omega_max:'rad/s',J:'kgm²',M_res:'Nm',
+    M_motor_accel:'Nm',M_motor_const:'Nm',M_avg_active:'Nm',
+    F_const:'N',F_accel:'N',F_avg_active:'N',F_max:'N',
+    E_kin_max:'J',E_kin_const:'J',E_kin_avg_active:'J',
+    P_peak:'W',P_const:'W',P_avg:'W',W_total:'J',L_ang:'kgm²/s'};
+
+  const tb = document.getElementById('phys-table');
+  tb.innerHTML = VARS.map((v,i)=>`<tr>
+    <td style="color:var(--dim)">${i+1}</td>
+    <td>${v}</td>
+    <td style="color:var(--dim)">${UNITS_MAP[v]}</td>
+    <td class="ideal">${fSci(ideal[v],UNITS_MAP[v])}</td>
+    <td class="air">${fSci(air[v],UNITS_MAP[v])}</td>
+    <td class="water">${fSci(water[v],UNITS_MAP[v])}</td>
+  </tr>`).join('');
+}
+
+/* ── Phase detection test ───────────────────────────────────────── */
+function testPhases(){
+  const dur = +document.getElementById('ph-dur').value;
+  const sps = +document.getElementById('ph-sps').value;
+  const pat = document.getElementById('ph-pattern').value;
+  const flt = document.getElementById('ph-filter').value;
+  const n   = Math.floor(dur * sps);
+  const ts  = Array.from({length:n},(_,i)=>i/sps);
+  const degs= [];
+
+  if(pat==='accel_const_decel'){
+    const t1=dur*0.5,t2=dur*0.7;
+    let d=0,v=0;
+    ts.forEach(t=>{
+      const a= t<t1?0.8: t<t2?0: -1.0;
+      v=Math.max(0,v+a/sps); d+=v/sps;
+      degs.push(d);
+    });
+  } else if(pat==='accel_decel'){
+    const t1=dur*0.5;
+    let d=0,v=0;
+    ts.forEach(t=>{
+      const a= t<t1?1.0:-1.5;
+      v=Math.max(0,v+a/sps); d+=v/sps;
+      degs.push(d);
+    });
+  } else if(pat==='cw_ccw'){
+    const t1=dur*0.5;
+    let d=0,v=0;
+    ts.forEach(t=>{
+      const a= t<t1*0.4?1.2: t<t1?-1.0: t<t1+dur*0.1?0: t<dur*0.8?-1.0:0.8;
+      v+=a/sps; d+=v/sps;
+      degs.push(d);
+    });
+  } else {
+    let d=0,v=0;
+    ts.forEach(t=>{
+      const cycle=t%10;
+      const a= cycle<2?1.5:cycle<4?0:cycle<6?-1.5:cycle<8?0:1.0;
+      v+=a/sps; d+=v/sps;
+      degs.push(d);
+    });
+  }
+
+  const angles = degs.map(d=>d*Math.PI/180);
+  const phases = detectPhases(ts, angles, flt);
+
+  // Phase bar visualization
+  const total = phases.t_accel + phases.t_const + phases.t_decel;
+  const bar = document.getElementById('phase-bar');
+  bar.innerHTML = `
+    <div class="phase-seg accel" style="flex:${phases.t_accel}">${phases.t_accel.toFixed(1)}s accel</div>
+    ${phases.t_const>0.1?`<div class="phase-seg const" style="flex:${phases.t_const}">${phases.t_const.toFixed(1)}s const</div>`:''}
+    <div class="phase-seg decel" style="flex:${phases.t_decel}">${phases.t_decel.toFixed(1)}s decel</div>
+  `;
+
+  document.getElementById('phase-details').innerHTML =
+    `<b style="color:var(--text)">t_start (t_Lajtner):</b> ${phases.t_start.toFixed(3)}s &nbsp;|&nbsp;`+
+    `<b style="color:var(--text)">omega_max:</b> ${phases.omega_max.toFixed(4)} rad/s &nbsp;|&nbsp;`+
+    `<b style="color:var(--text)">direction:</b> ${phases.direction}<br>`+
+    `phi_accel: ${(phases.phi_accel*180/Math.PI).toFixed(2)}° &nbsp;`+
+    `phi_const: ${(phases.phi_const*180/Math.PI).toFixed(2)}° &nbsp;`+
+    `phi_decel: ${(phases.phi_decel*180/Math.PI).toFixed(2)}°`;
+
+  const allDiv = document.getElementById('phase-all');
+  if(phases.all_phases && phases.all_phases.length){
+    allDiv.innerHTML = phases.all_phases.map((p,i)=>
+      `<div style="margin:.2rem 0;padding:.3rem .5rem;background:var(--bg3);border-radius:4px">
+        <span style="color:${p.direction==='CW'?'var(--green)':'var(--orange)'}">Phase ${i+1} ${p.direction}</span>
+        &nbsp; t: ${p.t_start.toFixed(1)}→${p.t_end.toFixed(1)}s &nbsp;
+        phi: ${(p.phi_rad*180/Math.PI).toFixed(1)}° &nbsp;
+        ω_max: ${p.omega_max.toFixed(3)} rad/s
+      </div>`).join('');
+  } else {
+    allDiv.innerHTML = '<span style="color:var(--dim)">No phases detected</span>';
+  }
+
+  // Draw chart
+  drawPhaseChart(ts, degs);
+}
+
+function detectPhases(ts, angles, filter){
+  if(ts.length<3) return {t_start:0,t_accel:0,t_const:0,t_decel:0,
+    phi_accel:0,phi_const:0,phi_decel:0,omega_max:0,direction:'CW',all_phases:[]};
+
+  const omegas=[];
+  for(let i=1;i<ts.length;i++){
+    const dt=Math.max(ts[i]-ts[i-1],1e-6);
+    omegas.push((angles[i]-angles[i-1])/dt);
+  }
+  omegas.push(omegas[omegas.length-1]);
+
+  const THRESH=0.01;
+  let t_start=ts[0];
+  for(let i=0;i<omegas.length;i++){
+    if(Math.abs(omegas[i])>=THRESH){t_start=ts[i];break;}
+  }
+
+  const abs_om=omegas.map(Math.abs);
+  const peak_i=abs_om.indexOf(Math.max(...abs_om));
+  const peak_v=abs_om[peak_i];
+  let const_end=peak_i;
+  for(let i=peak_i;i<abs_om.length;i++){
+    if(abs_om[i]<peak_v*0.95){const_end=i;break;}
+  }
+
+  const phi=(a,b)=>{
+    const s=Math.min(a,angles.length-1), e=Math.min(b,angles.length-1);
+    return Math.abs(angles[e]-angles[s]);
+  };
+  const dt=(a,b)=>Math.max(0,ts[Math.min(b,ts.length-1)]-ts[Math.min(a,ts.length-1)]);
+
+  // All phases
+  const all_phases=[];
+  let cur=null, seg=0;
+  for(let i=0;i<omegas.length;i++){
+    const d=Math.abs(omegas[i])<THRESH?null:omegas[i]>0?'CW':'CCW';
+    if(d!==cur){
+      if(cur&&i>seg){
+        const seg_om=omegas.slice(seg,i);
+        all_phases.push({direction:cur,t_start:ts[seg],t_end:ts[Math.min(i,ts.length-1)],
+          phi_rad:phi(seg,i),omega_max:Math.max(...seg_om.map(Math.abs))});
+      }
+      cur=d;seg=i;
+    }
+  }
+  if(cur&&seg<ts.length-1){
+    const seg_om=omegas.slice(seg);
+    all_phases.push({direction:cur,t_start:ts[seg],t_end:ts[ts.length-1],
+      phi_rad:phi(seg,ts.length-1),omega_max:Math.max(...seg_om.map(Math.abs))});
+  }
+
+  // Overall direction
+  const cw=omegas.filter(o=>o>THRESH).length;
+  const ccw=omegas.filter(o=>o<-THRESH).length;
+  const dir=cw>0&&ccw>0?'mixed':cw>=ccw?'CW':'CCW';
+
+  return {
+    t_start,
+    t_accel:  dt(0,peak_i),
+    t_const:  dt(peak_i,const_end),
+    t_decel:  dt(const_end,ts.length-1),
+    phi_accel:phi(0,peak_i),
+    phi_const:phi(peak_i,const_end),
+    phi_decel:phi(const_end,ts.length-1),
+    omega_max:peak_v,
+    direction:dir,
+    all_phases:all_phases.filter(p=>p.direction),
+  };
+}
+
+function drawPhaseChart(ts,degs){
+  const cvs=document.getElementById('phase-chart');
+  cvs.width=cvs.offsetWidth||500; cvs.height=160;
+  const ctx=cvs.getContext('2d'),W=cvs.width,H=160;
+  ctx.fillStyle='#080c10'; ctx.fillRect(0,0,W,H);
+  if(degs.length<2)return;
+  const pad={l:40,r:8,t:10,b:20};
+  const cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
+  const vMin=Math.min(...degs),vMax=Math.max(...degs,1),vR=vMax-vMin||1;
+  const tMin=ts[0],tMax=ts[ts.length-1]||1;
+  const tx=t=>pad.l+(t-tMin)/(tMax-tMin)*cW;
+  const ty=v=>pad.t+(1-(v-vMin)/vR)*cH;
+  [0,.5,1].forEach(f=>{
+    const y=pad.t+f*cH,v=vMax-f*vR;
+    ctx.strokeStyle='#21262d';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();
+    ctx.fillStyle='#484f58';ctx.font='9px monospace';
+    ctx.fillText(v.toFixed(0)+'°',2,y+3);
+  });
+  ctx.strokeStyle='#00ff88';ctx.lineWidth=1.5;ctx.beginPath();
+  degs.forEach((d,i)=>i===0?ctx.moveTo(tx(ts[i]),ty(d)):ctx.lineTo(tx(ts[i]),ty(d)));
+  ctx.stroke();
+  ctx.fillStyle='#484f58';ctx.font='9px monospace';
+  ctx.fillText('time (s)',W/2-15,H-4);
+}
+
+/* ── Message test ───────────────────────────────────────────────── */
+function testMessage(){
+  const version  = document.getElementById('msg-version').value;
+  const lang     = document.getElementById('msg-lang').value;
+  const medium   = document.getElementById('msg-medium').value;
+  const phi_deg  = +document.getElementById('msg-phi').value;
+  const p_avg    = +document.getElementById('msg-pavg').value;
+  const g_avg    = +document.getElementById('msg-gavg').value;
+
+  const MSGS = {
+    en:{rotated_free:"Congrats, your power is great! 🏆",not_rotated:"You need to practice a little more! 💪",
+        suspicious:"Are you sure this result came out correctly? ⚠️",
+        above_avg:"Congrats, You are excellent! 🥇",at_avg:"Congrats, You are in good shape! 🥈",
+        below_avg:"Congrats, your power works! 🥉",ranking_intro:"Let's see your ranking among people!",
+        above_group:"Congrats, this is above average! 🏆",at_group:"Congrats, Your result is great, only a few will beat you! 🥈",
+        below_group:"Congrats, You're not above average yet, but with practice you'll soon be! 🥉"},
+    hu:{rotated_free:"Gratulálok, nagy az erőd! 🏆",not_rotated:"Még egy kicsit gyakorolni kell! 💪",
+        suspicious:"Biztos, hogy ez az eredmény helyes? ⚠️",
+        above_avg:"Gratulálok, kiváló vagy! 🥇",at_avg:"Gratulálok, jó formában vagy! 🥈",
+        below_avg:"Gratulálok, az erőd működik! 🥉",ranking_intro:"Nézzük, hol állsz mások között!",
+        above_group:"Gratulálok, átlag feletti vagy! 🏆",at_group:"Gratulálok, kiváló eredmény! 🥈",
+        below_group:"Gratulálok, még nem vagy átlag felett, de hamarosan ott leszel! 🥉"},
+    de:{rotated_free:"Glückwunsch, deine Kraft ist toll! 🏆",not_rotated:"Du musst noch etwas üben! 💪",
+        suspicious:"Bist du sicher, dass dieses Ergebnis korrekt ist? ⚠️",
+        above_avg:"Glückwunsch, du bist ausgezeichnet! 🥇",at_avg:"Glückwunsch, du bist in guter Form! 🥈",
+        below_avg:"Glückwunsch, deine Kraft funktioniert! 🥉",ranking_intro:"Mal sehen, wie du abschneidest!",
+        above_group:"Glückwunsch, überdurchschnittlich! 🏆",at_group:"Glückwunsch, tolles Ergebnis! 🥈",
+        below_group:"Noch nicht überdurchschnittlich, aber bald! 🥉"},
+  };
+  const m = MSGS[lang]||MSGS.en;
+  const moved = phi_deg > 0.5;
+
+  // Fake physics values
+  const F_max=5e-8, P_peak=3e-9, W_total=1.5e-9;
+  const planck_freq = W_total / 6.626e-34;
+
+  let html = `<div style="font-size:1.1rem;margin-bottom:1rem">${moved?m.rotated_free:m.not_rotated}</div>`;
+
+  // Display values
+  const dispHtml = version==='free' ?
+    `<div class="result-grid">
+       <div class="result-box"><div class="rv">${phi_deg.toFixed(1)}°</div><div class="rl">rotation</div></div>
+       <div class="result-box yellow"><div class="rv">${fSI(F_max,'N')}</div><div class="rl">force</div></div>
+     </div>` :
+    `<div class="result-grid">
+       <div class="result-box"><div class="rv">${phi_deg.toFixed(1)}°</div><div class="rl">rotation</div></div>
+       <div class="result-box yellow"><div class="rv">${fSI(F_max,'N')}</div><div class="rl">force</div></div>
+       <div class="result-box blue"><div class="rv">${fSI(P_peak,'W')}</div><div class="rl">power</div></div>
+       <div class="result-box orange"><div class="rv">${fSI(W_total,'J')}</div><div class="rl">work</div></div>
+       <div class="result-box red"><div class="rv">${fSI(planck_freq,'Hz')}</div><div class="rl">Planck freq</div></div>
+     </div>`;
+  html += dispHtml;
+
+  // t_Lajtner
+  html += `<div style="margin:.8rem 0;font-size:.8rem;color:var(--muted)">
+    t_Lajtner: <span style="color:var(--text)">0.250 s</span> &nbsp;|&nbsp;
+    a_Lajtner: <span style="color:var(--text)">5.485 nrad/s²</span>
+  </div>`;
+
+  // Personal ranking (paid)
+  if(version==='paid'){
+    const pct=(phi_deg-p_avg)/p_avg*100;
+    const rankMsg = pct>5?m.above_avg:pct>=-5?m.at_avg:m.below_avg;
+    const rankMedal = pct>5?'🥇':pct>=-5?'🥈':'🥉';
+    html += `<div style="margin:.6rem 0;padding:.6rem;background:var(--bg3);border-radius:6px">
+      <div style="font-size:.72rem;color:var(--muted);margin-bottom:.3rem">vs your average (${p_avg}°)</div>
+      <span class="medal">${rankMedal}</span> ${rankMsg}
+      <span style="color:var(--dim);font-size:.72rem"> (${pct>0?'+':''}${pct.toFixed(1)}%)</span>
+    </div>`;
+
+    // Group ranking
+    const gpct=(phi_deg-g_avg)/g_avg*100;
+    const grpMsg = gpct>5?m.above_group:gpct>=-5?m.at_group:m.below_group;
+    const grpMedal = gpct>5?'🏆':gpct>=-5?'🥈':'🥉';
+    html += `<div style="font-size:.8rem;color:var(--muted);margin:.3rem 0">${m.ranking_intro}</div>`;
+    html += `<div style="padding:.6rem;background:var(--bg3);border-radius:6px">
+      <span class="medal">${grpMedal}</span> ${grpMsg}
+      <span style="color:var(--dim);font-size:.72rem"> (${gpct>0?'+':''}${gpct.toFixed(1)}% vs group avg ${g_avg}°)</span>
+    </div>`;
+  }
+
+  // Outlier check
+  if(phi_deg > 3600){
+    html += `<div style="margin:.6rem 0;padding:.6rem;background:#2d1117;border:1px solid var(--red);border-radius:6px;color:var(--red)">
+      ${m.suspicious}
+    </div>`;
+  }
+
+  document.getElementById('msg-out').innerHTML = html;
+}
+
+/* ── API tests ──────────────────────────────────────────────────── */
+let apiSse=null, apiJid=null, apiStatusTimer=null;
+
+function apiBase(){ return (document.getElementById('api-url').value||'').replace(/\/$/,''); }
+
+function apiLog(msg,cls=''){
+  const el=document.getElementById('api-log');
+  el.innerHTML+=`<div class="${cls}">${new Date().toLocaleTimeString()} ${msg}</div>`;
+  el.scrollTop=el.scrollHeight;
+}
+
+async function pingHealth(){
+  const out=document.getElementById('ping-out');
+  out.textContent='...';
+  try{
+    const r=await fetch(apiBase()+'/health');
+    const d=await r.json();
+    out.innerHTML=`<span class="dot ok"></span>${d.status} — interval:${d.sample_interval_ms}ms wm:"${d.watermark}"`;
+    document.getElementById('prep-status').textContent=
+      'PREPROCESS_ENABLED: check config.py';
+  }catch(e){out.innerHTML=`<span class="dot err"></span>${e.message}`;}
+}
+
+async function apiUpload(){
+  const f=document.getElementById('api-file').files[0];
+  if(!f){apiLog('Select a file','err');return;}
+  const fd=new FormData();
+  fd.append('file',f);
+  fd.append('user_email',document.getElementById('api-email').value||'test@test.com');
+  fd.append('direction', document.getElementById('api-dir').value);
+  fd.append('medium',    document.getElementById('api-medium').value);
+  fd.append('version',   document.getElementById('api-version').value);
+  fd.append('lang',      document.getElementById('api-lang').value);
+
+  document.getElementById('api-stop-btn').disabled=false;
+  apiLog('Uploading '+f.name+'...','info');
+  document.getElementById('api-prog-fill').style.width='0%';
+  document.getElementById('api-prog-fill').style.background='var(--blue)';
+
+  const xhr=new XMLHttpRequest();
+  xhr.upload.onprogress=e=>{
+    if(e.lengthComputable){
+      const p=Math.round(e.loaded/e.total*100);
+      document.getElementById('api-prog-fill').style.width=p+'%';
+    }
+  };
+  xhr.onload=()=>{
+    if(xhr.status!==200){apiLog('Upload error: '+xhr.status,'err');return;}
+    const d=JSON.parse(xhr.responseText);
+    apiJid=d.job_id;
+    apiLog('Job: '+apiJid,'ok');
+    document.getElementById('api-prog-fill').style.background='var(--green)';
+    apiStatusTimer=setInterval(pollApiStatus,2000);
+    startApiSse(apiJid);
+  };
+  xhr.onerror=()=>apiLog('Network error','err');
+  xhr.open('POST',apiBase()+'/upload');
+  xhr.send(fd);
+}
+
+async function pollApiStatus(){
+  if(!apiJid)return;
+  try{
+    const d=await(await fetch(apiBase()+'/status/'+apiJid)).json();
+    apiLog('Status: '+d.status+(d.sample_count?' ('+d.sample_count+' samples)':''));
+    if(d.status==='done'){
+      clearInterval(apiStatusTimer);
+      document.getElementById('api-prog-fill').style.width='100%';
+      // Fetch physics
+      try{
+        const p=await(await fetch(apiBase()+'/physics/'+apiJid)).json();
+        renderPhysics(p);
+      }catch(e){apiLog('Physics: '+e.message,'warn');}
+      apiLog('Done ✓','ok');
+    } else if(d.status==='error'){
+      clearInterval(apiStatusTimer);
+      apiLog('Error: '+d.detail,'err');
+    }
+  }catch(e){apiLog('Poll: '+e.message,'warn');}
+}
+
+function startApiSse(jid){
+  if(apiSse){apiSse.close();}
+  apiSse=new EventSource(apiBase()+'/frames/'+jid);
+  apiSse.onmessage=e=>{
+    try{
+      const d=JSON.parse(e.data);
+      if(d.done){apiSse.close();apiSse=null;return;}
+      if(d.error)return;
+      const pct=d.pct||0;
+      document.getElementById('api-prog-fill').style.width=(5+pct*0.9)+'%';
+      document.getElementById('api-ang').textContent=
+        d.rotation_deg!=null?d.rotation_deg.toFixed(1)+'°':'—';
+      document.getElementById('api-cum').textContent=
+        ((d.cumulative_deg||0)>=0?'+':'')+(d.cumulative_deg||0).toFixed(1)+'°';
+      document.getElementById('api-conf').textContent=(d.confidence_pct||0)+'%';
+      document.getElementById('api-frame').textContent='f:'+d.frame;
+    }catch(ex){}
+  };
+  apiSse.onerror=()=>{if(apiSse){apiSse.close();apiSse=null;}};
+}
+
+function renderPhysics(p){
+  const msg=p.message||{};
+  const el=document.getElementById('api-physics');
+  el.innerHTML=`
+    <div style="font-size:.9rem;margin-bottom:.5rem">${msg.message||'—'}</div>
+    ${msg.display?Object.entries(msg.display).map(([k,v])=>
+      `<div style="display:flex;justify-content:space-between;padding:.15rem 0;border-bottom:1px solid var(--border)">
+        <span style="color:var(--muted)">${k}</span><span style="color:var(--green)">${v}</span>
+      </div>`).join(''):''}
+    ${msg.t_lajtner_s!=null?`<div style="margin-top:.4rem;font-size:.72rem;color:var(--muted)">
+      t_Lajtner: <b style="color:var(--text)">${msg.t_lajtner_s}s</b> &nbsp;
+      a_Lajtner: <b style="color:var(--text)">${msg.a_lajtner}</b>
+    </div>`:''}
+    ${msg.rank_message?`<div style="margin-top:.4rem">${msg.rank_message}</div>`:''}
+    ${msg.group_message?`<div>${msg.group_message}</div>`:''}
+    ${msg.warning?`<div style="color:var(--red);margin-top:.4rem">${msg.warning}</div>`:''}
+  `;
+}
+
+function apiStop(){
+  if(apiSse){apiSse.close();apiSse=null;}
+  if(apiStatusTimer)clearInterval(apiStatusTimer);
+  document.getElementById('api-stop-btn').disabled=true;
+  apiLog('Stopped','warn');
+}
+
+function checkPreprocess(){
+  pingHealth();
+}
+
+function calcSamples(){
+  const ms=+document.getElementById('si-ms').value;
+  const dur=+document.getElementById('si-dur').value;
+  const n=Math.floor(dur/(ms/1000));
+  document.getElementById('si-out').textContent=
+    `${n} samples for ${dur}s video at ${ms}ms interval`;
+}
+
+/* ── SI / Sci formatters ────────────────────────────────────────── */
+const SI_P=[[1e12,'T'],[1e9,'G'],[1e6,'M'],[1e3,'k'],[1,''],
+            [1e-3,'m'],[1e-6,'µ'],[1e-9,'n'],[1e-12,'p'],[1e-15,'f']];
+function fSI(v,u,d=3){
+  if(v===0)return`0.000 ${u}`;
+  const a=Math.abs(v);
+  for(const[f,p] of SI_P)if(a>=f)return`${(v/f).toFixed(d)} ${p}${u}`;
+  return`${v.toExponential(d)} ${u}`;
+}
+function fSci(v,u){
+  if(v===0)return`0.000 ${u}`;
+  const e=Math.floor(Math.log10(Math.abs(v)));
+  return`${(v/10**e).toFixed(3)}*10^${e} ${u}`;
+}
+
+// Auto-run physics test on load
+calcPhysics();
+</script>
+</body>
+</html>
