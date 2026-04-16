@@ -213,10 +213,10 @@ tr:hover td{background:#1a1a1a}
 
 <script>
 // ── API server address ─────────────────────────────────────────────────────
-const API = "https://wheelttt.xyz"//'https://schema-zone-completely-bundle.trycloudflare.com';
+const API = "http://localhost:8000"//"https://wheelttt.xyz"//'https://schema-zone-completely-bundle.trycloudflare.com';
 
 let jid=null, statusTimer=null, sse=null, vidFile=null;
-let vidW=1, vidH=1, totalSec=0;
+let vidW=0, vidH=0, totalSec=0;
 
 function onFileChange(){
   const f=document.getElementById('fi').files[0];
@@ -240,7 +240,7 @@ function resetAll(){
   if(statusTimer) clearInterval(statusTimer);
   if(sse){ sse.close(); sse=null; }
   statusTimer=jid=null;
-  vidW=1; vidH=1; totalSec=0;
+  vidW=0; vidH=0; totalSec=0;
   document.getElementById('log').textContent='';
   document.getElementById('res').style.display='none';
   document.getElementById('proc-layout').style.display='none';
@@ -428,6 +428,8 @@ function drawOverlay(d){
   ctx.clearRect(0,0,dw,dh);
 
   // Scale: server coords → canvas pixels
+  // Guard: if vidW/vidH not yet received from server, skip drawing
+  if(!vidW || !vidH) return;
   const sx=dw/vidW, sy=dh/vidH;
 
   // Hub dot (white)
@@ -447,28 +449,23 @@ function drawOverlay(d){
     }
   }
 
-  // Orange neon circle
+  // Orange marker — fixed size dot, no jumping
   if(d.orange){
     const ox=d.orange[0]*sx, oy=d.orange[1]*sy;
-    const r=Math.max(8,(d.orange[2]||10)*Math.min(sx,sy)+6);
-
-    // Glow rings
-    ctx.beginPath(); ctx.arc(ox,oy,r+8,0,Math.PI*2);
-    ctx.strokeStyle='rgba(0,255,136,0.12)'; ctx.lineWidth=10; ctx.stroke();
-    ctx.beginPath(); ctx.arc(ox,oy,r+4,0,Math.PI*2);
-    ctx.strokeStyle='rgba(0,255,136,0.25)'; ctx.lineWidth=5; ctx.stroke();
-    // Main circle
+    const r=10;  // fixed radius px
+    // Shadow
+    ctx.beginPath(); ctx.arc(ox,oy,r+2,0,Math.PI*2);
+    ctx.fillStyle='rgba(0,40,100,0.7)'; ctx.fill();
+    // Fill
     ctx.beginPath(); ctx.arc(ox,oy,r,0,Math.PI*2);
-    ctx.strokeStyle='#00ff88'; ctx.lineWidth=3; ctx.stroke();
-    // Center dot
-    ctx.beginPath(); ctx.arc(ox,oy,4,0,Math.PI*2);
-    ctx.fillStyle='#00ff88'; ctx.fill();
+    ctx.fillStyle='#ff6600'; ctx.fill();
+    // Outline
+    ctx.beginPath(); ctx.arc(ox,oy,r,0,Math.PI*2);
+    ctx.strokeStyle='#ff3300'; ctx.lineWidth=1.5; ctx.stroke();
     // Label
-    ctx.font='bold 12px system-ui';
-    ctx.shadowColor='rgba(0,255,136,0.7)'; ctx.shadowBlur=6;
-    ctx.fillStyle='#00ff88';
-    ctx.fillText('ORA',ox+r+6,oy+5);
-    ctx.shadowBlur=0;
+    ctx.font='11px system-ui';
+    ctx.fillStyle='#ff6600';
+    ctx.fillText('ORA',ox+r+4,oy+4);
   }
 
   // Angle + cumulative text (top-left box)

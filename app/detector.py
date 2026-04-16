@@ -46,7 +46,7 @@ YOLO_EVERY      = 2
 ONNX_INPUT_SIZE = 640
 
 # ── Speed config ───────────────────────────────────────────────────────────
-SKIP_FRAMES = 1   # 1=every frame, 4=4x faster
+SKIP_FRAMES = 4   # 1=every frame, 4=4x faster
 
 # Orange HSV verification
 ORANGE_H_LO  = 8
@@ -86,8 +86,6 @@ def load_yolo():
         return None
     try:
         import onnxruntime as ort
-        # Try CUDA first, fall back to CPU silently
-        # On Windows without CUDA drivers use CPU only
         try:
             session = ort.InferenceSession(YOLO_WEIGHTS,
                 providers=["CUDAExecutionProvider","CPUExecutionProvider"])
@@ -110,7 +108,6 @@ def _preprocess_onnx(frame):
     h, w = frame.shape[:2]
     scale = ONNX_INPUT_SIZE / max(h, w)
     nw, nh = int(w*scale), int(h*scale)
-    # Center padding (letterbox)
     pad_x = (ONNX_INPUT_SIZE - nw) // 2
     pad_y = (ONNX_INPUT_SIZE - nh) // 2
     canvas = np.zeros((ONNX_INPUT_SIZE, ONNX_INPUT_SIZE, 3), np.uint8)
@@ -133,7 +130,6 @@ def detect_yolo(session, frame, hsv) -> dict:
             conf = float(pred[4+cls])
             if conf < YOLO_CONF or cls >= len(YOLO_CLASSES): continue
             name = YOLO_CLASSES[cls]
-            # Remove letterbox padding before unscaling
             cx = max(0, min(int((pred[0] - pad_x) / scale), w_f-1))
             cy = max(0, min(int((pred[1] - pad_y) / scale), h_f-1))
             bw = max(1, int(pred[2] / scale))
@@ -154,19 +150,95 @@ def detect_yolo(session, frame, hsv) -> dict:
             if n == "ground":
                 cx2,cy2,_,_,_ = d["blob"]
                 bw,bh = d.get("wh",(0,0))
-                result["ground"] = (cx2, cy2, bw, bh)  # bbox center + size
+                result["ground"] = (cx2, cy2, bw, bh)
             elif n == "center":
-                # Hub is at bottom-right corner of the "center" bbox
                 cx2,cy2,area2,sat2,r2 = d["blob"]
                 bw2,bh2 = d.get("wh",(0,0))
+                # Hub is at bottom-right corner of the "center" bbox
                 hub_x = cx2 + bw2//2
                 hub_y = cy2 + bh2//2
                 result["center"] = (hub_x, hub_y, area2, sat2, r2)
+            elif n == "orange":
+                cx2,cy2,area2,sat2,r2 = d["blob"]
+                bw2,bh2 = d.get("wh",(0,0))
+                # Orange marker is at bottom-right corner of its bbox
+                ora_x = cx2 + bw2//2
+                ora_y = cy2 + bh2//2
+                result["orange"] = (ora_x, ora_y, area2, sat2, r2)
             else:
                 result[n] = d["blob"]
     except Exception as e:
         log.warning(f"[ONNX] error: {e}")
     return result
+
+
+# ── Ground ellipse mask ────────────────────────────────────────────────────
+
+WHEEL_BASE_MM = 90.0   # diameter of wheel base
+DOME_HEIGHT_MM = 20.0  # height of dome at center
+
+
+def dome_corrected_center(gx, gy, gw, gh, frame_w, frame_h):
+    """
+    Correct ellipse center for the wheel dome (convexity).
+
+    The wheel has a dome ~15mm high at center over a ~90mm base.
+    When the camera is at an angle, the dome shifts the apparent center
+    toward the near (top) edge of the ellipse.
+
+    Steps:
+      1. Find tilt angle from ellipse squash ratio (short/long axis)
+      2. Compute pixel shift = DOME_HEIGHT_MM * sin(theta) * px_per_mm
+      3. Shift along the short axis toward the nearer frame edge
+    Returns (cx, cy) as floats.
+    """
+    a = gw / 2.0   # semi-axis X
+    b = gh / 2.0   # semi-axis Y
+
+    if a <= 0 or b <= 0:
+        return float(gx), float(gy)
+
+    # Determine which axis is compressed (short axis = tilt direction)
+    if a >= b:
+        # wheel tilted along Y axis (top-bottom in frame)
+        long_ax, short_ax = a, b
+        cos_t = short_ax / long_ax if long_ax > 0 else 1.0
+        cos_t = min(1.0, cos_t)
+        sin_t = math.sqrt(max(0.0, 1.0 - cos_t * cos_t))
+        px_per_mm = long_ax / (WHEEL_BASE_MM / 2.0)
+        shift_px = DOME_HEIGHT_MM * sin_t * px_per_mm
+        # Direction: toward nearer edge = toward frame top (smaller y)
+        # if center is in upper half → shift up; lower half → shift up still
+        # (camera is above the wheel, near edge is always top)
+        sign = -1  # move toward smaller y (top of frame)
+        cx_new = float(gx)
+        cy_new = float(gy) + sign * shift_px
+    else:
+        # wheel tilted along X axis (left-right in frame)
+        long_ax, short_ax = b, a
+        cos_t = short_ax / long_ax if long_ax > 0 else 1.0
+        cos_t = min(1.0, cos_t)
+        sin_t = math.sqrt(max(0.0, 1.0 - cos_t * cos_t))
+        px_per_mm = long_ax / (WHEEL_BASE_MM / 2.0)
+        shift_px = DOME_HEIGHT_MM * sin_t * px_per_mm
+        # Direction: toward nearer edge = toward frame center horizontally
+        sign = -1.0 if gx > frame_w / 2.0 else 1.0
+        cx_new = float(gx) + sign * shift_px
+        cy_new = float(gy)
+
+    return cx_new, cy_new
+
+
+def make_ellipse_mask(shape, cx, cy, gw, gh):
+    """
+    Build a binary mask with a filled ellipse inscribed in the ground bbox.
+    Center = dome-corrected center (cx, cy).
+    Semi-axes = gw//2, gh//2.
+    """
+    mask = np.zeros(shape[:2], np.uint8)
+    axes = (max(1, gw // 2), max(1, gh // 2))
+    cv2.ellipse(mask, (int(cx), int(cy)), axes, 0, 0, 360, 255, -1)
+    return mask
 
 
 # ── OpenCV ─────────────────────────────────────────────────────────────────
@@ -214,6 +286,95 @@ def find_blobs(hsv, m, max_y):
     return cands[:m["count"]]
 
 
+# How many mm inside the ellipse edge to search for orange marker
+ORANGE_INSET_MM = 2.0   # shrink ellipse inward by this many mm for orange search
+
+def make_inner_ellipse_mask(shape, cx, cy, gw, gh):
+    """
+    Inner ellipse = full ellipse shrunk by ORANGE_INSET_MM from the edge.
+    Search orange inside this smaller ellipse — excludes table near the rim.
+    Returns (mask, (ax_in, ay_in)) for debug drawing.
+    """
+    a        = gw / 2.0
+    b        = gh / 2.0
+    long_ax  = max(a, b)
+    if long_ax <= 0:
+        mask = np.zeros(shape[:2], np.uint8)
+        return mask, (int(a), int(b))
+    px_per_mm = long_ax / (WHEEL_BASE_MM / 2.0)
+    inset_px  = ORANGE_INSET_MM * px_per_mm
+    ax_in     = max(1, int(a - inset_px))
+    ay_in     = max(1, int(b - inset_px))
+    mask      = np.zeros(shape[:2], np.uint8)
+    cv2.ellipse(mask, (int(cx), int(cy)), (ax_in, ay_in), 0, 0, 360, 255, -1)
+    return mask, (ax_in, ay_in)
+
+
+def find_orange_adaptive(hsv, ellipse_mask, last_ora=None):
+    """
+    Find the orange marker anywhere inside the ellipse.
+    Adaptive hue-peak: no fixed thresholds — robust to lighting.
+
+    1. If last_ora known: try tight ROI first (dynamic tracking)
+    2. Fallback: full ellipse search
+    Each attempt: find dominant hue peak in orange range among
+    saturated pixels, threshold around it, return centroid.
+    """
+    ORANGE_H_MIN = 5
+    ORANGE_H_MAX = 30
+    SAT_MIN      = 40
+    HUE_TOL      = 12
+
+    def _search(search_mask):
+        combined = cv2.bitwise_and(search_mask, ellipse_mask)
+        if cv2.countNonZero(combined) < 8:
+            return None
+        sat_mask  = (hsv[:,:,1] >= SAT_MIN).astype(np.uint8) * 255
+        hue_mask  = cv2.inRange(hsv[:,:,0:1],
+                                np.array([ORANGE_H_MIN]), np.array([ORANGE_H_MAX]))
+        candidate = cv2.bitwise_and(cv2.bitwise_and(sat_mask, hue_mask), combined)
+        if cv2.countNonZero(candidate) < 8:
+            return None
+        hue_vals = hsv[:,:,0][candidate > 0]
+        hist     = np.bincount(hue_vals.astype(int), minlength=ORANGE_H_MAX+1)
+        hist[:ORANGE_H_MIN] = 0
+        peak_h   = int(np.argmax(hist))
+        if hist[peak_h] < 5:
+            return None
+        lo      = np.array([max(0,   peak_h - HUE_TOL), SAT_MIN, 30], np.uint8)
+        hi      = np.array([min(180, peak_h + HUE_TOL), 255,    255], np.uint8)
+        refined = cv2.bitwise_and(cv2.inRange(hsv, lo, hi), combined)
+        refined = cv2.morphologyEx(refined, cv2.MORPH_OPEN,  _kernel)
+        refined = cv2.morphologyEx(refined, cv2.MORPH_CLOSE, _kernel)
+        cnts, _ = cv2.findContours(refined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not cnts:
+            return None
+        c    = max(cnts, key=cv2.contourArea)
+        area = cv2.contourArea(c)
+        if area < 8:
+            return None
+        M = cv2.moments(c)
+        if M["m00"] == 0:
+            return None
+        cx  = int(M["m10"] / M["m00"])
+        cy  = int(M["m01"] / M["m00"])
+        r   = max(5, int(math.sqrt(area / math.pi)))
+        sat = int(hsv[cy, cx, 1])
+        return (cx, cy, area, sat, r)
+
+    # 1. Dynamic: tight ROI around last known position
+    if last_ora is not None:
+        dyn_r    = max(30, last_ora[4] * 4)
+        dyn_mask = np.zeros(hsv.shape[:2], np.uint8)
+        cv2.circle(dyn_mask, (int(last_ora[0]), int(last_ora[1])), dyn_r, 255, -1)
+        result = _search(dyn_mask)
+        if result is not None:
+            return result
+
+    # 2. Full ellipse fallback
+    return _search(ellipse_mask)
+
+
 def pick_farthest_pair(blobs):
     best=None; best_d=0
     for i in range(len(blobs)):
@@ -253,6 +414,53 @@ def draw_neon_circle(img,center,radius,color,thickness,glow):
     cv2.circle(img,(x,y),3,color,-1,cv2.LINE_AA)
 
 
+def draw_ground_ellipse(ann, gx, gy, gw, gh, cx_corr, cy_corr, inner_axes=None):
+    """
+    Draw debug ellipses on video frame:
+      - outer ellipse: full ground bbox boundary (dim cyan)
+      - inner ellipse: exclusion zone boundary = search ring inner edge (yellow)
+      - ring zone between them = orange search area (shaded)
+      - crosshair at dome-corrected center
+      - small dot at raw bbox center
+    """
+    bx, by   = int(gx), int(gy)
+    cx, cy   = int(cx_corr), int(cy_corr)
+    axes_out = (max(1, gw // 2), max(1, gh // 2))
+    CYAN     = (0, 220, 220)
+    CYAN_DIM = (0, 70, 70)
+    YELLOW   = (0, 220, 255)   # inner ring boundary
+    DIM_DOT  = (0, 120, 120)
+
+    RED = (0, 0, 220)
+    GREEN_DIM = (0, 180, 0)
+
+    # Ground bbox rectangle (raw YOLO output)
+    cv2.rectangle(ann,
+        (max(0, bx - gw//2), max(0, by - gh//2)),
+        (min(ann.shape[1]-1, bx + gw//2), min(ann.shape[0]-1, by + gh//2)),
+        GREEN_DIM, 1, cv2.LINE_AA)
+
+    # Original bbox ellipse (gx,gy) — red, orange search zone
+    cv2.ellipse(ann, (bx, by), axes_out, 0, 0, 360, RED, 1, cv2.LINE_AA)
+
+
+
+    # Inner ellipse = inner boundary of search ring (yellow)
+    if inner_axes is not None and inner_axes[0] > 0 and inner_axes[1] > 0:
+        cv2.ellipse(ann, (bx, by), inner_axes, 0, 0, 360, YELLOW, 1, cv2.LINE_AA)
+        cv2.putText(ann, "inner", (bx + inner_axes[0] + 4, by),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, YELLOW, 1, cv2.LINE_AA)
+
+    # Dome-corrected center crosshair
+    arm = 12
+    cv2.line(ann, (cx-arm, cy), (cx+arm, cy), CYAN, 1, cv2.LINE_AA)
+    cv2.line(ann, (cx, cy-arm), (cx, cy+arm), CYAN, 1, cv2.LINE_AA)
+    cv2.circle(ann, (cx, cy), 4, CYAN, -1, cv2.LINE_AA)
+
+    # Raw bbox center dot
+    cv2.circle(ann, (bx, by), 3, RED, -1, cv2.LINE_AA)
+
+
 def draw_info_bar(bar,W,t_sec,rot_deg,rot_rad,cum_deg,cum_rad,
                   vel_dps,vel_rps,conf,source,info_level,direction,medium):
     GREEN=(0,255,128); WHITE=(230,230,230); GRAY=(120,120,120); YELLOW=(0,220,220)
@@ -288,13 +496,25 @@ def draw_info_bar(bar,W,t_sec,rot_deg,rot_rad,cum_deg,cum_rad,
     if source:
         cv2.putText(bar,f"hub: {source}",(c2,172),cv2.FONT_HERSHEY_SIMPLEX,0.40,(40,200,40),1)
     dcx=c3+(W-c3)//2; dcy=100; dr=68
+    # Dial background
     cv2.circle(bar,(dcx,dcy),dr,(45,45,45),-1)
     cv2.circle(bar,(dcx,dcy),dr,(80,80,80),1)
+    # + label (CCW, top-left) and - label (CW, top-right)
+    cv2.putText(bar,"+",(dcx-dr+4,dcy-dr+14),cv2.FONT_HERSHEY_SIMPLEX,0.40,(80,200,80),1)
+    cv2.putText(bar,"-",(dcx+dr-14,dcy-dr+14),cv2.FONT_HERSHEY_SIMPLEX,0.40,(80,80,200),1)
+    # CCW arc hint (left half, green dim)
+    cv2.ellipse(bar,(dcx,dcy),(dr-4,dr-4),0,180,360,(40,100,40),1,cv2.LINE_AA)
+    # CW arc hint (right half, red dim)
+    cv2.ellipse(bar,(dcx,dcy),(dr-4,dr-4),0,0,180,(40,40,100),1,cv2.LINE_AA)
+    # 12-o'clock tick
     cv2.line(bar,(dcx,dcy-dr),(dcx,dcy-dr+8),(90,90,90),1)
     if rot_deg is not None:
         rad=math.radians(rot_deg)
+        # needle color: green if CCW (+), red if CW (-)
+        needle_col=(40,200,40) if cum_deg>=0 else (40,40,200)
         cv2.line(bar,(dcx,dcy),
-                 (int(dcx+(dr-10)*math.sin(rad)),int(dcy-(dr-10)*math.cos(rad))),c,2,cv2.LINE_AA)
+                 (int(dcx+(dr-10)*math.sin(rad)),int(dcy-(dr-10)*math.cos(rad))),
+                 needle_col,2,cv2.LINE_AA)
     cv2.circle(bar,(dcx,dcy),4,c,-1)
     cv2.putText(bar,f"{rot_deg:.1f} deg" if rot_deg is not None else "---",
                 (dcx-32,dcy+dr+18),cv2.FONT_HERSHEY_SIMPLEX,0.46,c,1,cv2.LINE_AA)
@@ -310,14 +530,6 @@ def process(video_path: str, out_path: str, job_id: str = "local",
             watermark: str = "© enyem.com",
             upload_dt: str = "",
             hand_label: str = "") -> list:
-    """
-    Process video. progress_cb receives lightweight JSON dict with:
-      - detection coordinates (hub, orange)
-      - rotation data (angle, cumulative, velocity)
-      - video dimensions (for canvas scaling in browser)
-    No JPEG frames — browser draws overlay on original video.
-    Watermark, upload datetime, hand/medium labels are drawn on video.
-    """
     log.info("[DETECT] Building HSV ranges:")
     markers = build_ranges(MARKER_DEFS)
     log.info("[DETECT] Loading ONNX:")
@@ -373,35 +585,44 @@ def process(video_path: str, out_path: str, job_id: str = "local",
         if auto_rotate is not None:
             frame=cv2.rotate(frame,auto_rotate)
 
-        t_sec=fi/fps  # real time — physically correct
+        t_sec=fi/fps
 
         frame_stab=stab.stabilize(frame)
         preproc=cv2.bilateralFilter(frame_stab,7,50,50)
         hsv=cv2.cvtColor(preproc,cv2.COLOR_BGR2HSV)
 
-        if hub_stable is not None and hub_radius is not None:
-            roi=np.zeros(hsv.shape[:2],np.uint8)
-            cv2.circle(roi,(int(hub_stable[0]),int(hub_stable[1])),int(hub_radius*1.15),255,-1)
-            hsv_src=cv2.bitwise_and(hsv,hsv,mask=roi)
-        else:
-            hsv_src=hsv
-
         if fi%(YOLO_EVERY*max(1,SKIP_FRAMES))==0:
             _last_yolo_det=detect_yolo(yolo,preproc,hsv)
         yolo_det=_last_yolo_det
 
-        # ── Ground mask: ищем orange только внутри bbox колеса ──
+        # ── Build ellipse mask from ground bbox and search orange inside it ──
         if yolo_det.get("ground") is not None:
             gx, gy, gw, gh = yolo_det["ground"]
-            x1 = max(0, gx - gw//2)
-            y1 = max(0, gy - gh//2)
-            x2 = min(hsv.shape[1]-1, gx + gw//2)
-            y2 = min(hsv.shape[0]-1, gy + gh//2)
-            ground_roi = np.zeros(hsv.shape[:2], np.uint8)
-            ground_roi[y1:y2, x1:x2] = 255
-            hsv_src = cv2.bitwise_and(hsv, hsv, mask=ground_roi)
+            ecx, ecy = dome_corrected_center(gx, gy, gw, gh, W, H)  # dome-corrected hub
+            ellipse_mask = make_ellipse_mask(hsv.shape, gx, gy, gw, gh)  # original bbox center for orange search
+            hsv_src = cv2.bitwise_and(hsv, hsv, mask=ellipse_mask)
+        elif hub_stable is not None and hub_radius is not None:
+            # Fallback: circle ROI around known hub
+            roi = np.zeros(hsv.shape[:2], np.uint8)
+            cv2.circle(roi, (int(hub_stable[0]), int(hub_stable[1])),
+                       int(hub_radius * 1.15), 255, -1)
+            hsv_src = cv2.bitwise_and(hsv, hsv, mask=roi)
+        else:
+            hsv_src = hsv
 
-        cv_ora=find_blobs(hsv_src,markers["ORANGE"],max_y)
+        # ── Adaptive orange search inside ellipse ─────────────────────────
+        if yolo_det.get("ground") is not None:
+            inner_mask, inner_axes = make_inner_ellipse_mask(hsv.shape, gx, gy, gw, gh)
+            _cv_ora_blob = find_orange_adaptive(hsv, inner_mask, last_ora)
+            if _cv_ora_blob is None:
+                # Fallback: classic HSV blobs inside inner ellipse
+                _hsv_inner = cv2.bitwise_and(hsv, hsv, mask=inner_mask)
+                _cv_ora_list = find_blobs(_hsv_inner, markers["ORANGE"], max_y)
+                _cv_ora_blob = _cv_ora_list[0] if _cv_ora_list else None
+            cv_ora = [_cv_ora_blob] if _cv_ora_blob is not None else []
+        else:
+            inner_axes  = None
+            cv_ora = find_blobs(hsv_src, markers["ORANGE"], max_y)
 
         if USE_PAIR_FALLBACK:
             cv_yel=find_blobs(hsv_src,markers["YELLOW"],max_y)
@@ -410,7 +631,12 @@ def process(video_path: str, out_path: str, job_id: str = "local",
             cv_yel=[]; cv_red=[]
 
         hub_px_raw=None
+        if yolo_det.get("ground") is not None:
+            # Priority 1: dome-corrected ellipse center
+            hub_px_raw=(ecx, ecy); hub_source="GROUND"
+            gap_hub=0; last_hub=hub_px_raw
         if yolo_det["center"] is not None:
+            # Priority 1+: YOLO center (bottom-right corner) overrides if found
             cx,cy,_,_,_=yolo_det["center"]
             hub_px_raw=(float(cx),float(cy)); hub_source="YOLO"
             gap_hub=0; last_hub=hub_px_raw
@@ -429,10 +655,10 @@ def process(video_path: str, out_path: str, job_id: str = "local",
         elif gap_hub<MAX_GAP_FRAMES and last_hub:
             gap_hub+=1; hub_px_raw=last_hub
 
-        if yolo_det["orange"] is not None:
-            ora_blob=yolo_det["orange"]; gap_ora=0; last_ora=ora_blob
-        elif cv_ora:
+        if cv_ora:
             ora_blob=cv_ora[0]; gap_ora=0; last_ora=ora_blob
+        elif yolo_det["orange"] is not None:
+            ora_blob=yolo_det["orange"]; gap_ora=0; last_ora=ora_blob
         elif gap_ora<MAX_GAP_FRAMES and last_ora:
             gap_ora+=1; ora_blob=last_ora
         else:
@@ -485,25 +711,21 @@ def process(video_path: str, out_path: str, job_id: str = "local",
         conf=compute_confidence(has_hub,has_orange,hub_source or "")
         conf_smooth=conf_smooth*0.6+conf*0.4; conf_disp=int(round(conf_smooth))
 
-        # ── Progress callback — lightweight JSON coords only ───────────────
+        # ── Progress callback ──────────────────────────────────────────────
         if progress_cb is not None:
             pct=int(fi/total*100) if total>0 else 0
             progress_cb({
-                # progress
                 "frame":           fi,
                 "total":           total,
                 "pct":             pct,
                 "t_sec":           round(t_sec,2),
                 "total_sec":       total_sec,
-                # video dimensions for canvas scaling
                 "vid_w":           W,
                 "vid_h":           H,
-                # detection coordinates
                 "hub":             [round(hub_px_raw[0]),round(hub_px_raw[1])] if hub_px_raw else None,
                 "orange":          [ora_blob[0],ora_blob[1],ora_blob[4]] if ora_blob else None,
                 "hub_source":      hub_source,
-                "ground":          list(yolo_det["ground"]) if yolo_det.get("ground") else None,  # [cx,cy,w,h]
-                # rotation data
+                "ground":          list(yolo_det["ground"]) if yolo_det.get("ground") else None,
                 "rotation_deg":    round(rot_smooth,1) if rot_smooth is not None else None,
                 "cumulative_deg":  round(-rot_cum,1),
                 "angular_vel_dps": round(-vel_dps,1),
@@ -520,24 +742,30 @@ def process(video_path: str, out_path: str, job_id: str = "local",
                 persist_samples(job_id,all_samples[-FLUSH_EVERY:])
 
         # ── Draw output video ──────────────────────────────────────────────
-        ann=frame_stab.copy()
-        if hub_px_raw is not None:
-            hcol=(40,200,40) if hub_source=="YOLO" else (200,200,40)
-            cv2.circle(ann,(int(hub_px_raw[0]),int(hub_px_raw[1])),7,hcol,-1,cv2.LINE_AA)
-            cv2.circle(ann,(int(hub_px_raw[0]),int(hub_px_raw[1])),9,(0,0,0),1,cv2.LINE_AA)
-        # Draw ground bbox (thin cyan rectangle)
+        ann = frame_stab.copy()
+
+        # 1. Ground ellipses (outer + inner ring boundary) + center
         if yolo_det.get("ground") is not None:
             gx2, gy2, gw2, gh2 = yolo_det["ground"]
-            cv2.rectangle(ann,
-                (max(0,gx2-gw2//2), max(0,gy2-gh2//2)),
-                (min(ann.shape[1]-1,gx2+gw2//2), min(ann.shape[0]-1,gy2+gh2//2)),
-                (0, 200, 200), 1)
+            draw_ground_ellipse(ann, gx2, gy2, gw2, gh2, ecx, ecy, inner_axes)
 
+        # 2. YOLO hub dot (drawn ON TOP of ellipse center if center class found)
+        if hub_px_raw is not None and hub_source == "YOLO":
+            cv2.circle(ann,(int(hub_px_raw[0]),int(hub_px_raw[1])),7,(40,200,40),-1,cv2.LINE_AA)
+            cv2.circle(ann,(int(hub_px_raw[0]),int(hub_px_raw[1])),9,(0,0,0),1,cv2.LINE_AA)
+
+        # 3. Orange marker — fixed size circle, orange color, no jumping radius
         if has_orange and ora_blob:
-            draw_neon_circle(ann,(ora_blob[0],ora_blob[1]),ora_blob[4]+6,
-                             TRACK_CIRCLE_COLOR,TRACK_CIRCLE_THICK,TRACK_CIRCLE_GLOW)
-            cv2.putText(ann,"ORA",(ora_blob[0]+ora_blob[4]+8,ora_blob[1]+5),
-                        cv2.FONT_HERSHEY_SIMPLEX,0.45,TRACK_CIRCLE_COLOR,1,cv2.LINE_AA)
+            _ox, _oy = int(ora_blob[0]), int(ora_blob[1])
+            ORA_COLOR = (0, 100, 255)   # BGR orange
+            ORA_R     = 10              # fixed radius px
+            cv2.circle(ann, (_ox, _oy), ORA_R + 2, (0, 40, 100), -1, cv2.LINE_AA)  # shadow
+            cv2.circle(ann, (_ox, _oy), ORA_R,     ORA_COLOR,     -1, cv2.LINE_AA)  # fill
+            cv2.circle(ann, (_ox, _oy), ORA_R,     (0, 60, 180),   1, cv2.LINE_AA)  # outline
+            cv2.putText(ann, "ORA", (_ox + ORA_R + 4, _oy + 4),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.40, ORA_COLOR, 1, cv2.LINE_AA)
+
+        # 4. Line hub → orange
         if has_hub and has_orange and hub_px_raw:
             cv2.line(ann,(int(hub_px_raw[0]),int(hub_px_raw[1])),
                      (ora_blob[0],ora_blob[1]),TRACK_CIRCLE_COLOR,1,cv2.LINE_AA)
@@ -548,21 +776,18 @@ def process(video_path: str, out_path: str, job_id: str = "local",
                       math.radians(rot_smooth) if rot_smooth is not None else None,
                       -rot_cum,math.radians(-rot_cum),
                       -vel_dps,-vel_rps,conf_disp,hub_source,info_level,direction,medium)
-        # ── Watermark + labels ────────────────────────────────────────────
+
         font  = cv2.FONT_HERSHEY_SIMPLEX
         scale = max(0.35, W/1280*0.55)
         thick = 1
-        wcolor= (200,200,200); shadow=(0,0,0)
-        # Bottom-left: watermark
+        wcolor=(200,200,200); shadow=(0,0,0)
         if watermark:
             cv2.putText(ann,watermark,(8,H-8),font,scale,shadow,thick+1,cv2.LINE_AA)
             cv2.putText(ann,watermark,(8,H-8),font,scale,wcolor,thick,  cv2.LINE_AA)
-        # Top-right: upload datetime
         if upload_dt:
             tw=cv2.getTextSize(upload_dt,font,scale*0.8,thick)[0][0]
             cv2.putText(ann,upload_dt,(W-tw-6,20),font,scale*0.8,shadow,thick+1,cv2.LINE_AA)
             cv2.putText(ann,upload_dt,(W-tw-6,20),font,scale*0.8,wcolor,thick,  cv2.LINE_AA)
-        # Top-left: medium + hand
         labels = []
         if medium: labels.append(medium)
         if hand_label: labels.append(hand_label)

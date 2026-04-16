@@ -287,15 +287,15 @@ function drawCamOverlayFrozen(d) {
   }
   if (d.orange) {
     const ox = d.orange[0]*sx, oy = d.orange[1]*sy;
-    const r = Math.max(8,(d.orange[2]||10)*Math.min(sx,sy)+6);
-    ctx.beginPath(); ctx.arc(ox,oy,r+6,0,Math.PI*2);
-    ctx.strokeStyle='rgba(0,255,136,0.2)'; ctx.lineWidth=8; ctx.stroke();
+    const r = 10;
+    ctx.beginPath(); ctx.arc(ox,oy,r+2,0,Math.PI*2);
+    ctx.fillStyle='rgba(0,40,100,0.7)'; ctx.fill();
     ctx.beginPath(); ctx.arc(ox,oy,r,0,Math.PI*2);
-    ctx.strokeStyle='#00ffb4'; ctx.lineWidth=3; ctx.stroke();
-    ctx.beginPath(); ctx.arc(ox,oy,4,0,Math.PI*2);
-    ctx.fillStyle='#00ffb4'; ctx.fill();
-    ctx.font='bold 12px system-ui'; ctx.fillStyle='#00ffb4';
-    ctx.fillText('ORA',ox+r+6,oy+5);
+    ctx.fillStyle='#ff6600'; ctx.fill();
+    ctx.beginPath(); ctx.arc(ox,oy,r,0,Math.PI*2);
+    ctx.strokeStyle='#ff3300'; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.font='11px system-ui'; ctx.fillStyle='#ff6600';
+    ctx.fillText('ORA',ox+r+4,oy+4);
   }
   // Ground bbox
   if (d.ground) {
@@ -644,15 +644,15 @@ function drawTestCanvas(d,src) {
   }
   if (d.orange){
     const ox=d.orange[0]*sx,oy=d.orange[1]*sy;
-    const r=Math.max(8,(d.orange[2]||10)*Math.min(sx,sy)+6);
-    ctx.beginPath();ctx.arc(ox,oy,r+6,0,Math.PI*2);
-    ctx.strokeStyle='rgba(0,255,136,0.2)';ctx.lineWidth=8;ctx.stroke();
-    ctx.beginPath();ctx.arc(ox,oy,r,0,Math.PI*2);
-    ctx.strokeStyle='#00ffb4';ctx.lineWidth=3;ctx.stroke();
-    ctx.beginPath();ctx.arc(ox,oy,4,0,Math.PI*2);
-    ctx.fillStyle='#00ffb4';ctx.fill();
-    ctx.font='bold 12px system-ui';ctx.fillStyle='#00ffb4';
-    ctx.fillText('ORA',ox+r+6,oy+5);
+    const r = 10;
+    ctx.beginPath(); ctx.arc(ox,oy,r+2,0,Math.PI*2);
+    ctx.fillStyle='rgba(0,40,100,0.7)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(ox,oy,r,0,Math.PI*2);
+    ctx.fillStyle='#ff6600'; ctx.fill();
+    ctx.beginPath(); ctx.arc(ox,oy,r,0,Math.PI*2);
+    ctx.strokeStyle='#ff3300'; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.font='11px system-ui'; ctx.fillStyle='#ff6600';
+    ctx.fillText('ORA',ox+r+4,oy+4);
   }
   if (d.ground){
     const [gx,gy,gw,gh]=d.ground;
