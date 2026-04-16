@@ -41,7 +41,7 @@ USE_PAIR_FALLBACK = False
 # ── ONNX config ────────────────────────────────────────────────────────────
 YOLO_WEIGHTS    = "best.onnx"
 YOLO_CONF       = 0.35
-YOLO_CLASSES    = ["center", "orange"]
+YOLO_CLASSES    = ["center", "ground", "orange"]  # order from data.yaml: 0=center 1=ground 2=orange
 YOLO_EVERY      = 2
 ONNX_INPUT_SIZE = 640
 
@@ -86,8 +86,14 @@ def load_yolo():
         return None
     try:
         import onnxruntime as ort
-        session = ort.InferenceSession(YOLO_WEIGHTS,
-            providers=["CUDAExecutionProvider","CPUExecutionProvider"])
+        # Try CUDA first, fall back to CPU silently
+        # On Windows without CUDA drivers use CPU only
+        try:
+            session = ort.InferenceSession(YOLO_WEIGHTS,
+                providers=["CUDAExecutionProvider","CPUExecutionProvider"])
+        except Exception:
+            session = ort.InferenceSession(YOLO_WEIGHTS,
+                providers=["CPUExecutionProvider"])
         log.info(f"[ONNX] loaded  provider={session.get_providers()[0]}")
         return session
     except Exception as e:
@@ -96,21 +102,29 @@ def load_yolo():
 
 
 def _preprocess_onnx(frame):
+    """
+    Letterbox resize to ONNX_INPUT_SIZE x ONNX_INPUT_SIZE.
+    Returns (blob, scale, pad_x, pad_y) so coordinates can be
+    correctly mapped back: orig_x = (pred_x - pad_x) / scale
+    """
     h, w = frame.shape[:2]
     scale = ONNX_INPUT_SIZE / max(h, w)
     nw, nh = int(w*scale), int(h*scale)
+    # Center padding (letterbox)
+    pad_x = (ONNX_INPUT_SIZE - nw) // 2
+    pad_y = (ONNX_INPUT_SIZE - nh) // 2
     canvas = np.zeros((ONNX_INPUT_SIZE, ONNX_INPUT_SIZE, 3), np.uint8)
-    canvas[:nh, :nw] = cv2.resize(frame, (nw, nh))
+    canvas[pad_y:pad_y+nh, pad_x:pad_x+nw] = cv2.resize(frame, (nw, nh))
     blob = canvas[:,:,::-1].astype(np.float32)/255.0
-    return blob.transpose(2,0,1)[np.newaxis], scale
+    return blob.transpose(2,0,1)[np.newaxis], scale, pad_x, pad_y
 
 
 def detect_yolo(session, frame, hsv) -> dict:
-    result = {"center": None, "orange": None}
+    result = {"center": None, "orange": None, "ground": None}
     if session is None: return result
     try:
         h_f, w_f = frame.shape[:2]
-        blob, scale = _preprocess_onnx(frame)
+        blob, scale, pad_x, pad_y = _preprocess_onnx(frame)
         raw = session.run(None, {session.get_inputs()[0].name: blob})[0]
         preds = raw[0].T if (raw.ndim==3 and raw.shape[1]<raw.shape[2]) else raw[0]
         best = {}
@@ -119,10 +133,13 @@ def detect_yolo(session, frame, hsv) -> dict:
             conf = float(pred[4+cls])
             if conf < YOLO_CONF or cls >= len(YOLO_CLASSES): continue
             name = YOLO_CLASSES[cls]
-            cx = max(0,min(int(pred[0]/scale),w_f-1))
-            cy = max(0,min(int(pred[1]/scale),h_f-1))
-            area = max(1,int(pred[2]/scale)*int(pred[3]/scale))
-            r    = max(5,int(math.sqrt(area/math.pi)))
+            # Remove letterbox padding before unscaling
+            cx = max(0, min(int((pred[0] - pad_x) / scale), w_f-1))
+            cy = max(0, min(int((pred[1] - pad_y) / scale), h_f-1))
+            bw = max(1, int(pred[2] / scale))
+            bh = max(1, int(pred[3] / scale))
+            area = max(1, bw * bh)
+            r    = max(5, int(math.sqrt(area/math.pi)))
             if name=="orange":
                 hv,sv = int(hsv[cy,cx,0]),int(hsv[cy,cx,1])
                 if not (ORANGE_H_LO<=hv<=ORANGE_H_HI and sv>=ORANGE_S_MIN):
@@ -131,8 +148,22 @@ def detect_yolo(session, frame, hsv) -> dict:
                     if ph.size==0 or not (ORANGE_H_LO<=int(np.median(ph))<=ORANGE_H_HI
                                           and int(np.median(ps))>=ORANGE_S_MIN): continue
             if name not in best or conf>best[name]["conf"]:
-                best[name]={"blob":(cx,cy,area,int(hsv[cy,cx,1]),r),"conf":conf}
-        for n,d in best.items(): result[n]=d["blob"]
+                best[name] = {"blob": (cx, cy, area, int(hsv[cy,cx,1]), r), "conf": conf,
+                               "wh": (bw, bh)}
+        for n,d in best.items():
+            if n == "ground":
+                cx2,cy2,_,_,_ = d["blob"]
+                bw,bh = d.get("wh",(0,0))
+                result["ground"] = (cx2, cy2, bw, bh)  # bbox center + size
+            elif n == "center":
+                # Hub is at bottom-right corner of the "center" bbox
+                cx2,cy2,area2,sat2,r2 = d["blob"]
+                bw2,bh2 = d.get("wh",(0,0))
+                hub_x = cx2 + bw2//2
+                hub_y = cy2 + bh2//2
+                result["center"] = (hub_x, hub_y, area2, sat2, r2)
+            else:
+                result[n] = d["blob"]
     except Exception as e:
         log.warning(f"[ONNX] error: {e}")
     return result
@@ -326,7 +357,7 @@ def process(video_path: str, out_path: str, job_id: str = "local",
     hub_buf=[]; hub_stable=None; hub_radius=None; hub_source=None
     gap_hub=0; gap_ora=0; last_hub=None; last_ora=None
     active_color=None; conf_smooth=0.0
-    _last_yolo_det={"center":None,"orange":None}
+    _last_yolo_det={"center":None,"orange":None,"ground":None}
 
     sample_interval=1.0/SAMPLES_PER_SECOND
     next_sample_at=0.0; all_samples=[]; FLUSH_EVERY=20
@@ -358,6 +389,17 @@ def process(video_path: str, out_path: str, job_id: str = "local",
         if fi%(YOLO_EVERY*max(1,SKIP_FRAMES))==0:
             _last_yolo_det=detect_yolo(yolo,preproc,hsv)
         yolo_det=_last_yolo_det
+
+        # ── Ground mask: ищем orange только внутри bbox колеса ──
+        if yolo_det.get("ground") is not None:
+            gx, gy, gw, gh = yolo_det["ground"]
+            x1 = max(0, gx - gw//2)
+            y1 = max(0, gy - gh//2)
+            x2 = min(hsv.shape[1]-1, gx + gw//2)
+            y2 = min(hsv.shape[0]-1, gy + gh//2)
+            ground_roi = np.zeros(hsv.shape[:2], np.uint8)
+            ground_roi[y1:y2, x1:x2] = 255
+            hsv_src = cv2.bitwise_and(hsv, hsv, mask=ground_roi)
 
         cv_ora=find_blobs(hsv_src,markers["ORANGE"],max_y)
 
@@ -460,6 +502,7 @@ def process(video_path: str, out_path: str, job_id: str = "local",
                 "hub":             [round(hub_px_raw[0]),round(hub_px_raw[1])] if hub_px_raw else None,
                 "orange":          [ora_blob[0],ora_blob[1],ora_blob[4]] if ora_blob else None,
                 "hub_source":      hub_source,
+                "ground":          list(yolo_det["ground"]) if yolo_det.get("ground") else None,  # [cx,cy,w,h]
                 # rotation data
                 "rotation_deg":    round(rot_smooth,1) if rot_smooth is not None else None,
                 "cumulative_deg":  round(-rot_cum,1),
@@ -482,6 +525,14 @@ def process(video_path: str, out_path: str, job_id: str = "local",
             hcol=(40,200,40) if hub_source=="YOLO" else (200,200,40)
             cv2.circle(ann,(int(hub_px_raw[0]),int(hub_px_raw[1])),7,hcol,-1,cv2.LINE_AA)
             cv2.circle(ann,(int(hub_px_raw[0]),int(hub_px_raw[1])),9,(0,0,0),1,cv2.LINE_AA)
+        # Draw ground bbox (thin cyan rectangle)
+        if yolo_det.get("ground") is not None:
+            gx2, gy2, gw2, gh2 = yolo_det["ground"]
+            cv2.rectangle(ann,
+                (max(0,gx2-gw2//2), max(0,gy2-gh2//2)),
+                (min(ann.shape[1]-1,gx2+gw2//2), min(ann.shape[0]-1,gy2+gh2//2)),
+                (0, 200, 200), 1)
+
         if has_orange and ora_blob:
             draw_neon_circle(ann,(ora_blob[0],ora_blob[1]),ora_blob[4]+6,
                              TRACK_CIRCLE_COLOR,TRACK_CIRCLE_THICK,TRACK_CIRCLE_GLOW)
