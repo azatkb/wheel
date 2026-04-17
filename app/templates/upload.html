@@ -213,7 +213,7 @@ tr:hover td{background:#1a1a1a}
 
 <script>
 // ── API server address ─────────────────────────────────────────────────────
-const API = "https://wheelttt.xyz"//'https://schema-zone-completely-bundle.trycloudflare.com';
+const API = "http://localhost:8000"//"https://wheelttt.xyz"//'https://schema-zone-completely-bundle.trycloudflare.com';
 
 let jid=null, statusTimer=null, sse=null, vidFile=null;
 let vidW=0, vidH=0, totalSec=0;
@@ -375,6 +375,7 @@ function startSSE(job_id){
       if(d.vid_w) vidW=d.vid_w;
       if(d.vid_h) vidH=d.vid_h;
       if(d.total_sec) totalSec=d.total_sec;
+      if(d.no_ground){ showHint('Place wheel in frame, camera above'); return; }
 
       // ── METHOD 2: seek video to exact detection time ───────────────────
       const vid=document.getElementById('vid');
@@ -382,8 +383,8 @@ function startSSE(job_id){
         vid.currentTime=d.t_sec;
       }
 
-      // Draw overlay immediately — perfectly in sync
-      drawOverlay(d);
+      // Draw overlay — pass hint if no orange
+      drawOverlay(d, d.no_orange ? 'Orange marker not found' : null);
 
       // Update progress bar
       const pct=d.pct||0;
@@ -412,7 +413,36 @@ function startSSE(job_id){
 }
 
 // ── Canvas drawing ─────────────────────────────────────────────────────────
-function drawOverlay(d){
+// ── Hint overlay ───────────────────────────────────────────────────────────
+function showHint(msg){
+  const cvs=document.getElementById('overlay');
+  const wrap=document.getElementById('canvas-wrap');
+  if(!cvs.width) return;
+  const ctx=cvs.getContext('2d');
+  ctx.clearRect(0,0,cvs.width,cvs.height);
+  const cx=cvs.width/2, cy=cvs.height/2;
+  // dark overlay
+  ctx.fillStyle='rgba(0,0,0,0.45)';
+  ctx.fillRect(0,0,cvs.width,cvs.height);
+  // box
+  const fs=Math.max(14,cvs.width/28);
+  ctx.font=`bold ${fs}px system-ui`;
+  const tw=ctx.measureText(msg).width;
+  const pw=tw+40, ph=fs*2.4;
+  ctx.fillStyle='rgba(0,0,0,0.7)';
+  ctx.beginPath();ctx.roundRect(cx-pw/2,cy-ph/2,pw,ph,8);ctx.fill();
+  ctx.strokeStyle='rgba(0,220,220,0.8)';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.roundRect(cx-pw/2,cy-ph/2,pw,ph,8);ctx.stroke();
+  ctx.fillStyle='#00dcdc';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText(msg,cx,cy);
+  ctx.textAlign='left';ctx.textBaseline='alphabetic';
+}
+function hideHint(){
+  const cvs=document.getElementById('overlay');
+  // will be cleared on next drawOverlay call
+}
+
+function drawOverlay(d, hint){
   const cvs=document.getElementById('overlay');
   const wrap=document.getElementById('canvas-wrap');
   const vid=document.getElementById('vid');
@@ -466,6 +496,22 @@ function drawOverlay(d){
     ctx.font='11px system-ui';
     ctx.fillStyle='#ff6600';
     ctx.fillText('ORA',ox+r+4,oy+4);
+  }
+
+  // Hint overlay (e.g. "Orange marker not found")
+  if(hint){
+    const hcx=dw/2, hcy=dh*0.85;
+    const fs=Math.max(13,dw/36);
+    ctx.font=`bold ${fs}px system-ui`;
+    const tw=ctx.measureText(hint).width;
+    const pw=tw+32, ph=fs*2.2;
+    ctx.fillStyle='rgba(0,0,0,0.65)';
+    ctx.beginPath();ctx.roundRect(hcx-pw/2,hcy-ph/2,pw,ph,7);ctx.fill();
+    ctx.strokeStyle='rgba(255,180,0,0.8)';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.roundRect(hcx-pw/2,hcy-ph/2,pw,ph,7);ctx.stroke();
+    ctx.fillStyle='#ffcc00';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(hint,hcx,hcy);
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';
   }
 
   // Angle + cumulative text (top-left box)

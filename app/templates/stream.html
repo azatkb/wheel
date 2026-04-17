@@ -21,7 +21,7 @@ h2 { color: #aaa; font-size: 0.85rem; text-transform: uppercase;
      letter-spacing: .06em; margin-bottom: 1rem; }
 .cam-wrap { position: relative; background: #000; border-radius: 8px;
             overflow: hidden; line-height: 0; }
-.cam-wrap video  { width: 100%; display: block; max-height: 260px;
+.cam-wrap video  { width: 100%; display: block;
                    object-fit: cover; border-radius: 8px; }
 .cam-wrap canvas { position: absolute; top: 0; left: 0; width: 100%;
                    height: 100%; pointer-events: none; }
@@ -90,7 +90,7 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
         </div>
         <div>
           <div class="lbl-sm">FPS</div>
-          <input type="number" id="fps-input" value="15" min="1" max="30" style="width:60px">
+          <input type="number" id="fps-input" value="3" min="1" max="30" style="width:60px">
         </div>
       </div>
       <div class="ctrl-row">
@@ -172,7 +172,7 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
     <div class="card">
       <h2>API test — /stream</h2>
       <div class="test-row">
-        <input id="test-url" value="https://wheelttt.xyz" placeholder="API base URL">
+        <input id="test-url" value="http://localhost:8000" placeholder="API base URL">
         <button onclick="testHealth()" style="background:#2a2a2a;color:#ccc">Health</button>
       </div>
       <div class="test-row">
@@ -182,7 +182,7 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
       </div>
       <div class="test-row" style="margin-top:4px">
         <div style="font-size:.78rem;color:#666">FPS</div>
-        <input type="number" id="test-fps" value="10" min="1" max="30" style="width:55px">
+        <input type="number" id="test-fps" value="3" min="1" max="30" style="width:55px">
         <button onclick="startTestStream()" id="test-btn-start">Send frames via WS</button>
         <button onclick="stopTestStream()" id="test-btn-stop" class="stop" disabled>Stop</button>
       </div>
@@ -259,6 +259,25 @@ function addTestLog(msg) {
 }
 
 /* ── Cam overlay ── */
+
+function showHint(cvs, w, h, msg) {
+  const ctx=cvs.getContext('2d');
+  ctx.clearRect(0,0,w,h);
+  const cx=w/2, cy=h/2;
+  ctx.fillStyle='rgba(0,0,0,0.45)';ctx.fillRect(0,0,w,h);
+  const fs=Math.max(14,w/28);
+  ctx.font=`bold ${fs}px system-ui`;
+  const tw=ctx.measureText(msg).width;
+  const pw=tw+40,ph=fs*2.4;
+  ctx.fillStyle='rgba(0,0,0,0.7)';
+  ctx.beginPath();ctx.roundRect(cx-pw/2,cy-ph/2,pw,ph,8);ctx.fill();
+  ctx.strokeStyle='rgba(0,220,220,0.8)';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.roundRect(cx-pw/2,cy-ph/2,pw,ph,8);ctx.stroke();
+  ctx.fillStyle='#00dcdc';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText(msg,cx,cy);
+  ctx.textAlign='left';ctx.textBaseline='alphabetic';
+}
+
 function drawCamOverlayFrozen(d) {
   const cvs  = document.getElementById('cam-overlay');
   const wrap = document.getElementById('cam-wrap');
@@ -268,10 +287,15 @@ function drawCamOverlayFrozen(d) {
   if (cvs.width !== dw || cvs.height !== dh) { cvs.width = dw; cvs.height = dh; }
   const ctx = cvs.getContext('2d');
   ctx.clearRect(0, 0, dw, dh);
-  if (src) try { ctx.drawImage(src, 0, 0, dw, dh); } catch(e) {}
-  const vw = d.vid_w || src?.width || 640;
-  const vh = d.vid_h || src?.height || 480;
+  // Live video drawn by RAF loop — only draw detection overlay here
+  const vw = d.vid_w || cvs.width || 640;
+  const vh = d.vid_h || cvs.height || 480;
   const sx = dw/vw, sy = dh/vh;
+  if(d.no_ground){
+    showHint(cvs,dw,dh,'Place wheel in frame, camera above');
+    return;
+  }
+  const _hint = d.no_orange ? 'Orange marker not found' : null;
   const hub = d.hub_px || d.hub;
   if (hub) {
     const hx = hub[0]*sx, hy = hub[1]*sy;
@@ -296,6 +320,21 @@ function drawCamOverlayFrozen(d) {
     ctx.strokeStyle='#ff3300'; ctx.lineWidth=1.5; ctx.stroke();
     ctx.font='11px system-ui'; ctx.fillStyle='#ff6600';
     ctx.fillText('ORA',ox+r+4,oy+4);
+  }
+  // Hint
+  if(_hint){
+    const hcx=dw/2, hcy=dh*0.85;
+    const fs=Math.max(13,dw/36);
+    ctx.font=`bold ${fs}px system-ui`;
+    const tw=ctx.measureText(_hint).width;
+    const pw=tw+32,ph=fs*2.2;
+    ctx.fillStyle='rgba(0,0,0,0.65)';
+    ctx.beginPath();ctx.roundRect(hcx-pw/2,hcy-ph/2,pw,ph,7);ctx.fill();
+    ctx.strokeStyle='rgba(255,180,0,0.8)';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.roundRect(hcx-pw/2,hcy-ph/2,pw,ph,7);ctx.stroke();
+    ctx.fillStyle='#ffcc00';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(_hint,hcx,hcy);
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';
   }
   // Ground bbox
   if (d.ground) {
@@ -379,7 +418,7 @@ function drawMiniChart() {
 /* ── WebSocket stream ── */
 async function startStream() {
   const sel = document.getElementById('cam-select');
-  const fps = +document.getElementById('fps-input').value || 15;
+  const fps = +document.getElementById('fps-input').value || 3;
   const med = document.getElementById('cam-medium').value;
   const ver = document.getElementById('cam-version').value;
   const lng = document.getElementById('cam-lang').value;
@@ -393,35 +432,35 @@ async function startStream() {
     const wsHost  = location.host;
     ws = new WebSocket(`${wsProto}://${wsHost}/stream?medium=${med}&version=${ver}&lang=${lng}&direction=auto`);
 
+
     ws.onopen = () => {
-      addLog('WebSocket connected — step mode');
-      camWaitingReply = false;
+      addLog('WebSocket connected');
       camFrozenCanvas = document.createElement('canvas');
       const video = document.getElementById('cam');
       const frameInterval = 1000 / fps;
-      function sendNextCamFrame() {
+
+      // Send continuously — no waiting for reply, server drops excess frames
+      sendLoop = setInterval(() => {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        if (camWaitingReply) return;
-        camFrozenCanvas.width  = video.videoWidth  || 640;
-        camFrozenCanvas.height = video.videoHeight || 480;
-        camFrozenCanvas.getContext('2d').drawImage(video, 0, 0);
+        const w = video.videoWidth || 640, h = video.videoHeight || 480;
+        camFrozenCanvas.width = w; camFrozenCanvas.height = h;
+        camFrozenCanvas.getContext('2d').drawImage(video, 0, 0, w, h);
         camFrozenCanvas.toBlob(b => {
           if (!b || !ws || ws.readyState !== WebSocket.OPEN) return;
-          b.arrayBuffer().then(buf => { ws.send(buf); camWaitingReply = true; });
-        }, 'image/jpeg', 0.82);
-      }
-      sendLoop = setInterval(sendNextCamFrame, frameInterval);
+          b.arrayBuffer().then(buf => ws.send(buf));
+        }, 'image/jpeg', 0.75);
+      }, frameInterval);
     };
-    ws.onclose = () => { addLog('WebSocket closed'); camWaitingReply = false; };
-    ws.onerror = () => { addLog('WebSocket error'); camWaitingReply = false; };
+    ws.onclose = () => { addLog('WebSocket closed'); };
+    ws.onerror = () => { addLog('WebSocket error'); };
     ws.onmessage = event => {
       try {
         const d = JSON.parse(event.data);
-        if (d.error) { addLog('Server: ' + d.error); camWaitingReply = false; return; }
+        if (d.error) { addLog('Server: ' + d.error); return; }
         if (d.type === 'init') { streamJobId = d.job_id; addLog('Job: ' + streamJobId); return; }
         drawCamOverlayFrozen(d);
         updateDisplay(d);
-        camWaitingReply = false;
+      
       } catch(e) { camWaitingReply = false; }
     };
     document.getElementById('btn-start').disabled = true;
@@ -566,31 +605,32 @@ function connectTestWs() {
   addTestLog('Connecting WS: '+url);
   testWs=new WebSocket(url);
   testWs.onopen=()=>{
-    addTestLog('WS connected — step mode');
+    addTestLog('WS connected');
     document.getElementById('test-btn-start').disabled=true;
     document.getElementById('test-btn-stop').disabled=false;
     document.getElementById('test-job').textContent='WS stream active';
     const fps=+document.getElementById('test-fps').value||10;
     const frameInterval=1000/fps;
-    testWaitingReply=false; testCanvas2d=document.createElement('canvas');
-    function sendNextFrame(){
+    testCanvas2d=document.createElement('canvas');
+
+    // Send frames continuously — no wait for reply
+    testSendLoop=setInterval(()=>{
       if (!testWs||testWs.readyState!==WebSocket.OPEN) return;
-      if (testWaitingReply) return;
-      if (!testVidEl||testVidEl.ended) { if(testVidEl){testVidEl.currentTime=0;testVidEl.play();} return; }
-      testCanvas2d.width=testVidEl.videoWidth||640; testCanvas2d.height=testVidEl.videoHeight||480;
+      if (!testVidEl||testVidEl.paused||testVidEl.ended) return;
+      testCanvas2d.width=testVidEl.videoWidth||640;
+      testCanvas2d.height=testVidEl.videoHeight||480;
       testCanvas2d.getContext('2d').drawImage(testVidEl,0,0);
       testCanvas2d.toBlob(b=>{
         if (!b||!testWs||testWs.readyState!==WebSocket.OPEN) return;
-        b.arrayBuffer().then(buf=>{ testWs.send(buf); testWaitingReply=true; });
-      },'image/jpeg',0.82);
-    }
-    testSendLoop=setInterval(sendNextFrame,frameInterval);
+        b.arrayBuffer().then(buf=>testWs.send(buf));
+      },'image/jpeg',0.75);
+    },frameInterval);
     testVidEl.play();
   };
   testWs.onmessage=e=>{
     try {
       const d=JSON.parse(e.data);
-      if (d.error){addTestLog('Server: '+d.error);testWaitingReply=false;return;}
+      if (d.error){addTestLog('Server: '+d.error);return;}
       if (d.type==='init'){addTestLog('Job: '+d.job_id);return;}
       document.getElementById('t-ang').textContent=d.rotation_deg!=null?d.rotation_deg.toFixed(1)+'°':'—';
       document.getElementById('t-cum').textContent=((d.cumulative_deg||0)>=0?'+':'')+(d.cumulative_deg||0).toFixed(1)+'°';
@@ -598,8 +638,7 @@ function connectTestWs() {
       document.getElementById('t-conf').textContent=(d.confidence_pct||0)+'%';
       drawTestCanvas(d,testCanvas2d);
       updateDisplay(d);
-      testWaitingReply=false;
-    } catch(ex){addTestLog('Parse error: '+ex.message);testWaitingReply=false;}
+    } catch(ex){addTestLog('Parse error: '+ex.message);}
   };
   testWs.onclose=()=>{addTestLog('WS closed');stopTestStream();};
   testWs.onerror=()=>{addTestLog('WS error');stopTestStream();};
@@ -629,6 +668,8 @@ function drawTestCanvas(d,src) {
     try{ctx.drawImage(src,0,0,dw,dh);}catch(e){ctx.fillStyle='#111';ctx.fillRect(0,0,dw,dh);}
   } else {ctx.fillStyle='#111';ctx.fillRect(0,0,dw,dh);}
   const sx=dw/vw,sy=dh/vh;
+  if (d.no_ground) { _drawHint(ctx,dw,dh,'Place wheel in frame, camera above'); return; }
+  if (d.no_orange) { _drawHint(ctx,dw,dh,'Orange marker not found'); }
   const hub=d.hub_px||d.hub;
   if (hub){
     const hx=hub[0]*sx,hy=hub[1]*sy;

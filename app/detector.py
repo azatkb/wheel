@@ -39,7 +39,8 @@ USE_YOLO          = True
 USE_PAIR_FALLBACK = False
 
 # ── ONNX config ────────────────────────────────────────────────────────────
-YOLO_WEIGHTS    = "best.onnx"
+# Path to YOLO weights — relative to this file's directory
+YOLO_WEIGHTS    = str(Path(__file__).parent.parent / "best.onnx")
 YOLO_CONF       = 0.35
 YOLO_CLASSES    = ["center", "ground", "orange"]  # order from data.yaml: 0=center 1=ground 2=orange
 YOLO_EVERY      = 2
@@ -81,6 +82,7 @@ _kernel = np.ones((5, 5), np.uint8)
 # ── ONNX ───────────────────────────────────────────────────────────────────
 
 def load_yolo():
+    log.info(f"[ONNX] looking for weights at: {YOLO_WEIGHTS}")
     if not USE_YOLO or not Path(YOLO_WEIGHTS).exists():
         log.warning(f"[ONNX] {YOLO_WEIGHTS} not found — OpenCV only")
         return None
@@ -321,28 +323,39 @@ def find_orange_adaptive(hsv, ellipse_mask, last_ora=None):
     saturated pixels, threshold around it, return centroid.
     """
     ORANGE_H_MIN = 5
-    ORANGE_H_MAX = 30
-    SAT_MIN      = 40
-    HUE_TOL      = 12
+    ORANGE_H_MAX = 25
+    SAT_MIN      = 80   # only well-saturated pixels
+    HUE_TOL      = 10
 
     def _search(search_mask):
         combined = cv2.bitwise_and(search_mask, ellipse_mask)
         if cv2.countNonZero(combined) < 8:
             return None
-        sat_mask  = (hsv[:,:,1] >= SAT_MIN).astype(np.uint8) * 255
+
+        # Get all warm pixels inside mask
         hue_mask  = cv2.inRange(hsv[:,:,0:1],
                                 np.array([ORANGE_H_MIN]), np.array([ORANGE_H_MAX]))
-        candidate = cv2.bitwise_and(cv2.bitwise_and(sat_mask, hue_mask), combined)
-        if cv2.countNonZero(candidate) < 8:
+        warm_mask = cv2.bitwise_and(hue_mask, combined)
+        if cv2.countNonZero(warm_mask) < 8:
             return None
+
+        # Adaptive SAT threshold: use median saturation of warm pixels
+        sat_vals = hsv[:,:,1][warm_mask > 0]
+        sat_thresh = max(SAT_MIN, int(np.percentile(sat_vals, 60)))
+        sat_mask  = (hsv[:,:,1] >= sat_thresh).astype(np.uint8) * 255
+        candidate = cv2.bitwise_and(cv2.bitwise_and(sat_mask, hue_mask), combined)
+        if cv2.countNonZero(candidate) < 5:
+            return None
+
         hue_vals = hsv[:,:,0][candidate > 0]
         hist     = np.bincount(hue_vals.astype(int), minlength=ORANGE_H_MAX+1)
         hist[:ORANGE_H_MIN] = 0
         peak_h   = int(np.argmax(hist))
         if hist[peak_h] < 5:
             return None
-        lo      = np.array([max(0,   peak_h - HUE_TOL), SAT_MIN, 30], np.uint8)
-        hi      = np.array([min(180, peak_h + HUE_TOL), 255,    255], np.uint8)
+
+        lo      = np.array([max(0,   peak_h - HUE_TOL), sat_thresh, 20], np.uint8)
+        hi      = np.array([min(180, peak_h + HUE_TOL), 255,        255], np.uint8)
         refined = cv2.bitwise_and(cv2.inRange(hsv, lo, hi), combined)
         refined = cv2.morphologyEx(refined, cv2.MORPH_OPEN,  _kernel)
         refined = cv2.morphologyEx(refined, cv2.MORPH_CLOSE, _kernel)
@@ -372,7 +385,10 @@ def find_orange_adaptive(hsv, ellipse_mask, last_ora=None):
             return result
 
     # 2. Full ellipse fallback
-    return _search(ellipse_mask)
+    result = _search(ellipse_mask)
+    if result is not None:
+        log.debug(f"[ORA] found at ({result[0]},{result[1]}) sat={result[3]}")
+    return result
 
 
 def pick_farthest_pair(blobs):
@@ -592,7 +608,11 @@ def process(video_path: str, out_path: str, job_id: str = "local",
         hsv=cv2.cvtColor(preproc,cv2.COLOR_BGR2HSV)
 
         if fi%(YOLO_EVERY*max(1,SKIP_FRAMES))==0:
+            _t0=__import__('time').perf_counter()
             _last_yolo_det=detect_yolo(yolo,preproc,hsv)
+            _dt=__import__('time').perf_counter()-_t0
+            if fi<5 or fi%120==0:
+                log.info(f"[PERF] YOLO {_dt*1000:.0f}ms  ground={_last_yolo_det.get('ground') is not None}  center={_last_yolo_det.get('center') is not None}  orange={_last_yolo_det.get('orange') is not None}")
         yolo_det=_last_yolo_det
 
         # ── Build ellipse mask from ground bbox and search orange inside it ──
@@ -630,6 +650,34 @@ def process(video_path: str, out_path: str, job_id: str = "local",
         else:
             cv_yel=[]; cv_red=[]
 
+        # ── If no ground — skip detection, show hint ─────────────────────
+        if yolo_det.get("ground") is None:
+            # No wheel detected — write hint frame and continue
+            ann = frame_stab.copy()
+            _hint = "Place wheel in frame, camera above"
+            _fw   = cv2.getTextSize(_hint, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0][0]
+            _fx   = max(8, (W - _fw) // 2)
+            cv2.putText(ann, _hint, (_fx, H//2),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,0),   3, cv2.LINE_AA)
+            cv2.putText(ann, _hint, (_fx, H//2),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,220,220), 2, cv2.LINE_AA)
+            bar = np.full((BAR_HEIGHT,W,3),(18,18,18),np.uint8)
+            cv2.line(bar,(0,0),(W,0),(55,55,55),1)
+            draw_info_bar(bar,W,t_sec,None,None,0.0,0.0,0.0,0.0,0,
+                          None,info_level,direction,medium)
+            out_vid.write(np.vstack([ann,bar]))
+            if progress_cb is not None:
+                pct=int(fi/total*100) if total>0 else 0
+                progress_cb({"frame":fi,"total":total,"pct":pct,
+                             "t_sec":round(t_sec,2),"total_sec":total_sec,
+                             "vid_w":W,"vid_h":H,
+                             "hub":None,"orange":None,"hub_source":None,
+                             "ground":None,"rotation_deg":None,
+                             "cumulative_deg":round(-rot_cum,1),
+                             "angular_vel_dps":0,"confidence_pct":0,
+                             "no_ground":True})
+            fi+=1; processed_count+=1; continue
+
         hub_px_raw=None
         if yolo_det.get("ground") is not None:
             # Priority 1: dome-corrected ellipse center
@@ -655,10 +703,16 @@ def process(video_path: str, out_path: str, job_id: str = "local",
         elif gap_hub<MAX_GAP_FRAMES and last_hub:
             gap_hub+=1; hub_px_raw=last_hub
 
-        if cv_ora:
-            ora_blob=cv_ora[0]; gap_ora=0; last_ora=ora_blob
-        elif yolo_det["orange"] is not None:
-            ora_blob=yolo_det["orange"]; gap_ora=0; last_ora=ora_blob
+        # Orange stabilization: reject jumps > MAX_ORA_JUMP px
+        MAX_ORA_JUMP = 100
+        def _ora_stable(blob):
+            if last_ora is None: return True
+            return math.hypot(blob[0]-last_ora[0], blob[1]-last_ora[1]) < MAX_ORA_JUMP
+
+        _new_ora = cv_ora[0] if cv_ora else (
+                   yolo_det["orange"] if yolo_det["orange"] is not None else None)
+        if _new_ora is not None and _ora_stable(_new_ora):
+            ora_blob=_new_ora; gap_ora=0; last_ora=ora_blob
         elif gap_ora<MAX_GAP_FRAMES and last_ora:
             gap_ora+=1; ora_blob=last_ora
         else:
@@ -724,6 +778,7 @@ def process(video_path: str, out_path: str, job_id: str = "local",
                 "vid_h":           H,
                 "hub":             [round(hub_px_raw[0]),round(hub_px_raw[1])] if hub_px_raw else None,
                 "orange":          [ora_blob[0],ora_blob[1],ora_blob[4]] if ora_blob else None,
+                "no_orange":       not has_orange,
                 "hub_source":      hub_source,
                 "ground":          list(yolo_det["ground"]) if yolo_det.get("ground") else None,
                 "rotation_deg":    round(rot_smooth,1) if rot_smooth is not None else None,
