@@ -463,9 +463,21 @@ async def stream_ws(ws: WebSocket):
     sample_interval=1.0/SAMPLES_PER_SECOND
     next_sample_at=0.0; all_samples=[]; frame_idx=0; fps_assumed=30.0
 
+    import time as _time
+    _last_process_time = 0.0
+    _MIN_INTERVAL = 0.15  # process at most ~6-7 fps regardless of input rate
+
     try:
         while True:
             data  = await ws.receive_bytes()
+
+            # Drop frame if server is too slow — avoid queue buildup
+            _now = _time.monotonic()
+            if _now - _last_process_time < _MIN_INTERVAL:
+                # Send last known result immediately without reprocessing
+                continue
+            _last_process_time = _now
+
             frame = cv2.imdecode(np.frombuffer(data,np.uint8),cv2.IMREAD_COLOR)
             if frame is None:
                 await ws.send_text(json.dumps({"error":"bad frame"})); continue
@@ -476,7 +488,11 @@ async def stream_ws(ws: WebSocket):
             hsv=cv2.cvtColor(preproc,cv2.COLOR_BGR2HSV)
 
             if frame_idx%YOLO_EVERY==0:
+                _t0=_time.perf_counter()
                 _last_yolo_det=detect_yolo(_yolo,preproc,hsv)
+                _dt=_time.perf_counter()-_t0
+                if frame_idx<4 or frame_idx%60==0:
+                    log.info(f"[PERF/WS] YOLO {_dt*1000:.0f}ms  ground={_last_yolo_det.get('ground') is not None}  center={_last_yolo_det.get('center') is not None}  orange={_last_yolo_det.get('orange') is not None}")
             yolo_det=_last_yolo_det
 
             # Build ellipse mask from ground bbox
