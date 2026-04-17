@@ -37,6 +37,9 @@ from app.detector import (
     wheel_hub, orange_angle, compute_confidence,
     unwrap, draw_neon_circle,
     detect_yolo, load_yolo,
+    make_ellipse_mask, make_inner_ellipse_mask, find_orange_adaptive,
+    dome_corrected_center,
+    dome_corrected_center,
     MARKER_DEFS, process,
     ORANGE_H_LO, ORANGE_H_HI, ORANGE_S_MIN,
     YOLO_EVERY,
@@ -456,7 +459,7 @@ async def stream_ws(ws: WebSocket):
     hub_buf=[]; hub_stable=hub_radius=None; hub_source=None
     gap_hub=gap_ora=0; last_hub=last_ora=None; conf_smooth=0.0
     stab=Stabilizer()
-    _last_yolo_det={"center":None,"orange":None}
+    _last_yolo_det={"center":None,"orange":None,"ground":None}
     sample_interval=1.0/SAMPLES_PER_SECOND
     next_sample_at=0.0; all_samples=[]; frame_idx=0; fps_assumed=30.0
 
@@ -472,31 +475,54 @@ async def stream_ws(ws: WebSocket):
             preproc=cv2.bilateralFilter(frame_s,7,50,50)
             hsv=cv2.cvtColor(preproc,cv2.COLOR_BGR2HSV)
 
-            if hub_stable is not None and hub_radius is not None:
-                roi=np.zeros(hsv.shape[:2],np.uint8)
-                cv2.circle(roi,(int(hub_stable[0]),int(hub_stable[1])),int(hub_radius*1.15),255,-1)
-                hsv_src=cv2.bitwise_and(hsv,hsv,mask=roi)
-            else:
-                hsv_src=hsv
-
             if frame_idx%YOLO_EVERY==0:
                 _last_yolo_det=detect_yolo(_yolo,preproc,hsv)
             yolo_det=_last_yolo_det
 
-            cv_ora=find_blobs(hsv_src,_markers["ORANGE"],max_y)
+            # Build ellipse mask from ground bbox
+            if yolo_det.get("ground") is not None:
+                gx,gy,gw,gh = yolo_det["ground"]
+                ellipse_mask = make_ellipse_mask(hsv.shape, gx, gy, gw, gh)
+                inner_mask, _ = make_inner_ellipse_mask(hsv.shape, gx, gy, gw, gh)
+                hsv_src = cv2.bitwise_and(hsv, hsv, mask=ellipse_mask)
+            elif hub_stable is not None and hub_radius is not None:
+                roi=np.zeros(hsv.shape[:2],np.uint8)
+                cv2.circle(roi,(int(hub_stable[0]),int(hub_stable[1])),int(hub_radius*1.15),255,-1)
+                hsv_src=cv2.bitwise_and(hsv,hsv,mask=roi)
+                inner_mask=roi
+            else:
+                hsv_src=hsv
+                inner_mask=None
 
+            # Orange: OpenCV adaptive first, YOLO fallback
+            if inner_mask is not None:
+                _cv_ora_blob = find_orange_adaptive(hsv, inner_mask, last_ora)
+                if _cv_ora_blob is None:
+                    _hsv_inner = cv2.bitwise_and(hsv, hsv, mask=inner_mask)
+                    _list = find_blobs(_hsv_inner, _markers["ORANGE"], max_y)
+                    _cv_ora_blob = _list[0] if _list else None
+                cv_ora = [_cv_ora_blob] if _cv_ora_blob is not None else []
+            else:
+                cv_ora = find_blobs(hsv_src, _markers["ORANGE"], max_y)
+
+            # Hub: dome-corrected ground center first (priority 1), then YOLO center
             hub_px_raw=None
+            if yolo_det.get("ground") is not None:
+                ecx, ecy = dome_corrected_center(gx, gy, gw, gh, w, h)
+                hub_px_raw=(ecx, ecy); hub_source="GROUND"
+                gap_hub=0; last_hub=hub_px_raw
             if yolo_det["center"] is not None:
                 cx,cy,_,_,_=yolo_det["center"]
                 hub_px_raw=(float(cx),float(cy)); hub_source="YOLO"
                 gap_hub=0; last_hub=hub_px_raw
-            elif gap_hub<MAX_GAP_FRAMES and last_hub:
+            if hub_px_raw is None and gap_hub<MAX_GAP_FRAMES and last_hub:
                 gap_hub+=1; hub_px_raw=last_hub
 
-            if yolo_det["orange"] is not None:
-                ora_blob=yolo_det["orange"]; gap_ora=0; last_ora=ora_blob
-            elif cv_ora:
+            # Orange selection: OpenCV first, YOLO fallback
+            if cv_ora:
                 ora_blob=cv_ora[0]; gap_ora=0; last_ora=ora_blob
+            elif yolo_det["orange"] is not None:
+                ora_blob=yolo_det["orange"]; gap_ora=0; last_ora=ora_blob
             elif gap_ora<MAX_GAP_FRAMES and last_ora:
                 gap_ora+=1; ora_blob=last_ora
             else:
@@ -561,11 +587,14 @@ async def stream_ws(ws: WebSocket):
                 "angular_vel_dps": round(-vel_dps,2),
                 "angular_vel_rps": round(math.radians(-vel_dps),5),
                 "confidence_pct":  conf_disp,
+                "hub":             [round(hub_px_raw[0]),round(hub_px_raw[1])] if hub_px_raw else None,
                 "hub_px":          [round(hub_px_raw[0]),round(hub_px_raw[1])] if hub_px_raw else None,
                 "orange":          [ora_blob[0],ora_blob[1],ora_blob[4]] if ora_blob else None,
+                "ground":          list(yolo_det["ground"]) if yolo_det.get("ground") else None,
                 "vid_w":           w,
                 "vid_h":           h,
                 "source":          hub_source,
+                "hub_source":      hub_source,
             }))
             frame_idx+=1
 
