@@ -39,8 +39,7 @@ USE_YOLO          = True
 USE_PAIR_FALLBACK = False
 
 # ── ONNX config ────────────────────────────────────────────────────────────
-# Path to YOLO weights — relative to this file's directory
-YOLO_WEIGHTS    = str(Path(__file__).parent.parent / "best.onnx")
+YOLO_WEIGHTS    = "best.onnx"
 YOLO_CONF       = 0.35
 YOLO_CLASSES    = ["center", "ground", "orange"]  # order from data.yaml: 0=center 1=ground 2=orange
 YOLO_EVERY      = 2
@@ -82,7 +81,6 @@ _kernel = np.ones((5, 5), np.uint8)
 # ── ONNX ───────────────────────────────────────────────────────────────────
 
 def load_yolo():
-    log.info(f"[ONNX] looking for weights at: {YOLO_WEIGHTS}")
     if not USE_YOLO or not Path(YOLO_WEIGHTS).exists():
         log.warning(f"[ONNX] {YOLO_WEIGHTS} not found — OpenCV only")
         return None
@@ -322,10 +320,10 @@ def find_orange_adaptive(hsv, ellipse_mask, last_ora=None):
     Each attempt: find dominant hue peak in orange range among
     saturated pixels, threshold around it, return centroid.
     """
-    ORANGE_H_MIN = 2    # wider range for different camera white balance
-    ORANGE_H_MAX = 35
-    SAT_MIN      = 30   # lower sat threshold for different lighting
-    HUE_TOL      = 14
+    ORANGE_H_MIN = 5
+    ORANGE_H_MAX = 30
+    SAT_MIN      = 40
+    HUE_TOL      = 12
 
     def _search(search_mask):
         combined = cv2.bitwise_and(search_mask, ellipse_mask)
@@ -594,11 +592,7 @@ def process(video_path: str, out_path: str, job_id: str = "local",
         hsv=cv2.cvtColor(preproc,cv2.COLOR_BGR2HSV)
 
         if fi%(YOLO_EVERY*max(1,SKIP_FRAMES))==0:
-            _t0=__import__('time').perf_counter()
             _last_yolo_det=detect_yolo(yolo,preproc,hsv)
-            _dt=__import__('time').perf_counter()-_t0
-            if fi<5 or fi%120==0:
-                log.info(f"[PERF] YOLO {_dt*1000:.0f}ms  ground={_last_yolo_det.get('ground') is not None}  center={_last_yolo_det.get('center') is not None}  orange={_last_yolo_det.get('orange') is not None}")
         yolo_det=_last_yolo_det
 
         # ── Build ellipse mask from ground bbox and search orange inside it ──
