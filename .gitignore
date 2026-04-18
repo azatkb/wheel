@@ -1,9 +1,7 @@
 *.csv
 *.pem
-# Ignore all __pycache__ directories
+# Byte-compiled / optimized / DLL files
 __pycache__/
-
-# Ignore compiled Python files
 *.py[cod]
 *$py.class
 /inputs

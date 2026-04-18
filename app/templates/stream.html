@@ -172,7 +172,7 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
     <div class="card">
       <h2>API test — /stream</h2>
       <div class="test-row">
-        <input id="test-url" value="https://xm1akq5ypuwtoz-8000.proxy.runpod.net" placeholder="API base URL">
+        <input id="test-url" value="http://localhost:8000" placeholder="API base URL">
         <button onclick="testHealth()" style="background:#2a2a2a;color:#ccc">Health</button>
       </div>
       <div class="test-row">
@@ -182,7 +182,7 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
       </div>
       <div class="test-row" style="margin-top:4px">
         <div style="font-size:.78rem;color:#666">FPS</div>
-        <input type="number" id="test-fps" value="3" min="1" max="30" style="width:55px">
+        <input type="number" id="test-fps" value="10" min="1" max="30" style="width:55px">
         <button onclick="startTestStream()" id="test-btn-start">Send frames via WS</button>
         <button onclick="stopTestStream()" id="test-btn-stop" class="stop" disabled>Stop</button>
       </div>
