@@ -90,7 +90,7 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
         </div>
         <div>
           <div class="lbl-sm">FPS</div>
-          <input type="number" id="fps-input" value="15" min="1" max="30" style="width:60px">
+          <input type="number" id="fps-input" value="5" min="1" max="30" style="width:60px">
         </div>
       </div>
       <div class="ctrl-row">
@@ -181,7 +181,7 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
       </div>
       <div class="test-row" style="margin-top:4px">
         <div style="font-size:.78rem;color:#666">FPS</div>
-        <input type="number" id="test-fps" value="10" min="1" max="30" style="width:55px">
+        <input type="number" id="test-fps" value="5" min="1" max="30" style="width:55px">
         <button onclick="startTestStream()" id="test-btn-start">Send frames via WS</button>
         <button onclick="stopTestStream()" id="test-btn-stop" class="stop" disabled>Stop</button>
       </div>
@@ -417,7 +417,7 @@ function drawMiniChart() {
 /* ── WebSocket stream ── */
 async function startStream() {
   const sel = document.getElementById('cam-select');
-  const fps = +document.getElementById('fps-input').value || 15;
+  const fps = +document.getElementById('fps-input').value || 5;
   const med = document.getElementById('cam-medium').value;
   const ver = document.getElementById('cam-version').value;
   const lng = document.getElementById('cam-lang').value;
@@ -614,7 +614,7 @@ function connectTestWs() {
     document.getElementById('test-btn-start').disabled=true;
     document.getElementById('test-btn-stop').disabled=false;
     document.getElementById('test-job').textContent='WS stream active';
-    const fps=+document.getElementById('test-fps').value||10;
+    const fps=+document.getElementById('test-fps').value||5;
     const frameInterval=1000/fps;
     testCanvas2d=document.createElement('canvas');
 
