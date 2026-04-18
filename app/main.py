@@ -168,7 +168,12 @@ def _process_video_seg(video_path, out_path, job_id="local",
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     fourcc  = cv2.VideoWriter_fourcc(*"mp4v")
-    out_vid = cv2.VideoWriter(out_path, fourcc, fps, (W, H))
+    out_vid = cv2.VideoWriter(str(out_path), fourcc, fps, (W, H))
+    if not out_vid.isOpened():
+        log.warning(f"[VIDEO] VideoWriter failed to open: {out_path}, trying avc1")
+        fourcc  = cv2.VideoWriter_fourcc(*"avc1")
+        out_vid = cv2.VideoWriter(str(out_path), fourcc, fps, (W, H))
+    log.info(f"[VIDEO] writer opened={out_vid.isOpened()} path={out_path} size={W}x{H} fps={fps:.1f}")
 
     stab        = Stabilizer()
     rot_prev    = None
@@ -192,7 +197,7 @@ def _process_video_seg(video_path, out_path, job_id="local",
         if not ret: break
 
         t_sec   = fi / fps
-        frame_s = stab.stabilize(frame)
+        frame_s = frame  # no stabilizer for upload — use raw frame
         preproc = cv2.bilateralFilter(frame_s, 7, 50, 50)
         hsv     = cv2.cvtColor(preproc, cv2.COLOR_BGR2HSV)
 
@@ -255,7 +260,10 @@ def _process_video_seg(video_path, out_path, job_id="local",
             cv2.putText(ann, watermark, (8, H-8),
                         cv2.FONT_HERSHEY_SIMPLEX, max(0.4, W/1280*0.7),
                         (200,200,200), 1, cv2.LINE_AA)
-        out_vid.write(frame_s)
+        # Write annotated frame
+        if ann.shape[1] != W or ann.shape[0] != H:
+            ann = cv2.resize(ann, (W, H))
+        out_vid.write(ann)
 
         # Sample
         if t_sec >= next_sample_at:
@@ -266,6 +274,8 @@ def _process_video_seg(video_path, out_path, job_id="local",
                 angular_vel_dps=-vel_dps, confidence_pct=conf_disp, source="SEG",
             ))
             next_sample_at += sample_interval
+            if len(all_samples) % 20 == 0:
+                persist_samples(job_id, all_samples[-20:])
 
         if progress_cb:
             pct = int(fi / total * 100) if total > 0 else 0
@@ -284,6 +294,8 @@ def _process_video_seg(video_path, out_path, job_id="local",
 
     cap.release()
     out_vid.release()
+    rem = len(all_samples) % 20
+    if rem: persist_samples(job_id, all_samples[-rem:])
     log.info(f"[VIDEO] done — {len(all_samples)} samples → {out_path}")
     return all_samples
 

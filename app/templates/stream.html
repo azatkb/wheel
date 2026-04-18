@@ -21,7 +21,7 @@ h2 { color: #aaa; font-size: 0.85rem; text-transform: uppercase;
      letter-spacing: .06em; margin-bottom: 1rem; }
 .cam-wrap { position: relative; background: #000; border-radius: 8px;
             overflow: hidden; line-height: 0; }
-.cam-wrap video  { width: 100%; display: block;
+.cam-wrap video  { width: 100%; display: block; max-height: 260px;
                    object-fit: cover; border-radius: 8px; }
 .cam-wrap canvas { position: absolute; top: 0; left: 0; width: 100%;
                    height: 100%; pointer-events: none; }
@@ -90,7 +90,7 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
         </div>
         <div>
           <div class="lbl-sm">FPS</div>
-          <input type="number" id="fps-input" value="10" min="1" max="30" style="width:60px">
+          <input type="number" id="fps-input" value="15" min="1" max="30" style="width:60px">
         </div>
       </div>
       <div class="ctrl-row">
@@ -172,7 +172,6 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
     <div class="card">
       <h2>API test — /stream</h2>
       <div class="test-row">
-        <input id="test-url" value="http://localhost:8000" placeholder="API base URL">
         <button onclick="testHealth()" style="background:#2a2a2a;color:#ccc">Health</button>
       </div>
       <div class="test-row">
@@ -418,7 +417,7 @@ function drawMiniChart() {
 /* ── WebSocket stream ── */
 async function startStream() {
   const sel = document.getElementById('cam-select');
-  const fps = +document.getElementById('fps-input').value || 3;
+  const fps = +document.getElementById('fps-input').value || 15;
   const med = document.getElementById('cam-medium').value;
   const ver = document.getElementById('cam-version').value;
   const lng = document.getElementById('cam-lang').value;
@@ -575,7 +574,7 @@ function togglePhysTable() {
 let testWs=null,testVidEl=null,testSendLoop=null;
 let testWaitingReply=false,testCanvas2d=null;
 
-function testBase() { return (document.getElementById('test-url').value||'').replace(/\/$/,''); }
+function testBase() { return location.origin; }
 
 async function testHealth() {
   try {
@@ -598,10 +597,8 @@ function startTestStream() {
 }
 
 function connectTestWs() {
-  const base=testBase();
-  const proto=base.startsWith('https')?'wss':'ws';
-  const host=base.replace(/^https?:\/\//,'');
-  const url=proto+'://'+host+'/stream';
+  const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const url = wsProto + '://' + location.host + '/stream';
   addTestLog('Connecting WS: '+url);
   testWs=new WebSocket(url);
   testWs.onopen=()=>{
