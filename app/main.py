@@ -45,7 +45,7 @@ from app.preprocessor import preprocess_video, get_video_info
 from app.database import (
     create_job, finish_job, make_sample,
     persist_samples, read_samples, get_csv_path,
-    get_user_history, save_physics_result,
+    get_user_history, save_physics_result, get_all_jobs,
 )
 from app.stabilizer import Stabilizer
 
@@ -85,10 +85,23 @@ async def page_upload():
     return HTMLResponse((_TMPL/"upload.html").read_text(encoding="utf-8"),
                         headers={"Content-Type":"text/html; charset=utf-8"})
 
-@app.get("/stream-test", response_class=HTMLResponse)
+@app.get("/stream", response_class=HTMLResponse)
 async def page_stream():
     return HTMLResponse((_TMPL/"stream.html").read_text(encoding="utf-8"),
                         headers={"Content-Type":"text/html; charset=utf-8"})
+
+@app.get("/history", response_class=HTMLResponse)
+async def page_history():
+    p = _TMPL / "history.html"
+    if p.exists():
+        return HTMLResponse(p.read_text(encoding="utf-8"),
+                            headers={"Content-Type":"text/html; charset=utf-8"})
+    # Serve from same directory as main.py
+    p2 = Path(__file__).parent / "history.html"
+    if p2.exists():
+        return HTMLResponse(p2.read_text(encoding="utf-8"),
+                            headers={"Content-Type":"text/html; charset=utf-8"})
+    raise HTTPException(404, "history.html not found")
 
 # ── Physics helper ─────────────────────────────────────────────────────────
 def _run_physics(samples, medium, direction, user_email, job_id, version, lang):
@@ -358,7 +371,10 @@ async def upload(
         shutil.copyfileobj(file.file, f)
     info = get_video_info(raw_path)
     create_job(job_id, user_email, "upload", direction, medium, hand_visible, info_level)
-    jobs[job_id] = {"status":"queued","progress":{"pct":0}}
+    jobs[job_id] = {"status":"queued","progress":{"pct":0},
+                    "user_email": user_email,
+                    "source_type": "upload",
+                    "created_at": datetime.datetime.utcnow().isoformat()}
     asyncio.get_event_loop().run_in_executor(
         executor, _run_job, job_id, raw_path,
         direction, medium, hand_visible, info_level, user_email, version, lang)
@@ -430,6 +446,19 @@ def list_jobs():
     return {"jobs":{k:{kk:vv for kk,vv in v.items() if kk!="progress"}
                     for k,v in jobs.items()}}
 
+@app.get("/api/jobs")
+def api_jobs(email: str = "", limit: int = 200):
+    """Return jobs from Supabase DB for history page."""
+    rows = get_all_jobs(email_filter=email, limit=limit)
+    # Enrich with physics data from in-memory jobs if available
+    for row in rows:
+        mem = jobs.get(row["id"], {})
+        if mem.get("physics"):
+            row["physics"] = mem["physics"]
+        if mem.get("message"):
+            row["message"] = mem["message"]
+    return {"jobs": rows}
+
 # ── WebSocket stream ───────────────────────────────────────────────────────
 @app.websocket("/stream")
 async def stream_ws(ws: WebSocket):
@@ -441,6 +470,10 @@ async def stream_ws(ws: WebSocket):
     job_id    = str(uuid.uuid4())
 
     create_job(job_id, email, "stream", direction, medium, False, "basic")
+    jobs[job_id] = {"status":"streaming", "user_email": email,
+                    "source_type": "stream",
+                    "created_at": datetime.datetime.utcnow().isoformat(),
+                    "progress": {"pct":0}}
     log.info(f"[WS] {ws.client}  job={job_id}")
     await ws.send_text(json.dumps({"type":"init","job_id":job_id}))
 
@@ -631,27 +664,20 @@ async def stream_ws(ws: WebSocket):
         if rem: persist_samples(job_id, all_samples[-rem:])
         finish_job(job_id, len(all_samples),
                    all_samples[-1]["timestamp_sec"] if all_samples else 0)
-        if all_samples:
-            try:
-                sp = dict(ws.query_params) if hasattr(ws, "query_params") else {}
-                physics = _run_physics(
-                    all_samples, sp.get("medium", DEFAULT_MEDIUM),
-                    sp.get("direction", DEFAULT_DIRECTION),
-                    sp.get("email", ""), job_id,
-                    sp.get("version", DEFAULT_VERSION),
-                    sp.get("lang", DEFAULT_LANG),
-                )
-                jobs[job_id] = {
-                    "status":"done", "sample_count":len(all_samples),
-                    "filename": out_path.name if out_path.exists() else None,
-                    "url":      f"/download/{job_id}" if out_path.exists() else None,
-                    "message":physics.get("message",{}),
-                    "physics":physics.get("result",{}),
-                    "phases":physics.get("phases",{}),
-                    "physics_url":f"/physics/{job_id}",
-                }
-            except Exception as e:
-                log.warning(f"[WS] physics failed: {e}")
+        # Process recorded video in background — same as upload pipeline
+        if out_path.exists():
+            sp = dict(ws.query_params) if hasattr(ws, "query_params") else {}
+            jobs[job_id] = {"status":"queued","progress":{"pct":0}}
+            asyncio.get_event_loop().run_in_executor(
+                executor, _run_job, job_id, out_path,
+                sp.get("direction", DEFAULT_DIRECTION),
+                sp.get("medium", DEFAULT_MEDIUM),
+                False, "basic",
+                sp.get("email", ""),
+                sp.get("version", DEFAULT_VERSION),
+                sp.get("lang", DEFAULT_LANG),
+            )
+            log.info(f"[WS] queued processing job {job_id}")
 
 @app.get("/health")
 def health():

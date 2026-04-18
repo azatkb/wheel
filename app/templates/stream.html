@@ -5,211 +5,221 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Wheel Tracker — Live Stream</title>
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0;
-       min-height: 100vh; padding: 2rem 1.5rem; max-width: 960px; margin: 0 auto; }
-nav { margin-bottom: 1.5rem; }
-nav a { color: #00ffb4; margin-right: 1.5rem; font-size: 0.9rem; text-decoration: none; }
-nav a:hover { text-decoration: underline; }
-h1 { color: #00ffb4; font-size: 1.7rem; margin-bottom: 0.3rem; }
-.subtitle { color: #555; margin-bottom: 2rem; font-size: 0.9rem; }
-.row { display: flex; gap: 1.5rem; flex-wrap: wrap; }
-.col  { flex: 1; min-width: 280px; }
-.card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px;
-        padding: 1.5rem; margin-bottom: 1.5rem; }
-h2 { color: #aaa; font-size: 0.85rem; text-transform: uppercase;
-     letter-spacing: .06em; margin-bottom: 1rem; }
-.cam-wrap { position: relative; background: #000; border-radius: 8px;
-            overflow: hidden; line-height: 0; }
-.cam-wrap video  { width: 100%; display: block; max-height: 260px;
-                   object-fit: cover; border-radius: 8px; }
-.cam-wrap canvas { position: absolute; top: 0; left: 0; width: 100%;
-                   height: 100%; pointer-events: none; }
-.ctrl-row { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap;
-            margin-top: 1rem; }
-select, input[type=number] { background: #222; color: #ccc;
-  border: 1px solid #333; border-radius: 6px; padding: .4rem .6rem; }
-label.lbl { color: #666; font-size: .82rem; }
-button { background: #00ffb4; color: #000; border: none; border-radius: 8px;
-         padding: .55rem 1.3rem; font-size: .9rem; font-weight: 700; cursor: pointer; }
-button:hover { background: #00d99a; }
-button:disabled { background: #2a2a2a; color: #555; cursor: not-allowed; }
-button.stop { background: #e33; color: #fff; }
-button.stop:hover { background: #c22; }
-button.sec { background: #2a2a2a; color: #ccc; }
-.big { font-size: 2.8rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
-.big-green { color: #00ffb4; }
-.big-white { color: #e0e0e0; }
-.metric-row { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
-.metric { flex: 1; min-width: 110px; }
-.lbl-sm { color: #555; font-size: .72rem; margin-bottom: .25rem; }
-.conf-track { background: #222; border-radius: 6px; height: 10px; margin-top: .3rem; }
-.conf-fill  { height: 10px; border-radius: 6px; transition: width .2s;
-              background: linear-gradient(90deg,#f44 0%,#ff0 50%,#0f0 100%); }
-canvas#dial { display: block; border-radius: 8px; }
-canvas#minichart { display: block; border-radius: 8px; background: #111;
-                   width: 100%; height: 130px; }
-#log { font-family: monospace; font-size: .77rem; background: #111;
-       border-radius: 8px; padding: .8rem; height: 110px; overflow-y: auto;
-       border: 1px solid #1e1e1e; line-height: 1.6; }
-.test-row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-.test-row input { flex: 1; background: #222; color: #ccc; border: 1px solid #333;
-                  border-radius: 6px; padding: .35rem .6rem; font-size: .82rem; min-width: 0; }
-.test-row button { padding: .35rem .9rem; font-size: .82rem; white-space: nowrap; }
-#test-canvas { display: block; width: 100%; border-radius: 8px;
-               background: #111; margin-top: 8px; }
-.test-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
-.test-box { background: #111; border-radius: 8px; padding: .5rem .7rem; text-align: center; }
-.test-box .tv { font-size: 1.3rem; font-weight: 700; color: #00ffb4;
-                font-variant-numeric: tabular-nums; }
-.test-box .tl { font-size: .65rem; color: #555; margin-top: 2px; }
-.test-box.ora .tv { color: #ff8800; }
-.test-box.vel .tv { color: #44aaff; }
-.test-box.sig .tv { color: #ffcc00; }
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#0d0d0d;color:#e0e0e0;padding:1.5rem;max-width:1100px;margin:0 auto}
+nav{margin-bottom:1.5rem}
+nav a{color:#00ff88;margin-right:1.5rem;font-size:.9rem;text-decoration:none}
+nav a:hover{text-decoration:underline}
+h1{color:#00ff88;font-size:1.6rem;margin-bottom:.25rem}
+.sub{color:#555;font-size:.85rem;margin-bottom:1.8rem}
+.card{background:#161616;border:1px solid #252525;border-radius:12px;padding:1.4rem;margin-bottom:1.3rem}
+h2{color:#888;font-size:.8rem;text-transform:uppercase;letter-spacing:.07em;margin-bottom:1rem}
+select,input[type=number]{background:#1e1e1e;border:1px solid #2e2e2e;border-radius:6px;padding:.45rem .65rem;color:#ccc;font-size:.88rem}
+.row{display:flex;gap:.8rem;flex-wrap:wrap;align-items:flex-end}
+.row>div{flex:1;min-width:140px}
+label{display:block;color:#888;font-size:.78rem;margin-bottom:.25rem}
+button{background:#00ff88;color:#000;border:none;border-radius:8px;padding:.55rem 1.3rem;font-size:.9rem;font-weight:700;cursor:pointer;margin-right:.5rem}
+button:hover{background:#00d977}
+button:disabled{background:#252525;color:#555;cursor:not-allowed}
+button.stop{background:#e33;color:#fff}
+button.stop:hover{background:#c22}
+button.sec{background:#252525;color:#aaa}
+button.sec:hover{background:#2e2e2e}
+.prog-wrap{background:#1e1e1e;border-radius:5px;height:10px;margin:.4rem 0 .3rem;overflow:hidden}
+.prog-fill{height:10px;border-radius:5px;width:0%;transition:width .25s}
+.prog-fill.streaming {background:linear-gradient(90deg,#00aaff,#00ffcc)}
+.prog-fill.processing{background:linear-gradient(90deg,#ff8800,#ffcc00)}
+.prog-fill.done      {background:#00ff88}
+.prog-fill.error     {background:#f44}
+.prog-label{font-size:.78rem;color:#888;min-height:1.3em;margin-bottom:.25rem}
+pre#log{font-family:monospace;font-size:.75rem;background:#0a0a0a;border-radius:8px;padding:.7rem;min-height:36px;border:1px solid #1e1e1e;white-space:pre-wrap;max-height:100px;overflow-y:auto;line-height:1.7;margin-top:.6rem}
+/* Camera area */
+.cam-section{display:flex;gap:1rem;flex-wrap:wrap;margin-top:.8rem}
+.cam-left{flex:1.4;min-width:280px}
+.cam-right{flex:1;min-width:220px;display:flex;flex-direction:column;gap:.5rem}
+.cam-wrap{position:relative;background:#000;border-radius:8px;overflow:hidden;line-height:0}
+.cam-wrap video{width:100%;display:block;border-radius:8px}
+.cam-wrap canvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+/* Processing area — same as upload */
+.proc-layout{display:none;gap:1rem;flex-wrap:wrap;margin-top:.8rem}
+.proc-left{flex:1.4;min-width:280px}
+.proc-right{flex:1;min-width:220px;display:flex;flex-direction:column;gap:.5rem}
+.canvas-wrap{position:relative;background:#000;border-radius:8px;overflow:hidden;line-height:0}
+.canvas-wrap video{width:100%;display:block;border-radius:8px}
+.canvas-wrap canvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+#vid-placeholder{width:100%;aspect-ratio:16/9;background:#0a0a0a;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;color:#333;font-size:.85rem}
+.live-box{background:#0f0f0f;border:1px solid #222;border-radius:8px;padding:.6rem .9rem;text-align:center}
+.live-box .lv{font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums;color:#00ff88}
+.live-box .ll{font-size:.65rem;color:#555;margin-top:.1rem}
+.live-box.ora .lv{color:#ff8800}
+.live-box.vel .lv{color:#44aaff}
+.live-box.sig .lv{color:#ffcc00}
+.live-time{font-size:.72rem;color:#555;text-align:center;margin-top:.3rem}
+.metrics{display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1rem}
+.met{background:#0f0f0f;border:1px solid #222;border-radius:8px;padding:.65rem 1rem;text-align:center;min-width:100px;flex:1}
+.met .v{font-size:1.6rem;font-weight:700;color:#00ff88;display:block;font-variant-numeric:tabular-nums}
+.met .l{font-size:.7rem;color:#555;margin-top:.15rem}
+canvas#chart{display:block;border-radius:8px;background:#0a0a0a;width:100%;height:200px}
+.acts{margin:.8rem 0}.acts a{text-decoration:none}
+.tbl-wrap{max-height:240px;overflow-y:auto;margin-top:.8rem}
+table{width:100%;border-collapse:collapse;font-size:.78rem}
+th{color:#555;text-align:left;padding:.3rem .55rem;border-bottom:1px solid #1e1e1e;position:sticky;top:0;background:#161616}
+td{padding:.28rem .55rem;border-bottom:1px solid #181818}
+tr:hover td{background:#1a1a1a}
+.tag{display:inline-block;padding:.1rem .4rem;border-radius:4px;font-size:.7rem;font-weight:700}
+.tg{background:#133;color:#0f0}.tn{background:#1e1e1e;color:#555}
+.cb{display:inline-block;height:6px;border-radius:3px;vertical-align:middle;background:linear-gradient(90deg,#f44,#ff0,#0f0)}
+/* Physics */
+.phys-card{background:#0d1a0f;border:1px solid #1a3a20;border-radius:12px;padding:1.4rem;margin-bottom:1.3rem;display:none}
+.phys-msg{font-size:1.15rem;font-weight:700;color:#00ff88;margin-bottom:.8rem;line-height:1.4}
+.phys-warn{background:#1a0a0a;border:1px solid #f44;border-radius:8px;padding:.6rem .9rem;color:#f44;font-size:.82rem;margin-bottom:.8rem}
+.phys-display{display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1rem}
+.phys-val{background:#0f1f12;border:1px solid #1a3a20;border-radius:8px;padding:.6rem 1rem;text-align:center;flex:1;min-width:110px}
+.phys-val .pv{font-size:1.3rem;font-weight:700;color:#00ff88;font-variant-numeric:tabular-nums}
+.phys-val .pl{font-size:.65rem;color:#555;margin-top:.1rem}
+.phys-val.amber .pv{color:#ff8800}.phys-val.blue .pv{color:#44aaff}
+.phys-val.yellow .pv{color:#ffcc00}.phys-val.red .pv{color:#f44}
+.phys-lajtner{font-size:.8rem;color:#555;margin:.4rem 0 .8rem;padding:.5rem .7rem;background:#111;border-radius:6px}
+.phys-lajtner span{color:#ccc}
+.rank-box{border-radius:8px;padding:.6rem 1rem;margin:.4rem 0;font-size:.85rem}
+.rank-gold{background:#1a1500;border:1px solid #ff8800;color:#ff8800}
+.rank-silver{background:#111520;border:1px solid #44aaff;color:#44aaff}
+.rank-bronze{background:#130d0a;border:1px solid #cc6633;color:#cc6633}
+.phys-tbl-wrap{max-height:260px;overflow-y:auto;margin-top:.8rem}
+.phys-tbl{width:100%;border-collapse:collapse;font-size:.73rem}
+.phys-tbl th{color:#555;text-align:left;padding:.25rem .4rem;border-bottom:1px solid #1e1e1e;position:sticky;top:0;background:#0d1a0f;font-weight:400}
+.phys-tbl td{padding:.22rem .4rem;border-bottom:1px solid #141f16}
+.phys-tbl tr:hover td{background:#0f2012}
+.phys-tbl .ideal{color:#44aaff}.phys-tbl .air{color:#00ff88}.phys-tbl .water{color:#00bcd4}
 </style>
 </head>
 <body>
 <nav>
-  <a href="/upload.html">Upload</a>
-  <a href="/stream.html">Live stream</a>
+  <a href="/">Upload</a>
+  <a href="/stream">Live stream</a>
+  <a href="/history">History</a>
 </nav>
 <h1>Wheel Tracker — Live Stream</h1>
-<p class="subtitle">Connect a camera, push frames via WebSocket, see rotation in real-time</p>
-<div class="row">
-  <div class="col">
-    <div class="card">
-      <h2>Camera</h2>
-      <div class="cam-wrap" id="cam-wrap">
-        <video id="cam" autoplay muted playsinline></video>
-        <canvas id="cam-overlay"></canvas>
-      </div>
-      <div class="ctrl-row">
-        <div>
-          <div class="lbl-sm">Camera</div>
-          <select id="cam-select" onchange="changeCamera()"></select>
-        </div>
-        <div>
-          <div class="lbl-sm">FPS</div>
-          <input type="number" id="fps-input" value="5" min="1" max="30" style="width:60px">
-        </div>
-      </div>
-      <div class="ctrl-row">
-        <div><div class="lbl-sm">Medium</div>
-          <select id="cam-medium"><option value="air">Air</option><option value="water">Water</option></select></div>
-        <div><div class="lbl-sm">Version</div>
-          <select id="cam-version"><option value="free">Free</option><option value="paid">Paid</option></select></div>
-        <div><div class="lbl-sm">Lang</div>
-          <select id="cam-lang"><option value="en">EN</option><option value="hu">HU</option><option value="de">DE</option></select></div>
-      </div>
-      <div class="ctrl-row">
-        <button id="btn-start" onclick="startStream()">Start stream</button>
-        <button id="btn-stop" class="stop" onclick="stopStream()" disabled>Stop</button>
-        <button onclick="resetZero()" class="sec">Reset 0°</button>
-      </div>
-    </div>
-    <div class="card">
-      <h2>Log</h2>
-      <div id="log"></div>
+<p class="sub">Stream from camera — video is recorded and processed automatically on stop</p>
+
+<!-- Camera card -->
+<div class="card">
+  <h2>Camera</h2>
+  <div class="cam-wrap" id="cam-wrap" style="margin-bottom:.8rem;position:relative">
+    <video id="cam" autoplay muted playsinline></video>
+    <div id="rec-indicator" style="display:none;position:absolute;top:10px;right:10px;
+         background:rgba(0,0,0,0.6);border-radius:20px;padding:4px 12px;
+         align-items:center;gap:6px;font-size:.8rem;color:#fff">
+      <span style="width:10px;height:10px;background:#f44;border-radius:50%;
+            animation:blink 1s infinite"></span> REC
     </div>
   </div>
-  <div class="col">
-    <div class="card">
-      <h2>Real-time rotation</h2>
-      <div class="metric-row">
-        <div class="metric">
-          <div class="lbl-sm">Current angle</div>
-          <div class="big big-green" id="val-angle">—</div>
-        </div>
-        <div class="metric">
-          <div class="lbl-sm">Total rotation</div>
-          <div class="big big-white" id="val-cum">+0.0°</div>
-        </div>
-      </div>
-      <div class="metric-row">
-        <div class="metric">
-          <div class="lbl-sm">Confidence</div>
-          <div id="val-conf" style="font-size:1.1rem;font-weight:700">—</div>
-          <div class="conf-track"><div class="conf-fill" id="conf-fill" style="width:0%"></div></div>
-        </div>
-        <div class="metric">
-          <div class="lbl-sm">Source</div>
-          <div id="val-src" style="font-size:1.1rem;font-weight:700;color:#ff0">—</div>
-        </div>
-        <div class="metric">
-          <div class="lbl-sm">Frame</div>
-          <div id="val-frame" style="font-size:.9rem;color:#666">—</div>
-        </div>
-      </div>
-      <canvas id="dial" width="150" height="150"></canvas>
+  <style>@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}</style>
+  <div class="row" style="margin-top:.8rem">
+    <div>
+      <label>Camera</label>
+      <select id="cam-select" onchange="changeCamera()" style="width:100%"></select>
     </div>
-    <div class="card">
-      <h2>Cumulative rotation (live)</h2>
-      <canvas id="minichart"></canvas>
+    <div style="flex:2">
+      <label>Email</label>
+      <input type="email" id="cam-email" placeholder="user@example.com"
+             style="width:100%;background:#1e1e1e;border:1px solid #2e2e2e;border-radius:6px;padding:.45rem .65rem;color:#ccc;font-size:.88rem">
     </div>
-    <!-- Physics result -->
-    <div class="card" id="phys-card" style="display:none;background:#0d1a0f;border:1px solid #1a3a20">
-      <h2>Physics result</h2>
-      <div id="phys-msg" style="font-size:1rem;font-weight:700;color:#00ffb4;margin-bottom:.7rem"></div>
-      <div id="phys-display" style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:.7rem"></div>
-      <div id="phys-lajtner" style="display:none;font-size:.78rem;color:#555;padding:.4rem .6rem;background:#111;border-radius:5px;margin-bottom:.5rem"></div>
-      <div id="phys-rank"></div>
-      <button onclick="togglePhysTable()" id="phys-tbl-btn" style="background:#2a2a2a;color:#ccc;margin-top:.5rem;font-size:.78rem;padding:.3rem .8rem">Show 20 variables</button>
-      <div id="phys-tbl-wrap" style="display:none;overflow-x:auto;margin-top:.6rem;max-height:220px;overflow-y:auto">
-        <table style="width:100%;border-collapse:collapse;font-size:.7rem;white-space:nowrap">
-          <thead><tr>
-            <th style="color:#555;padding:.2rem .4rem;border-bottom:1px solid #1e1e1e">#</th>
-            <th style="color:#555;padding:.2rem .4rem;border-bottom:1px solid #1e1e1e">Variable</th>
-            <th style="color:#555;padding:.2rem .4rem;border-bottom:1px solid #1e1e1e">Unit</th>
-            <th style="color:#44aaff;padding:.2rem .4rem;border-bottom:1px solid #1e1e1e">Ideal</th>
-            <th style="color:#00ffb4;padding:.2rem .4rem;border-bottom:1px solid #1e1e1e">Air</th>
-            <th style="color:#00bcd4;padding:.2rem .4rem;border-bottom:1px solid #1e1e1e">Water</th>
-          </tr></thead>
-          <tbody id="phys-tb"></tbody>
-        </table>
-      </div>
+    <div>
+      <label>Medium</label>
+      <select id="cam-medium" style="width:100%"><option value="air">Air</option><option value="water">Water</option></select>
     </div>
-    <!-- Test panel -->
-    <div class="card">
-      <h2>API test — /stream</h2>
-      <div class="test-row">
-        <button onclick="testHealth()" style="background:#2a2a2a;color:#ccc">Health</button>
-      </div>
-      <div class="test-row">
-        <input type="file" id="test-file" accept="video/*"
-               style="background:#222;color:#ccc;border:1px solid #333;border-radius:6px;
-                      padding:.35rem .6rem;font-size:.82rem;flex:1">
-      </div>
-      <div class="test-row" style="margin-top:4px">
-        <div style="font-size:.78rem;color:#666">FPS</div>
-        <input type="number" id="test-fps" value="10" min="1" max="30" style="width:55px">
-        <button onclick="startTestStream()" id="test-btn-start">Send frames via WS</button>
-        <button onclick="stopTestStream()" id="test-btn-stop" class="stop" disabled>Stop</button>
-      </div>
-      <div id="test-job" style="font-size:.75rem;color:#555;margin:4px 0">—</div>
-      <div class="test-grid">
-        <div class="test-box"><div class="tv" id="t-ang">—</div><div class="tl">angle</div></div>
-        <div class="test-box ora"><div class="tv" id="t-cum">—</div><div class="tl">total</div></div>
-        <div class="test-box vel"><div class="tv" id="t-vel">—</div><div class="tl">vel °/s</div></div>
-        <div class="test-box sig"><div class="tv" id="t-conf">—</div><div class="tl">confidence</div></div>
-      </div>
-      <canvas id="test-canvas" height="160"></canvas>
-      <div id="test-log" style="font-family:monospace;font-size:.72rem;color:#555;
-           margin-top:6px;max-height:120px;overflow-y:auto;line-height:1.5"></div>
+    <div>
+      <label>Version</label>
+      <select id="cam-version" style="width:100%"><option value="free">Free</option><option value="paid">Paid</option></select>
     </div>
+    <div>
+      <label>Language</label>
+      <select id="cam-lang" style="width:100%"><option value="en">EN</option><option value="hu">HU</option><option value="de">DE</option></select>
+    </div>
+  </div>
+  <div style="margin-top:.8rem">
+    <button id="btn-start" onclick="startStream()">▶ Start stream</button>
+    <button id="btn-stop" class="stop" onclick="stopStream()" disabled>■ Stop &amp; Process</button>
+    <button class="sec" onclick="resetZero()">↺ Reset 0°</button>
   </div>
 </div>
-<script>
-/* ── State ── */
-let ws = null, camStream = null, sendLoop = null;
-let camWaitingReply = false, camFrozenCanvas = null;
-let _camWaiting = false;  // step mode sync — shared between onopen and onmessage
-let streamJobId = null;
-let testVidW = 1, testVidH = 1;
-const HISTORY = 120;
-let chartData = [];
-let lastDet = null;
 
-/* ── Camera ── */
+<!-- Status card (same as upload) -->
+<div class="card">
+  <h2>Status</h2>
+  <div class="prog-label" id="prog-label">Ready</div>
+  <div class="prog-wrap"><div class="prog-fill" id="prog"></div></div>
+
+  <div class="proc-layout" id="proc-layout">
+    <div class="proc-left">
+      <div class="canvas-wrap" id="canvas-wrap">
+        <div id="vid-placeholder">Processing video...</div>
+        <video id="vid" muted playsinline style="display:none"></video>
+        <canvas id="overlay"></canvas>
+      </div>
+      <div class="live-time" id="live-time">—</div>
+    </div>
+    <div class="proc-right">
+      <div class="live-box"><div class="lv" id="lv-ang">---</div><div class="ll">Current angle</div></div>
+      <div class="live-box ora"><div class="lv" id="lv-cum">+0.0°</div><div class="ll">Total rotation</div></div>
+      <div class="live-box vel"><div class="lv" id="lv-vel">---</div><div class="ll">Velocity °/s</div></div>
+      <div class="live-box sig"><div class="lv" id="lv-conf">0%</div><div class="ll">Significance</div></div>
+      <div style="font-size:.7rem;color:#555;text-align:center" id="lv-src"></div>
+    </div>
+  </div>
+
+  <pre id="log"></pre>
+</div>
+
+<!-- Physics -->
+<div class="phys-card" id="phys-card">
+  <h2>Physics result</h2>
+  <div id="phys-msg" class="phys-msg"></div>
+  <div id="phys-warn" class="phys-warn" style="display:none"></div>
+  <div id="phys-display" class="phys-display"></div>
+  <div id="phys-lajtner" class="phys-lajtner" style="display:none"></div>
+  <div id="phys-rank"></div>
+  <div id="phys-group"></div>
+  <div id="phys-tbl-wrap" class="phys-tbl-wrap" style="display:none">
+    <table class="phys-tbl">
+      <thead><tr>
+        <th>#</th><th>Variable</th><th>Unit</th>
+        <th class="ideal">Ideal</th><th class="air">Air</th><th class="water">Water</th>
+      </tr></thead>
+      <tbody id="phys-tb"></tbody>
+    </table>
+  </div>
+  <button class="sec" onclick="togglePhysTable()" id="phys-tbl-btn" style="margin-top:.6rem">Show 20 variables</button>
+</div>
+
+<!-- Results -->
+<div class="card" id="res" style="display:none">
+  <h2>Results</h2>
+  <div class="metrics" id="mets"></div>
+  <canvas id="chart"></canvas>
+  <div class="acts" id="acts"></div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr>
+        <th>Time (s)</th><th>Angle (°)</th><th>Angle (rad)</th>
+        <th>Total (°)</th><th>Vel (°/s)</th><th>Sig %</th><th>Bar</th><th>Src</th>
+      </tr></thead>
+      <tbody id="tb"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let ws = null, camStream = null, sendLoop = null;
+let _camWaiting = false, camFrozenCanvas = null;
+let streamJobId = null;
+let jid = null, statusTimer = null, sse = null;
+let vidW = 0, vidH = 0, totalSec = 0;
+
+// ── Camera setup ───────────────────────────────────────────────────────────
 async function listCams(){
   let tmp = null;
   try {
@@ -230,7 +240,7 @@ async function listCams(){
     if (!foundBack && sel.options.length) sel.selectedIndex = 0;
   } catch(e) { addLog('Camera error: ' + e.message); }
   finally { if (tmp) tmp.getTracks().forEach(t => t.stop()); }
-  try { await switchCam(); } catch(e) { addLog('SwitchCam: ' + e.message); }
+  try { await switchCam(); } catch(e) {}
 }
 listCams();
 
@@ -244,74 +254,81 @@ async function switchCam(){
   }
   document.getElementById('cam').srcObject = camStream;
 }
-async function changeCamera() { try { await switchCam(); } catch(e) { addLog(e.message); } }
+async function changeCamera() { try { await switchCam(); } catch(e) {} }
 
-/* ── Log ── */
-function addLog(msg) {
-  const el = document.getElementById('log');
-  el.innerHTML += `<div>${new Date().toLocaleTimeString()} — ${msg}</div>`;
-  el.scrollTop = el.scrollHeight;
+// ── Log ────────────────────────────────────────────────────────────────────
+function addLog(m){
+  const e = document.getElementById('log');
+  e.textContent += m + '\n'; e.scrollTop = e.scrollHeight;
 }
-function addTestLog(msg) {
-  const el = document.getElementById('test-log');
-  el.innerHTML += `<div>${msg}</div>`;
-  el.scrollTop = el.scrollHeight;
+function setProg(p, ph='processing'){
+  document.getElementById('prog').style.width = Math.min(100, Math.max(0, p)) + '%';
+  document.getElementById('prog').className = 'prog-fill ' + ph;
 }
+function setLabel(t){ document.getElementById('prog-label').textContent = t; }
 
-/* ── Cam overlay ── */
-
-function showHint(cvs, w, h, msg) {
-  const ctx=cvs.getContext('2d');
-  ctx.clearRect(0,0,w,h);
-  const cx=w/2, cy=h/2;
-  ctx.fillStyle='rgba(0,0,0,0.45)';ctx.fillRect(0,0,w,h);
-  const fs=Math.max(14,w/28);
-  ctx.font=`bold ${fs}px system-ui`;
-  const tw=ctx.measureText(msg).width;
-  const pw=tw+40,ph=fs*2.4;
-  ctx.fillStyle='rgba(0,0,0,0.7)';
-  ctx.beginPath();ctx.roundRect(cx-pw/2,cy-ph/2,pw,ph,8);ctx.fill();
-  ctx.strokeStyle='rgba(0,220,220,0.8)';ctx.lineWidth=1.5;
-  ctx.beginPath();ctx.roundRect(cx-pw/2,cy-ph/2,pw,ph,8);ctx.stroke();
-  ctx.fillStyle='#00dcdc';ctx.textAlign='center';ctx.textBaseline='middle';
-  ctx.fillText(msg,cx,cy);
-  ctx.textAlign='left';ctx.textBaseline='alphabetic';
-}
-
-function drawCamOverlayFrozen(d) {
-  const cvs  = document.getElementById('cam-overlay');
+// ── Stream: live detection overlay on camera ───────────────────────────────
+function showHintCam(msg){
+  const cvs = document.getElementById('cam-overlay');
   const wrap = document.getElementById('cam-wrap');
-  const dw   = wrap.clientWidth || 480;
-  const src  = camFrozenCanvas;
-  const dh   = src ? Math.round(dw * src.height / src.width) : Math.round(dw*9/16);
-  if (cvs.width !== dw || cvs.height !== dh) { cvs.width = dw; cvs.height = dh; }
+  if (!cvs.width) return;
+  const ctx = cvs.getContext('2d'), w = cvs.width, h = cvs.height;
+  ctx.clearRect(0,0,w,h);
+  const cx = w/2, cy = h/2, fs = Math.max(14, w/28);
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(0,0,w,h);
+  ctx.font = `bold ${fs}px system-ui`;
+  const tw = ctx.measureText(msg).width, pw = tw+40, ph2 = fs*2.4;
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.beginPath(); ctx.roundRect(cx-pw/2,cy-ph2/2,pw,ph2,8); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,220,220,0.8)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(cx-pw/2,cy-ph2/2,pw,ph2,8); ctx.stroke();
+  ctx.fillStyle = '#00dcdc'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(msg,cx,cy);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
+
+function drawCamOverlay(d){
+  const cvs = document.getElementById('cam-overlay');
+  const wrap = document.getElementById('cam-wrap');
+  const dw = wrap.clientWidth || 480;
+  const src = camFrozenCanvas;
+  const dh = src ? Math.round(dw * src.height / src.width) : Math.round(dw*9/16);
+  if (cvs.width !== dw || cvs.height !== dh){ cvs.width = dw; cvs.height = dh; }
   const ctx = cvs.getContext('2d');
-  ctx.clearRect(0, 0, dw, dh);
-  // Live video drawn by RAF loop — only draw detection overlay here
-  const vw = d.vid_w || cvs.width || 640;
-  const vh = d.vid_h || cvs.height || 480;
+  ctx.clearRect(0,0,dw,dh);
+  if (src) try { ctx.drawImage(src, 0, 0, dw, dh); } catch(e){}
+  const vw = d.vid_w || src?.width || 640;
+  const vh = d.vid_h || src?.height || 480;
   const sx = dw/vw, sy = dh/vh;
-  if(d.no_ground){
-    showHint(cvs,dw,dh,'Place wheel in frame, camera above');
-    return;
+  if (d.no_ground){ showHintCam('Place wheel in frame, camera above'); return; }
+  if (d.no_orange){
+    // draw hint at bottom but continue drawing hub
+    const hcx=dw/2, hcy=dh*0.88, fs=Math.max(13,dw/36);
+    ctx.font=`bold ${fs}px system-ui`;
+    const tw=ctx.measureText('Orange marker not found').width,pw=tw+32,ph2=fs*2.2;
+    ctx.fillStyle='rgba(0,0,0,0.65)';
+    ctx.beginPath();ctx.roundRect(hcx-pw/2,hcy-ph2/2,pw,ph2,7);ctx.fill();
+    ctx.strokeStyle='rgba(255,180,0,0.8)';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.roundRect(hcx-pw/2,hcy-ph2/2,pw,ph2,7);ctx.stroke();
+    ctx.fillStyle='#ffcc00';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('Orange marker not found',hcx,hcy);
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';
   }
-  const _hint = d.no_orange ? 'Orange marker not found' : null;
   const hub = d.hub_px || d.hub;
-  if (hub) {
-    const hx = hub[0]*sx, hy = hub[1]*sy;
-    ctx.beginPath(); ctx.arc(hx, hy, 8, 0, Math.PI*2);
-    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fill();
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.stroke();
-    if (d.orange) {
-      const ox = d.orange[0]*sx, oy = d.orange[1]*sy;
+  if (hub){
+    const hx=hub[0]*sx, hy=hub[1]*sy;
+    ctx.beginPath(); ctx.arc(hx,hy,8,0,Math.PI*2);
+    ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.fill();
+    ctx.strokeStyle='#000'; ctx.lineWidth=1.5; ctx.stroke();
+    if (d.orange){
+      const ox=d.orange[0]*sx, oy=d.orange[1]*sy;
       ctx.beginPath(); ctx.moveTo(hx,hy); ctx.lineTo(ox,oy);
-      ctx.strokeStyle = 'rgba(0,255,180,0.7)'; ctx.lineWidth = 2;
+      ctx.strokeStyle='rgba(0,255,136,0.7)'; ctx.lineWidth=2;
       ctx.setLineDash([6,4]); ctx.stroke(); ctx.setLineDash([]);
     }
   }
-  if (d.orange) {
-    const ox = d.orange[0]*sx, oy = d.orange[1]*sy;
-    const r = 10;
+  if (d.orange){
+    const ox=d.orange[0]*sx, oy=d.orange[1]*sy, r=10;
     ctx.beginPath(); ctx.arc(ox,oy,r+2,0,Math.PI*2);
     ctx.fillStyle='rgba(0,40,100,0.7)'; ctx.fill();
     ctx.beginPath(); ctx.arc(ox,oy,r,0,Math.PI*2);
@@ -321,104 +338,34 @@ function drawCamOverlayFrozen(d) {
     ctx.font='11px system-ui'; ctx.fillStyle='#ff6600';
     ctx.fillText('ORA',ox+r+4,oy+4);
   }
-  // Hint
-  if(_hint){
-    const hcx=dw/2, hcy=dh*0.85;
-    const fs=Math.max(13,dw/36);
-    ctx.font=`bold ${fs}px system-ui`;
-    const tw=ctx.measureText(_hint).width;
-    const pw=tw+32,ph=fs*2.2;
-    ctx.fillStyle='rgba(0,0,0,0.65)';
-    ctx.beginPath();ctx.roundRect(hcx-pw/2,hcy-ph/2,pw,ph,7);ctx.fill();
-    ctx.strokeStyle='rgba(255,180,0,0.8)';ctx.lineWidth=1.5;
-    ctx.beginPath();ctx.roundRect(hcx-pw/2,hcy-ph/2,pw,ph,7);ctx.stroke();
-    ctx.fillStyle='#ffcc00';ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText(_hint,hcx,hcy);
-    ctx.textAlign='left';ctx.textBaseline='alphabetic';
-  }
-  // Ground bbox
-  if (d.ground) {
-    const [gx,gy,gw,gh] = d.ground;
-    ctx.strokeStyle='rgba(0,200,200,0.6)'; ctx.lineWidth=1.5;
-    ctx.strokeRect((gx-gw/2)*sx,(gy-gh/2)*sy,gw*sx,gh*sy);
-  }
-  if (d.rotation_deg != null) {
-    const ang = d.rotation_deg.toFixed(1)+'°';
-    const cum = ((d.cumulative_deg||0)>=0?'+':'')+(d.cumulative_deg||0).toFixed(1)+'°';
+  if (d.rotation_deg != null){
+    const ang=d.rotation_deg.toFixed(1)+'°';
+    const cum=((d.cumulative_deg||0)>=0?'+':'')+(d.cumulative_deg||0).toFixed(1)+'°';
     ctx.font='bold 15px system-ui';
     const bw=Math.max(ctx.measureText(ang).width,ctx.measureText(cum).width)+18;
     ctx.fillStyle='rgba(0,0,0,0.6)';
     ctx.beginPath(); ctx.roundRect(6,6,bw,52,6); ctx.fill();
     ctx.fillStyle='#ffcc00'; ctx.fillText(ang,13,26);
-    ctx.fillStyle='#00ffb4'; ctx.fillText(cum,13,48);
+    ctx.fillStyle='#00ff88'; ctx.fillText(cum,13,48);
   }
-  const conf = d.confidence_pct||0;
+  const conf=d.confidence_pct||0;
   ctx.fillStyle='rgba(0,0,0,0.3)'; ctx.fillRect(0,dh-5,dw,5);
-  ctx.fillStyle=conf>=80?'#00ffb4':conf>=50?'#ff0':'#f44';
+  ctx.fillStyle=conf>=80?'#00ff88':conf>=50?'#ffcc00':'#f44';
   ctx.fillRect(0,dh-5,Math.round(dw*conf/100),5);
 }
 
-/* ── Dial ── */
-function drawDial(angleDeg, conf) {
-  const c = document.getElementById('dial');
-  const ctx = c.getContext('2d');
-  const cx=75,cy=75,r=62;
-  ctx.clearRect(0,0,150,150);
-  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
-  ctx.fillStyle='#111'; ctx.fill();
-  ctx.strokeStyle='#2a2a2a'; ctx.lineWidth=2; ctx.stroke();
-  if (conf!=null) {
-    const arcEnd=-Math.PI/2+(conf/100)*Math.PI*2;
-    ctx.beginPath(); ctx.arc(cx,cy,r-5,-Math.PI/2,arcEnd);
-    ctx.strokeStyle=conf>=80?'#00ffb4':conf>=50?'#ff0':'#f44';
-    ctx.lineWidth=5; ctx.lineCap='round'; ctx.stroke();
-  }
-  ctx.strokeStyle='#444'; ctx.lineWidth=2; ctx.lineCap='butt';
-  ctx.beginPath(); ctx.moveTo(cx,cy-r+8); ctx.lineTo(cx,cy-r+16); ctx.stroke();
-  if (angleDeg!=null) {
-    const rad=(angleDeg-90)*Math.PI/180;
-    ctx.strokeStyle='#00ffb4'; ctx.lineWidth=2.5; ctx.lineCap='round';
-    ctx.beginPath();
-    ctx.moveTo(cx-8*Math.cos(rad),cy-8*Math.sin(rad));
-    ctx.lineTo(cx+(r-18)*Math.cos(rad),cy+(r-18)*Math.sin(rad));
-    ctx.stroke();
-  }
-  ctx.fillStyle='#00ffb4';
-  ctx.beginPath(); ctx.arc(cx,cy,4,0,Math.PI*2); ctx.fill();
-}
-drawDial(null,null);
-
-/* ── Mini chart ── */
-function drawMiniChart() {
-  const canvas=document.getElementById('minichart');
-  canvas.width=canvas.offsetWidth||400; canvas.height=canvas.offsetHeight||130;
-  const ctx=canvas.getContext('2d'),W=canvas.width,H=canvas.height;
-  ctx.fillStyle='#111'; ctx.fillRect(0,0,W,H);
-  if (chartData.length<2) return;
-  const pad={l:40,r:8,t:10,b:18},cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
-  const cums=chartData.map(d=>d.cum);
-  const vMin=Math.min(...cums,0),vMax=Math.max(...cums,1),vR=vMax-vMin||1;
-  ctx.strokeStyle='#1e1e1e'; ctx.lineWidth=1;
-  [0,.5,1].forEach(f=>{
-    const y=pad.t+f*cH,v=vMax-f*vR;
-    ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(W-pad.r,y); ctx.stroke();
-    ctx.fillStyle='#444'; ctx.font='9px system-ui';
-    ctx.fillText(v.toFixed(0)+'°',2,y+3);
-  });
-  ctx.strokeStyle='#00ffb4'; ctx.lineWidth=1.5;
-  ctx.beginPath();
-  chartData.forEach((d,i)=>{
-    const x=pad.l+i/(chartData.length-1)*cW;
-    const y=pad.t+(1-(d.cum-vMin)/vR)*cH;
-    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
-  });
-  ctx.stroke();
+function updateStreamMetrics(d){
+  document.getElementById('s-ang').textContent = d.rotation_deg!=null ? d.rotation_deg.toFixed(1)+'°' : '—';
+  const cum = d.cumulative_deg || 0;
+  document.getElementById('s-cum').textContent = (cum>=0?'+':'')+cum.toFixed(1)+'°';
+  document.getElementById('s-vel').textContent = d.angular_vel_dps!=null ? d.angular_vel_dps.toFixed(1) : '—';
+  document.getElementById('s-conf').textContent = (d.confidence_pct||0)+'%';
+  document.getElementById('s-src').textContent = d.source ? 'hub: '+d.source : '';
 }
 
-/* ── WebSocket stream ── */
-async function startStream() {
+// ── WebSocket ──────────────────────────────────────────────────────────────
+async function startStream(){
   const sel = document.getElementById('cam-select');
-  const fps = +document.getElementById('fps-input').value || 15;
   const med = document.getElementById('cam-medium').value;
   const ver = document.getElementById('cam-version').value;
   const lng = document.getElementById('cam-lang').value;
@@ -429,25 +376,23 @@ async function startStream() {
     document.getElementById('cam').srcObject = camStream;
 
     const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const wsHost  = location.host;
-    ws = new WebSocket(`${wsProto}://${wsHost}/stream?medium=${med}&version=${ver}&lang=${lng}&direction=auto`);
-
+    const eml = encodeURIComponent(document.getElementById('cam-email').value || '');
+    ws = new WebSocket(`${wsProto}://${location.host}/stream?medium=${med}&version=${ver}&lang=${lng}&direction=auto&email=${eml}`);
 
     ws.onopen = () => {
-      addLog('WebSocket connected');
+      addLog('Recording...');
+      setLabel('Recording — press Stop to process');
+      setProg(50, 'streaming');
+      document.getElementById('rec-indicator').style.display = 'flex';
       camFrozenCanvas = document.createElement('canvas');
       const video = document.getElementById('cam');
-      const frameInterval = 1000 / fps;
-
-      // Send continuously — no waiting for reply, server drops excess frames
-      // Step mode: send next frame only after server replies → no queue buildup
       const SEND_MAX = 640;
 
-      function sendFrame() {
+      function sendFrame(){
         if (!ws || ws.readyState !== WebSocket.OPEN || _camWaiting) return;
-        const vw = video.videoWidth || 640, vh = video.videoHeight || 480;
-        const scale = vw > SEND_MAX ? SEND_MAX / vw : 1;
-        const sw = Math.round(vw * scale), sh = Math.round(vh * scale);
+        const vw = video.videoWidth||640, vh = video.videoHeight||480;
+        const scale = vw > SEND_MAX ? SEND_MAX/vw : 1;
+        const sw = Math.round(vw*scale), sh = Math.round(vh*scale);
         camFrozenCanvas.width = sw; camFrozenCanvas.height = sh;
         camFrozenCanvas.getContext('2d').drawImage(video, 0, 0, sw, sh);
         camFrozenCanvas.toBlob(b => {
@@ -455,242 +400,153 @@ async function startStream() {
           b.arrayBuffer().then(buf => { ws.send(buf); _camWaiting = true; });
         }, 'image/jpeg', 0.7);
       }
-      // Poll at configured FPS — but only sends if not waiting for reply
-      sendLoop = setInterval(sendFrame, frameInterval);
+      sendLoop = setInterval(sendFrame, 200); // 5fps
     };
-    ws.onclose = () => { addLog('WebSocket closed'); };
+    ws.onclose = () => {};
     ws.onerror = () => { addLog('WebSocket error'); };
     ws.onmessage = event => {
       try {
         const d = JSON.parse(event.data);
-        if (d.error) { addLog('Server: ' + d.error); return; }
-        if (d.type === 'init') { streamJobId = d.job_id; addLog('Job: ' + streamJobId); return; }
-        drawCamOverlayFrozen(d);
-        updateDisplay(d);
-        _camWaiting = false;  // server replied — ready for next frame
+        _camWaiting = false;
+        if (d.type === 'init') { streamJobId = d.job_id; addLog('Job: ' + streamJobId); }
+        // No live detection — just recording
       } catch(e) { _camWaiting = false; }
     };
     document.getElementById('btn-start').disabled = true;
-    document.getElementById('btn-stop').disabled  = false;
-    addLog(`Streaming at ${fps} fps`);
+    document.getElementById('btn-stop').disabled = false;
   } catch(e) { addLog('Error: ' + e.message); }
 }
 
-function stopStream() {
-  if (sendLoop)  clearInterval(sendLoop);
-  if (ws)        ws.close();
+function stopStream(){
+  if (sendLoop) clearInterval(sendLoop);
+  if (ws) ws.close();
   if (camStream) camStream.getTracks().forEach(t => t.stop());
   ws = camStream = sendLoop = camFrozenCanvas = null;
-  camWaitingReply = false; _camWaiting = false; lastDet = null;
+  _camWaiting = false;
+  document.getElementById('rec-indicator').style.display = 'none';
   document.getElementById('btn-start').disabled = false;
-  document.getElementById('btn-stop').disabled  = true;
-  addLog('Stream stopped');
-  if (streamJobId) setTimeout(() => fetchStreamPhysics(streamJobId), 2000);
+  document.getElementById('btn-stop').disabled = true;
+
+  if (streamJobId){
+    addLog('Stream stopped — processing video...');
+    setLabel('Processing your video...');
+    setProg(10, 'processing');
+    document.getElementById('proc-layout').style.display = 'flex';
+    jid = streamJobId;
+    streamJobId = null;
+    // Poll status like upload does
+    statusTimer = setInterval(pollStatus, 2000);
+    // Also start SSE for live overlay
+    startSSE(jid);
+  }
 }
 
-function resetZero() {
-  if (ws && ws.readyState === WebSocket.OPEN) {
+function resetZero(){
+  if (ws && ws.readyState === WebSocket.OPEN){
     stopStream(); setTimeout(startStream, 300);
-    addLog('Zero reset — reconnecting...');
   }
 }
 
-/* ── Display ── */
-function updateDisplay(d) {
-  const angle=d.rotation_deg, cum=d.cumulative_deg, conf=d.confidence_pct;
-  document.getElementById('val-angle').textContent = angle!=null ? angle.toFixed(1)+'°' : '—';
-  document.getElementById('val-cum').textContent   = (cum>=0?'+':'')+cum.toFixed(1)+'°';
-  document.getElementById('val-conf').textContent  = conf+'%';
-  document.getElementById('conf-fill').style.width = conf+'%';
-  document.getElementById('val-src').textContent   = d.source || '—';
-  document.getElementById('val-frame').textContent =
-    '#'+d.frame+(d.scale_mm_px ? '  '+d.scale_mm_px.toFixed(4)+' mm/px' : '');
-  drawDial(angle, conf);
-  chartData.push({cum, conf});
-  if (chartData.length > HISTORY) chartData.shift();
-  drawMiniChart();
-}
+// ── Polling (same as upload) ───────────────────────────────────────────────
+const STAGE_PCT = {queued:5, preprocessing:25, processing:40, done:100};
+const STAGE_LBL = {
+  queued:'Queued...', preprocessing:'Preprocessing video...',
+  processing:'Detecting rotation...', done:'Done! ✓',
+};
 
-/* ── Physics ── */
-async function fetchStreamPhysics(jobId) {
+async function pollStatus(){
+  if (!jid) return;
   try {
-    const r = await fetch(location.origin + '/physics/' + jobId);
-    if (!r.ok) { addLog('Physics not ready'); return; }
-    const p = await r.json();
-    if (p && p.message) renderStreamPhysics(p);
-  } catch(e) { addLog('Physics: ' + e.message); }
+    const d = await(await fetch('/status/'+jid)).json();
+    if (d.status !== 'processing'){
+      setProg(STAGE_PCT[d.status]||30, 'processing');
+      setLabel(STAGE_LBL[d.status]||d.status);
+    }
+    if (d.status === 'done'){
+      clearInterval(statusTimer);
+      if (sse){ sse.close(); sse=null; }
+      setProg(100, 'done'); setLabel('Done! ✓');
+      showResults(jid, d);
+    } else if (d.status === 'error'){
+      clearInterval(statusTimer);
+      if (sse){ sse.close(); sse=null; }
+      setProg(100, 'error'); setLabel('Error: '+(d.detail||'?'));
+      addLog('ERROR: '+(d.detail||'?'));
+    }
+  } catch(e) { addLog('Poll error: '+e.message); }
 }
 
-function renderStreamPhysics(p) {
-  const msg = p.message || {};
-  const card = document.getElementById('phys-card');
-  card.style.display = 'block';
-  card.scrollIntoView({ behavior:'smooth', block:'start' });
-  document.getElementById('phys-msg').textContent = msg.message || '';
-  const disp = msg.display || {};
-  const labels = {rotation_deg:'Rotation',force_N:'Force',power_W:'Power',work_J:'Work',planck_freq_Hz:'Planck Hz'};
-  const colors = {rotation_deg:'#00ffb4',force_N:'#ff8800',power_W:'#44aaff',work_J:'#ffcc00',planck_freq_Hz:'#f44'};
-  document.getElementById('phys-display').innerHTML = Object.entries(disp).map(([k,v]) =>
-    `<div style="background:#0f1f12;border:1px solid #1a3a20;border-radius:7px;padding:.5rem .8rem;text-align:center;flex:1;min-width:90px">
-      <div style="font-size:1rem;font-weight:700;color:${colors[k]||'#00ffb4'}">${v}</div>
-      <div style="font-size:.62rem;color:#555;margin-top:1px">${labels[k]||k}</div>
-    </div>`).join('');
-  if (msg.t_lajtner_s != null) {
-    const lEl = document.getElementById('phys-lajtner');
-    lEl.style.display = 'block';
-    lEl.innerHTML = 't_Lajtner: <span style="color:#ccc">'+msg.t_lajtner_s+'s</span>'
-      +' &nbsp; a_Lajtner: <span style="color:#ccc">'+(msg.a_lajtner||'—')+'</span>';
-  }
-  if (msg.rank_message) {
-    const c = msg.rank_medal==='gold'?'#ff8800':msg.rank_medal==='silver'?'#44aaff':'#cc6633';
-    document.getElementById('phys-rank').innerHTML =
-      `<div style="border-left:3px solid ${c};padding:.4rem .7rem;font-size:.82rem;color:${c}">${msg.rank_message}</div>`;
-  }
-  const result = p.result || {};
-  const VARS=['t_total','phi_total','omega_max','J','M_res','M_motor_accel','M_motor_const',
-    'M_avg_active','F_const','F_accel','F_avg_active','F_max','E_kin_max','E_kin_const',
-    'E_kin_avg_active','P_peak','P_const','P_avg','W_total','L_ang'];
-  const UNITS={t_total:'s',phi_total:'rad',omega_max:'rad/s',J:'kgm2',M_res:'Nm',
-    M_motor_accel:'Nm',M_motor_const:'Nm',M_avg_active:'Nm',F_const:'N',F_accel:'N',
-    F_avg_active:'N',F_max:'N',E_kin_max:'J',E_kin_const:'J',E_kin_avg_active:'J',
-    P_peak:'W',P_const:'W',P_avg:'W',W_total:'J',L_ang:'kgm2/s'};
-  const SI=[[1e24,'Y'],[1e21,'Z'],[1e18,'E'],[1e15,'P'],[1e12,'T'],[1e9,'G'],
-    [1e6,'M'],[1e3,'k'],[1,''],[1e-3,'m'],[1e-6,'\u00b5'],[1e-9,'n'],[1e-12,'p'],[1e-15,'f']];
-  function fSI(v,u){
-    if(v==null)return'—';if(v===0)return'0 '+u;const a=Math.abs(v);
-    for(const[f,px]of SI)if(a>=f)return(v/f).toFixed(3)+' '+px+u;
-    return v.toExponential(2)+' '+u;
-  }
-  if(result.ideal||result.air)
-    document.getElementById('phys-tb').innerHTML = VARS.map((v,i)=>`<tr>
-      <td style="color:#333;padding:.18rem .35rem">${i+1}</td>
-      <td style="padding:.18rem .35rem">${v}</td>
-      <td style="color:#333;padding:.18rem .35rem">${UNITS[v]}</td>
-      <td style="color:#44aaff;padding:.18rem .35rem">${fSI(result.ideal?.[v],UNITS[v])}</td>
-      <td style="color:#00ffb4;padding:.18rem .35rem">${fSI(result.air?.[v],UNITS[v])}</td>
-      <td style="color:#00bcd4;padding:.18rem .35rem">${fSI(result.water?.[v],UNITS[v])}</td>
-    </tr>`).join('');
-}
-function togglePhysTable() {
-  const wrap=document.getElementById('phys-tbl-wrap');
-  const vis=wrap.style.display==='block';
-  wrap.style.display=vis?'none':'block';
-  document.getElementById('phys-tbl-btn').textContent=vis?'Show 20 variables':'Hide table';
-}
-
-/* ── Test panel ── */
-let testWs=null,testVidEl=null,testSendLoop=null;
-let testWaitingReply=false,testCanvas2d=null;
-
-function testBase() { return location.origin; }
-
-async function testHealth() {
-  try {
-    const r=await fetch(testBase()+'/health');
-    const d=await r.json(); addTestLog('Health OK: '+JSON.stringify(d));
-  } catch(e) { addTestLog('Health error: '+e.message); }
-}
-
-function startTestStream() {
-  const f=document.getElementById('test-file').files[0];
-  if (!f) { addTestLog('Select a video file first'); return; }
-  testVidEl=document.createElement('video');
-  testVidEl.src=URL.createObjectURL(f);
-  testVidEl.muted=true; testVidEl.playsInline=true;
-  testVidEl.addEventListener('loadedmetadata',()=>{
-    testVidW=testVidEl.videoWidth||640; testVidH=testVidEl.videoHeight||480;
-    addTestLog('Video: '+testVidW+'x'+testVidH+' dur='+testVidEl.duration.toFixed(1)+'s');
-    connectTestWs();
-  });
-}
-
-function connectTestWs() {
-  const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const url = wsProto + '://' + location.host + '/stream';
-  addTestLog('Connecting WS: '+url);
-  testWs=new WebSocket(url);
-  testWs.onopen=()=>{
-    addTestLog('WS connected');
-    document.getElementById('test-btn-start').disabled=true;
-    document.getElementById('test-btn-stop').disabled=false;
-    document.getElementById('test-job').textContent='WS stream active';
-    const fps=+document.getElementById('test-fps').value||10;
-    const frameInterval=1000/fps;
-    testCanvas2d=document.createElement('canvas');
-
-    // Send frames continuously — no wait for reply
-    testSendLoop=setInterval(()=>{
-      if (!testWs||testWs.readyState!==WebSocket.OPEN) return;
-      if (!testVidEl||testVidEl.paused||testVidEl.ended) return;
-      testCanvas2d.width=testVidEl.videoWidth||640;
-      testCanvas2d.height=testVidEl.videoHeight||480;
-      testCanvas2d.getContext('2d').drawImage(testVidEl,0,0);
-      testCanvas2d.toBlob(b=>{
-        if (!b||!testWs||testWs.readyState!==WebSocket.OPEN) return;
-        b.arrayBuffer().then(buf=>testWs.send(buf));
-      },'image/jpeg',0.75);
-    },frameInterval);
-    testVidEl.play();
-  };
-  testWs.onmessage=e=>{
+// ── SSE for processing overlay (same as upload) ────────────────────────────
+function startSSE(job_id){
+  if (sse) sse.close();
+  sse = new EventSource('/frames/'+job_id);
+  sse.onmessage = e => {
     try {
-      const d=JSON.parse(e.data);
-      if (d.error){addTestLog('Server: '+d.error);return;}
-      if (d.type==='init'){addTestLog('Job: '+d.job_id);return;}
-      document.getElementById('t-ang').textContent=d.rotation_deg!=null?d.rotation_deg.toFixed(1)+'°':'—';
-      document.getElementById('t-cum').textContent=((d.cumulative_deg||0)>=0?'+':'')+(d.cumulative_deg||0).toFixed(1)+'°';
-      document.getElementById('t-vel').textContent=d.angular_vel_dps!=null?d.angular_vel_dps.toFixed(1):'—';
-      document.getElementById('t-conf').textContent=(d.confidence_pct||0)+'%';
-      drawTestCanvas(d,testCanvas2d);
-      updateDisplay(d);
-    } catch(ex){addTestLog('Parse error: '+ex.message);}
+      const d = JSON.parse(e.data);
+      if (d.done){ sse.close(); sse=null; return; }
+      if (d.error || d.t_sec===undefined) return;
+      if (d.vid_w) vidW=d.vid_w;
+      if (d.vid_h) vidH=d.vid_h;
+      if (d.total_sec) totalSec=d.total_sec;
+      if (d.no_ground){ showHintProc('Place wheel in frame, camera above'); return; }
+      drawOverlay(d, d.no_orange ? 'Orange marker not found' : null);
+      const pct=d.pct||0;
+      setProg(40+Math.round(pct*0.6), 'processing');
+      setLabel('Detecting... '+pct+'%');
+      document.getElementById('live-time').textContent = d.t_sec.toFixed(2)+'s / '+totalSec.toFixed(1)+'s';
+      document.getElementById('lv-ang').textContent = d.rotation_deg!=null ? d.rotation_deg.toFixed(1)+'°' : '---';
+      document.getElementById('lv-cum').textContent = (d.cumulative_deg>=0?'+':'')+d.cumulative_deg.toFixed(1)+'°';
+      document.getElementById('lv-vel').textContent = d.angular_vel_dps!=null ? d.angular_vel_dps.toFixed(1) : '---';
+      document.getElementById('lv-conf').textContent = (d.confidence_pct||0)+'%';
+      document.getElementById('lv-src').textContent = d.hub_source ? 'hub: '+d.hub_source : '';
+    } catch(ex){}
   };
-  testWs.onclose=()=>{addTestLog('WS closed');stopTestStream();};
-  testWs.onerror=()=>{addTestLog('WS error');stopTestStream();};
+  sse.onerror = () => { if (sse){ sse.close(); sse=null; } };
 }
 
-function stopTestStream() {
-  if (testSendLoop) clearInterval(testSendLoop);
-  if (testWs) testWs.close();
-  if (testVidEl){testVidEl.pause();testVidEl.src='';}
-  testWs=testVidEl=testSendLoop=testCanvas2d=null; testWaitingReply=false;
-  document.getElementById('test-btn-start').disabled=false;
-  document.getElementById('test-btn-stop').disabled=true;
-  document.getElementById('test-job').textContent='stopped';
-  addTestLog('Test stream stopped');
+function showHintProc(msg){
+  const cvs=document.getElementById('overlay');
+  if (!cvs.width) return;
+  const ctx=cvs.getContext('2d'), w=cvs.width, h=cvs.height;
+  ctx.clearRect(0,0,w,h);
+  const cx=w/2, cy=h/2, fs=Math.max(14,w/28);
+  ctx.fillStyle='rgba(0,0,0,0.45)'; ctx.fillRect(0,0,w,h);
+  ctx.font=`bold ${fs}px system-ui`;
+  const tw=ctx.measureText(msg).width, pw=tw+40, ph=fs*2.4;
+  ctx.fillStyle='rgba(0,0,0,0.7)';
+  ctx.beginPath(); ctx.roundRect(cx-pw/2,cy-ph/2,pw,ph,8); ctx.fill();
+  ctx.strokeStyle='rgba(0,220,220,0.8)'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.roundRect(cx-pw/2,cy-ph/2,pw,ph,8); ctx.stroke();
+  ctx.fillStyle='#00dcdc'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(msg,cx,cy);
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
 }
 
-function drawTestCanvas(d,src) {
-  const cvs=document.getElementById('test-canvas');
-  const wrap=cvs.parentElement;
-  const dw=wrap.clientWidth||300;
-  const vw=d.vid_w||testVidW||640,vh=d.vid_h||testVidH||480;
-  const dh=Math.round(dw*vh/vw);
-  if (cvs.width!==dw||cvs.height!==dh){cvs.width=dw;cvs.height=dh;}
+function drawOverlay(d, hint){
+  const cvs=document.getElementById('overlay');
+  const wrap=document.getElementById('canvas-wrap');
+  const vid=document.getElementById('vid');
+  const dw=wrap.clientWidth||480;
+  const dh=vid.videoHeight>0 ? Math.round(dw*vid.videoHeight/vid.videoWidth) : Math.round(dw*9/16);
+  if (cvs.width!==dw||cvs.height!==dh){ cvs.width=dw; cvs.height=dh; }
   const ctx=cvs.getContext('2d');
   ctx.clearRect(0,0,dw,dh);
-  if (src&&(src.tagName==='CANVAS'||(src.tagName==='VIDEO'&&src.readyState>=2))) {
-    try{ctx.drawImage(src,0,0,dw,dh);}catch(e){ctx.fillStyle='#111';ctx.fillRect(0,0,dw,dh);}
-  } else {ctx.fillStyle='#111';ctx.fillRect(0,0,dw,dh);}
-  const sx=dw/vw,sy=dh/vh;
-  if (d.no_ground) { _drawHint(ctx,dw,dh,'Place wheel in frame, camera above'); return; }
-  if (d.no_orange) { _drawHint(ctx,dw,dh,'Orange marker not found'); }
-  const hub=d.hub_px||d.hub;
-  if (hub){
-    const hx=hub[0]*sx,hy=hub[1]*sy;
-    ctx.beginPath();ctx.arc(hx,hy,8,0,Math.PI*2);
-    ctx.fillStyle='rgba(255,255,255,0.9)';ctx.fill();
-    ctx.strokeStyle='#000';ctx.lineWidth=1.5;ctx.stroke();
+  if (!vidW||!vidH) return;
+  const sx=dw/vidW, sy=dh/vidH;
+  if (d.hub){
+    const hx=d.hub[0]*sx, hy=d.hub[1]*sy;
+    ctx.beginPath(); ctx.arc(hx,hy,8,0,Math.PI*2);
+    ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.fill();
+    ctx.strokeStyle='#000'; ctx.lineWidth=1.5; ctx.stroke();
     if (d.orange){
-      const ox=d.orange[0]*sx,oy=d.orange[1]*sy;
-      ctx.beginPath();ctx.moveTo(hx,hy);ctx.lineTo(ox,oy);
-      ctx.strokeStyle='rgba(0,255,180,0.7)';ctx.lineWidth=2;
-      ctx.setLineDash([6,4]);ctx.stroke();ctx.setLineDash([]);
+      const ox=d.orange[0]*sx, oy=d.orange[1]*sy;
+      ctx.beginPath(); ctx.moveTo(hx,hy); ctx.lineTo(ox,oy);
+      ctx.strokeStyle='rgba(0,255,136,0.7)'; ctx.lineWidth=2;
+      ctx.setLineDash([6,4]); ctx.stroke(); ctx.setLineDash([]);
     }
   }
   if (d.orange){
-    const ox=d.orange[0]*sx,oy=d.orange[1]*sy;
-    const r = 10;
+    const ox=d.orange[0]*sx, oy=d.orange[1]*sy, r=10;
     ctx.beginPath(); ctx.arc(ox,oy,r+2,0,Math.PI*2);
     ctx.fillStyle='rgba(0,40,100,0.7)'; ctx.fill();
     ctx.beginPath(); ctx.arc(ox,oy,r,0,Math.PI*2);
@@ -700,27 +556,313 @@ function drawTestCanvas(d,src) {
     ctx.font='11px system-ui'; ctx.fillStyle='#ff6600';
     ctx.fillText('ORA',ox+r+4,oy+4);
   }
-  if (d.ground){
-    const [gx,gy,gw,gh]=d.ground;
-    ctx.strokeStyle='rgba(0,200,200,0.6)';ctx.lineWidth=1.5;
-    ctx.strokeRect((gx-gw/2)*sx,(gy-gh/2)*sy,gw*sx,gh*sy);
+  if (hint){
+    const hcx=dw/2, hcy=dh*0.85, fs=Math.max(13,dw/36);
+    ctx.font=`bold ${fs}px system-ui`;
+    const tw=ctx.measureText(hint).width, pw=tw+32, ph=fs*2.2;
+    ctx.fillStyle='rgba(0,0,0,0.65)';
+    ctx.beginPath(); ctx.roundRect(hcx-pw/2,hcy-ph/2,pw,ph,7); ctx.fill();
+    ctx.strokeStyle='rgba(255,180,0,0.8)'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.roundRect(hcx-pw/2,hcy-ph/2,pw,ph,7); ctx.stroke();
+    ctx.fillStyle='#ffcc00'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(hint,hcx,hcy);
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
   }
   if (d.rotation_deg!=null){
     const ang=d.rotation_deg.toFixed(1)+'°';
-    const cum=((d.cumulative_deg||0)>=0?'+':'')+(d.cumulative_deg||0).toFixed(1)+'°';
-    ctx.font='bold 14px system-ui';
-    const bw=Math.max(ctx.measureText(ang).width,ctx.measureText(cum).width)+16;
-    ctx.fillStyle='rgba(0,0,0,0.65)';
-    ctx.beginPath();ctx.roundRect(5,5,bw,48,5);ctx.fill();
-    ctx.fillStyle='#ffcc00';ctx.fillText(ang,11,23);
-    ctx.fillStyle='#00ffb4';ctx.fillText(cum,11,44);
+    const cum=(d.cumulative_deg>=0?'+':'')+d.cumulative_deg.toFixed(1)+'°';
+    ctx.font='bold 15px system-ui';
+    const bw=Math.max(ctx.measureText(ang).width,ctx.measureText(cum).width)+18;
+    ctx.fillStyle='rgba(0,0,0,0.6)';
+    ctx.beginPath(); ctx.roundRect(6,6,bw,52,6); ctx.fill();
+    ctx.fillStyle='#ffcc00'; ctx.fillText(ang,13,26);
+    ctx.fillStyle='#00ff88'; ctx.fillText(cum,13,48);
   }
-  ctx.font='11px system-ui';ctx.fillStyle='rgba(255,255,255,0.6)';
-  ctx.textAlign='right';ctx.fillText('f:'+d.frame,dw-6,18);ctx.textAlign='left';
-  const conf=d.confidence_pct||0;
-  ctx.fillStyle='rgba(0,0,0,0.3)';ctx.fillRect(0,dh-5,dw,5);
-  ctx.fillStyle=conf>=80?'#00ffb4':conf>=50?'#ff0':'#f44';
-  ctx.fillRect(0,dh-5,Math.round(dw*conf/100),5);
+  const conf=d.confidence_pct||0, bH=5, bY=dh-bH-1;
+  ctx.fillStyle='rgba(0,0,0,0.3)'; ctx.fillRect(0,bY,dw,bH);
+  ctx.fillStyle=conf>=80?'#00ff88':conf>=50?'#ffcc00':'#f44';
+  ctx.fillRect(0,bY,Math.round(dw*conf/100),bH);
+}
+
+// ── Results (same as upload) ───────────────────────────────────────────────
+async function showResults(jid, info){
+  const samples = await(await fetch('/results/'+jid)).json();
+  addLog('Loaded '+samples.length+' samples');
+  try {
+    const pr = await(await fetch('/physics/'+jid)).json();
+    if (pr && pr.message) renderPhysics(pr.message);
+  } catch(e) { addLog('Physics: '+e.message); }
+  document.getElementById('res').style.display = 'block';
+  if (samples.length){
+    const last=samples[samples.length-1];
+    const maxC=Math.max(...samples.map(s=>Math.abs(+s.cumulative_deg)));
+    const avgS=Math.round(samples.reduce((a,s)=>a+(+s.confidence_pct),0)/samples.length);
+    document.getElementById('mets').innerHTML=`
+      <div class="met"><span class="v">${samples.length}</span><span class="l">Samples</span></div>
+      <div class="met"><span class="v">${(+last.timestamp_sec).toFixed(1)}s</span><span class="l">Duration</span></div>
+      <div class="met"><span class="v">${maxC.toFixed(1)}°</span><span class="l">Max rotation</span></div>
+      <div class="met"><span class="v">${(+last.cumulative_deg).toFixed(1)}°</span><span class="l">Final angle</span></div>
+      <div class="met"><span class="v">${avgS}%</span><span class="l">Avg significance</span></div>`;
+  }
+  document.getElementById('acts').innerHTML=`
+    <a href="/download/${jid}"><button>↓ Download video</button></a>
+    <a href="/csv/${jid}"><button class="sec">↓ Download CSV</button></a>`;
+  drawChart(samples);
+  const tb=document.getElementById('tb'); tb.innerHTML='';
+  samples.forEach(s=>{
+    const bw=Math.round((+s.confidence_pct)*55/100);
+    const src=s.source||'';
+    const tag=src&&src!=='-'?`<span class="tag tg">${src}</span>`:'<span class="tag tn">-</span>';
+    tb.innerHTML+=`<tr>
+      <td>${(+s.timestamp_sec).toFixed(2)}</td>
+      <td>${s.rotation_deg!=null?(+s.rotation_deg).toFixed(1):'--'}</td>
+      <td>${s.rotation_rad!=null?(+s.rotation_rad).toFixed(4):'--'}</td>
+      <td>${(+s.cumulative_deg).toFixed(1)}</td>
+      <td>${s.angular_vel_dps!=null?(+s.angular_vel_dps).toFixed(1):'--'}</td>
+      <td>${s.confidence_pct}</td>
+      <td><span class="cb" style="width:${bw}px"></span></td>
+      <td>${tag}</td></tr>`;
+  });
+}
+
+function renderPhysics(msg){
+  if (!msg) return;
+  document.getElementById('phys-card').style.display = 'block';
+  document.getElementById('phys-msg').textContent = msg.message || '';
+  if (msg.warning){
+    const w=document.getElementById('phys-warn');
+    w.style.display='block'; w.textContent=msg.warning;
+  }
+  const disp=msg.display||{};
+  const labels={rotation_deg:['Rotation',''],force_N:['Force',''],power_W:['Power','amber'],work_J:['Work','blue'],planck_freq_Hz:['Planck freq','yellow']};
+  document.getElementById('phys-display').innerHTML=Object.entries(disp).map(([k,v])=>{
+    const [lbl,cls]=labels[k]||[k,''];
+    return `<div class="phys-val ${cls}"><div class="pv">${v}</div><div class="pl">${lbl}</div></div>`;
+  }).join('');
+  if (msg.t_lajtner_s!=null){
+    const lEl=document.getElementById('phys-lajtner');
+    lEl.style.display='block';
+    lEl.innerHTML='t_Lajtner: <span>'+msg.t_lajtner_s+'s</span> &nbsp; a_Lajtner: <span>'+(msg.a_lajtner||'—')+'</span>';
+  }
+  if (msg.rank_message){
+    const cls=msg.rank_medal==='gold'?'rank-gold':msg.rank_medal==='silver'?'rank-silver':'rank-bronze';
+    document.getElementById('phys-rank').innerHTML=`<div class="rank-box ${cls}">${msg.rank_message}</div>`;
+  }
+  fetchPhysicsTable(jid);
+}
+
+async function fetchPhysicsTable(job_id){
+  try {
+    const pr=await(await fetch('/physics/'+job_id)).json();
+    const result=pr.result||{};
+    if (!result||!result.ideal) return;
+    const VARS=[['t_total','s'],['phi_total','rad'],['omega_max','rad/s'],['J','kgm2'],
+      ['M_res','Nm'],['M_motor_accel','Nm'],['M_motor_const','Nm'],['M_avg_active','Nm'],
+      ['F_const','N'],['F_accel','N'],['F_avg_active','N'],['F_max','N'],
+      ['E_kin_max','J'],['E_kin_const','J'],['E_kin_avg_active','J'],
+      ['P_peak','W'],['P_const','W'],['P_avg','W'],['W_total','J'],['L_ang','kgm2/s']];
+    document.getElementById('phys-tb').innerHTML=VARS.map(([v,u],i)=>`<tr>
+      <td style="color:#333">${i+1}</td><td>${v}</td><td style="color:#333">${u}</td>
+      <td class="ideal">${result.ideal?.[v]!=null?fSI(result.ideal[v],u):'—'}</td>
+      <td class="air">${result.air?.[v]!=null?fSI(result.air[v],u):'—'}</td>
+      <td class="water">${result.water?.[v]!=null?fSI(result.water[v],u):'—'}</td>
+    </tr>`).join('');
+  } catch(e){}
+}
+
+function togglePhysTable(){
+  const wrap=document.getElementById('phys-tbl-wrap');
+  const btn=document.getElementById('phys-tbl-btn');
+  const vis=wrap.style.display==='block';
+  wrap.style.display=vis?'none':'block';
+  btn.textContent=vis?'Show 20 variables':'Hide table';
+}
+
+const _SI=[[1e12,'T'],[1e9,'G'],[1e6,'M'],[1e3,'k'],[1,''],
+  [1e-3,'m'],[1e-6,'\u00b5'],[1e-9,'n'],[1e-12,'p'],[1e-15,'f']];
+function fSI(v,u,d=3){
+  if (v===0||v==null) return '0';
+  const a=Math.abs(v);
+  for (const[f,p] of _SI) if (a>=f) return (v/f).toFixed(d)+' '+p+u;
+  return v.toExponential(2)+' '+u;
+}
+
+function drawChart(s){
+  const c=document.getElementById('chart');
+  c.width=c.offsetWidth||800; c.height=200;
+  const ctx=c.getContext('2d'),W=c.width,H=c.height;
+  ctx.fillStyle='#0a0a0a'; ctx.fillRect(0,0,W,H);
+  if (s.length<2) return;
+  const pad={l:48,r:12,t:14,b:24},cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
+  const ts=s.map(x=>+x.timestamp_sec),cs=s.map(x=>+x.cumulative_deg),qs=s.map(x=>+x.confidence_pct);
+  const tMin=Math.min(...ts),tMax=Math.max(...ts)||1,vMin=Math.min(...cs,0),vMax=Math.max(...cs,1),vR=vMax-vMin||1;
+  const tx=t=>pad.l+(t-tMin)/(tMax-tMin)*cW, ty=v=>pad.t+(1-(v-vMin)/vR)*cH;
+  ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=1;
+  [0,.25,.5,.75,1].forEach(f=>{
+    const y=pad.t+f*cH,v=vMax-f*vR;
+    ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();
+    ctx.fillStyle='#444';ctx.font='9px system-ui';ctx.fillText(v.toFixed(0)+'°',2,y+3);
+  });
+  ctx.strokeStyle='#00ff88'; ctx.lineWidth=2; ctx.beginPath();
+  s.forEach((x,i)=>i===0?ctx.moveTo(tx(ts[i]),ty(cs[i])):ctx.lineTo(tx(ts[i]),ty(cs[i])));
+  ctx.stroke();
+  s.forEach((x,i)=>{
+    ctx.fillStyle=qs[i]===100?'#00ff88':qs[i]>=70?'#ff0':'#f44';
+    ctx.beginPath();ctx.arc(tx(ts[i]),ty(cs[i]),2.2,0,Math.PI*2);ctx.fill();
+  });
+  ctx.fillStyle='#00ff88';ctx.font='10px system-ui';
+  ctx.fillText('cumulative rotation (deg)',pad.l+4,pad.t+12);
+}
+</script>
+
+<!-- Test panel -->
+<div class="card">
+  <h2>Test — upload video file</h2>
+  <div class="row" style="margin-bottom:.6rem">
+    <div style="flex:2">
+      <label>Video file</label>
+      <input type="file" id="test-file" accept="video/*"
+             style="width:100%;background:#1e1e1e;border:1px solid #2e2e2e;border-radius:6px;
+                    padding:.45rem .65rem;color:#ccc;font-size:.88rem">
+    </div>
+    <div style="display:flex;align-items:flex-end;gap:.5rem">
+      <button onclick="startTestStream()" id="test-btn-start">▶ Send</button>
+      <button onclick="stopTestStream()" id="test-btn-stop" class="stop" disabled>■ Stop</button>
+    </div>
+  </div>
+  <div id="test-job" style="font-size:.75rem;color:#555;margin-bottom:.4rem">—</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.6rem">
+    <div class="live-box"><div class="lv" id="t-ang">—</div><div class="ll">angle</div></div>
+    <div class="live-box ora"><div class="lv" id="t-cum">—</div><div class="ll">total</div></div>
+    <div class="live-box vel"><div class="lv" id="t-vel">—</div><div class="ll">vel °/s</div></div>
+    <div class="live-box sig"><div class="lv" id="t-conf">—</div><div class="ll">confidence</div></div>
+  </div>
+  <canvas id="test-canvas" style="display:block;width:100%;border-radius:8px;background:#111;margin-top:4px"></canvas>
+  <pre id="test-log" style="font-family:monospace;font-size:.72rem;color:#555;
+       margin-top:6px;max-height:100px;overflow-y:auto;line-height:1.5;
+       background:#0a0a0a;border-radius:8px;padding:.5rem;border:1px solid #1e1e1e"></pre>
+</div>
+
+<script>
+/* ── Test panel — same logic as camera: record then process ── */
+let testWs=null, testVidEl=null, testSendLoop=null;
+let testWaiting=false, testCanvas2d=null;
+let testJobId=null, testStatusTimer=null, testSse=null;
+
+function addTestLog(m){
+  const e=document.getElementById('test-log');
+  e.textContent+=m+'\n'; e.scrollTop=e.scrollHeight;
+}
+
+function startTestStream(){
+  const f=document.getElementById('test-file').files[0];
+  if(!f){addTestLog('Select a video file first');return;}
+  testVidEl=document.createElement('video');
+  testVidEl.src=URL.createObjectURL(f);
+  testVidEl.muted=true; testVidEl.playsInline=true;
+  testVidEl.addEventListener('loadedmetadata',()=>{
+    addTestLog('Video: '+testVidEl.videoWidth+'x'+testVidEl.videoHeight
+               +' dur='+testVidEl.duration.toFixed(1)+'s');
+    connectTestWs();
+  });
+}
+
+function connectTestWs(){
+  const wsProto=location.protocol==='https:'?'wss':'ws';
+  const eml=encodeURIComponent(document.getElementById('cam-email').value||'');
+  const med=document.getElementById('cam-medium').value;
+  const ver=document.getElementById('cam-version').value;
+  const lng=document.getElementById('cam-lang').value;
+  testWs=new WebSocket(wsProto+'://'+location.host+'/stream?email='+eml+'&medium='+med+'&version='+ver+'&lang='+lng);
+  testWs.onopen=()=>{
+    addTestLog('Recording...');
+    document.getElementById('test-btn-start').disabled=true;
+    document.getElementById('test-btn-stop').disabled=false;
+    document.getElementById('test-job').textContent='Recording...';
+    testCanvas2d=document.createElement('canvas');
+    testWaiting=false;
+    testSendLoop=setInterval(()=>{
+      if(!testWs||testWs.readyState!==WebSocket.OPEN||testWaiting) return;
+      if(!testVidEl||testVidEl.paused||testVidEl.ended) return;
+      const SEND_MAX=640;
+      const vw=testVidEl.videoWidth||640, vh=testVidEl.videoHeight||480;
+      const scale=vw>SEND_MAX?SEND_MAX/vw:1;
+      const sw=Math.round(vw*scale), sh=Math.round(vh*scale);
+      testCanvas2d.width=sw; testCanvas2d.height=sh;
+      testCanvas2d.getContext('2d').drawImage(testVidEl,0,0,sw,sh);
+      testCanvas2d.toBlob(b=>{
+        if(!b||!testWs||testWs.readyState!==WebSocket.OPEN) return;
+        b.arrayBuffer().then(buf=>{testWs.send(buf); testWaiting=true;});
+      },'image/jpeg',0.7);
+    },200);
+    testVidEl.play();
+  };
+  testWs.onmessage=e=>{
+    try{
+      const d=JSON.parse(e.data);
+      testWaiting=false;
+      if(d.type==='init'){testJobId=d.job_id; addTestLog('Job: '+d.job_id);}
+    }catch(ex){testWaiting=false;}
+  };
+  testWs.onclose=()=>{};
+  testWs.onerror=()=>{addTestLog('WS error'); stopTestStream();};
+}
+
+function stopTestStream(){
+  if(testSendLoop) clearInterval(testSendLoop);
+  if(testWs) testWs.close();
+  if(testVidEl){testVidEl.pause(); testVidEl.src='';}
+  testWs=testVidEl=testSendLoop=testCanvas2d=null; testWaiting=false;
+  document.getElementById('test-btn-start').disabled=false;
+  document.getElementById('test-btn-stop').disabled=true;
+
+  if(testJobId){
+    const id=testJobId; testJobId=null;
+    addTestLog('Processing...');
+    document.getElementById('test-job').dataset.jid=id;
+    document.getElementById('test-job').textContent='Processing...';
+    testStatusTimer=setInterval(pollTestStatus, 2000);
+    startTestSse(id);
+  }
+}
+
+async function pollTestStatus(){
+  const id=document.getElementById('test-job').dataset.jid;
+  if(!id) return;
+  try{
+    const d=await(await fetch('/status/'+id)).json();
+    if(d.status==='done'){
+      clearInterval(testStatusTimer);
+      if(testSse){testSse.close(); testSse=null;}
+      document.getElementById('test-job').innerHTML=
+        'Done! <a href="/download/'+id+'" style="color:#00ff88">\u2193 Download video</a>'
+        +' &nbsp; <a href="/csv/'+id+'" style="color:#888">\u2193 CSV</a>';
+    } else if(d.status==='error'){
+      clearInterval(testStatusTimer);
+      if(testSse){testSse.close(); testSse=null;}
+      addTestLog('Error: '+(d.detail||'?'));
+    } else {
+      document.getElementById('test-job').textContent=d.status+'...';
+    }
+  }catch(e){}
+}
+
+function startTestSse(job_id){
+  if(testSse) testSse.close();
+  testSse=new EventSource('/frames/'+job_id);
+  testSse.onmessage=e=>{
+    try{
+      const d=JSON.parse(e.data);
+      if(d.done){testSse.close(); testSse=null; return;}
+      if(d.error||d.t_sec===undefined) return;
+      document.getElementById('t-ang').textContent=d.rotation_deg!=null?d.rotation_deg.toFixed(1)+'\u00b0':'\u2014';
+      const cum=d.cumulative_deg||0;
+      document.getElementById('t-cum').textContent=(cum>=0?'+':'')+cum.toFixed(1)+'\u00b0';
+      document.getElementById('t-vel').textContent=d.angular_vel_dps!=null?d.angular_vel_dps.toFixed(1):'\u2014';
+      document.getElementById('t-conf').textContent=(d.confidence_pct||0)+'%';
+    }catch(ex){}
+  };
+  testSse.onerror=()=>{if(testSse){testSse.close(); testSse=null;}};
 }
 </script>
 </body>

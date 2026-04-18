@@ -108,6 +108,25 @@ def finish_job(job_id: str, sample_count: int, duration_sec: float) -> None:
             log.error(f"[DB] finish_job: {e}")
 
 
+def get_all_jobs(email_filter: str = "", limit: int = 200) -> list:
+    """Return all jobs from Supabase, newest first."""
+    sb = _sb()
+    if not sb:
+        return []
+    try:
+        q = sb.table(TABLE_JOBS).select(
+            "id,user_email,source_type,medium,direction,status,"
+            "sample_count,duration_sec,created_at,finished_at"
+        ).order("created_at", desc=True).limit(limit)
+        if email_filter:
+            q = q.ilike("user_email", f"%{email_filter}%")
+        resp = q.execute()
+        return resp.data or []
+    except Exception as e:
+        log.warning(f"[DB] get_all_jobs: {e}")
+        return []
+
+
 # ── Sample helpers ─────────────────────────────────────────────────────────
 
 CSV_FIELDS = [

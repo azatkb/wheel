@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wheel Tracker — History</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0d0d0d;
+      color: #e0e0e0;
+      padding: 1.5rem;
+      max-width: 1100px;
+      margin: 0 auto
+    }
+
+    nav {
+      margin-bottom: 1.5rem
+    }
+
+    nav a {
+      color: #00ff88;
+      margin-right: 1.5rem;
+      font-size: .9rem;
+      text-decoration: none
+    }
+
+    nav a:hover {
+      text-decoration: underline
+    }
+
+    h1 {
+      color: #00ff88;
+      font-size: 1.6rem;
+      margin-bottom: .25rem
+    }
+
+    .sub {
+      color: #555;
+      font-size: .85rem;
+      margin-bottom: 1.5rem
+    }
+
+    .card {
+      background: #161616;
+      border: 1px solid #252525;
+      border-radius: 12px;
+      padding: 1.4rem;
+      margin-bottom: 1rem
+    }
+
+    h2 {
+      color: #888;
+      font-size: .8rem;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      margin-bottom: 1rem
+    }
+
+    button {
+      background: #00ff88;
+      color: #000;
+      border: none;
+      border-radius: 8px;
+      padding: .45rem 1rem;
+      font-size: .85rem;
+      font-weight: 700;
+      cursor: pointer
+    }
+
+    button:hover {
+      background: #00d977
+    }
+
+    button.sec {
+      background: #252525;
+      color: #aaa
+    }
+
+    button.sec:hover {
+      background: #2e2e2e
+    }
+
+    input {
+      background: #1e1e1e;
+      border: 1px solid #2e2e2e;
+      border-radius: 6px;
+      padding: .45rem .65rem;
+      color: #ccc;
+      font-size: .88rem;
+      width: 100%
+    }
+
+    label {
+      display: block;
+      color: #888;
+      font-size: .75rem;
+      margin-bottom: .2rem
+    }
+
+    .filter-row {
+      display: flex;
+      gap: .6rem;
+      align-items: flex-end;
+      margin-bottom: 1rem;
+      flex-wrap: wrap
+    }
+
+    .filter-row>div {
+      flex: 1;
+      min-width: 160px
+    }
+
+    /* Track list */
+    .track-list {
+      display: flex;
+      flex-direction: column;
+      gap: .5rem
+    }
+
+    .track-item {
+      background: #0f0f0f;
+      border: 1px solid #1e1e1e;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: border-color .15s;
+      overflow: hidden
+    }
+
+    .track-item:hover {
+      border-color: #444
+    }
+
+    .track-item.expanded {
+      border-color: #00ff88
+    }
+
+    .track-header {
+      display: flex;
+      align-items: center;
+      gap: .8rem;
+      flex-wrap: wrap;
+      padding: .8rem 1rem
+    }
+
+    .track-status {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0
+    }
+
+    .st-done {
+      background: #00ff88
+    }
+
+    .st-error {
+      background: #f44
+    }
+
+    .st-processing,
+    .st-queued,
+    .st-streaming {
+      background: #ff8800;
+      animation: blink 1s infinite
+    }
+
+    @keyframes blink {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: .3
+      }
+    }
+
+    .track-date {
+      color: #555;
+      font-size: .75rem;
+      min-width: 130px
+    }
+
+    .track-email {
+      color: #aaa;
+      font-size: .82rem;
+      flex: 1;
+      min-width: 100px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    .track-src {
+      color: #555;
+      font-size: .72rem;
+      padding: .1rem .4rem;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px
+    }
+
+    .track-cum {
+      font-size: .95rem;
+      font-weight: 700;
+      color: #00ff88;
+      min-width: 80px;
+      text-align: right
+    }
+
+    .track-id {
+      color: #2a2a2a;
+      font-size: .65rem;
+      font-family: monospace;
+      padding: 0 1rem .4rem
+    }
+
+    /* Detail */
+    .track-detail {
+      display: none;
+      padding: 1rem;
+      border-top: 1px solid #1e1e1e;
+      background: #0a0a0a
+    }
+
+    .track-item.expanded .track-detail {
+      display: block
+    }
+
+    /* Physics — same as upload.html */
+    .phys-card {
+      background: #0d1a0f;
+      border: 1px solid #1a3a20;
+      border-radius: 10px;
+      padding: 1rem;
+      margin-bottom: .8rem
+    }
+
+    .phys-msg {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #00ff88;
+      margin-bottom: .6rem
+    }
+
+    .phys-warn {
+      background: #1a0a0a;
+      border: 1px solid #f44;
+      border-radius: 6px;
+      padding: .5rem .8rem;
+      color: #f44;
+      font-size: .8rem;
+      margin-bottom: .6rem
+    }
+
+    .phys-display {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+      margin-bottom: .7rem
+    }
+
+    .phys-val {
+      background: #0f1f12;
+      border: 1px solid #1a3a20;
+      border-radius: 7px;
+      padding: .5rem .8rem;
+      text-align: center;
+      flex: 1;
+      min-width: 100px
+    }
+
+    .phys-val .pv {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #00ff88;
+      font-variant-numeric: tabular-nums
+    }
+
+    .phys-val .pl {
+      font-size: .62rem;
+      color: #555;
+      margin-top: .1rem
+    }
+
+    .phys-val.amber .pv {
+      color: #ff8800
+    }
+
+    .phys-val.blue .pv {
+      color: #44aaff
+    }
+
+    .phys-val.yellow .pv {
+      color: #ffcc00
+    }
+
+    .phys-val.red .pv {
+      color: #f44
+    }
+
+    .phys-lajtner {
+      font-size: .78rem;
+      color: #555;
+      margin: .3rem 0 .6rem;
+      padding: .4rem .6rem;
+      background: #111;
+      border-radius: 5px
+    }
+
+    .phys-lajtner span {
+      color: #ccc
+    }
+
+    .rank-box {
+      border-radius: 7px;
+      padding: .5rem .8rem;
+      margin: .3rem 0;
+      font-size: .82rem
+    }
+
+    .rank-gold {
+      background: #1a1500;
+      border: 1px solid #ff8800;
+      color: #ff8800
+    }
+
+    .rank-silver {
+      background: #111520;
+      border: 1px solid #44aaff;
+      color: #44aaff
+    }
+
+    .rank-bronze {
+      background: #130d0a;
+      border: 1px solid #cc6633;
+      color: #cc6633
+    }
+
+    .phys-tbl-wrap {
+      max-height: 240px;
+      overflow-y: auto;
+      margin-top: .6rem
+    }
+
+    .phys-tbl {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .72rem
+    }
+
+    .phys-tbl th {
+      color: #555;
+      text-align: left;
+      padding: .2rem .35rem;
+      border-bottom: 1px solid #1e1e1e;
+      position: sticky;
+      top: 0;
+      background: #0d1a0f;
+      font-weight: 400
+    }
+
+    .phys-tbl td {
+      padding: .2rem .35rem;
+      border-bottom: 1px solid #141f16
+    }
+
+    .phys-tbl tr:hover td {
+      background: #0f2012
+    }
+
+    .phys-tbl .ideal {
+      color: #44aaff
+    }
+
+    .phys-tbl .air {
+      color: #00ff88
+    }
+
+    .phys-tbl .water {
+      color: #00bcd4
+    }
+
+    /* Metrics */
+    .metrics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+      margin-bottom: .8rem
+    }
+
+    .met {
+      background: #111;
+      border: 1px solid #1e1e1e;
+      border-radius: 7px;
+      padding: .5rem .8rem;
+      text-align: center;
+      min-width: 90px;
+      flex: 1
+    }
+
+    .met .v {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #00ff88;
+      display: block;
+      font-variant-numeric: tabular-nums
+    }
+
+    .met .l {
+      font-size: .65rem;
+      color: #555;
+      margin-top: .1rem
+    }
+
+    .acts {
+      display: flex;
+      gap: .5rem;
+      flex-wrap: wrap;
+      margin-top: .7rem
+    }
+
+    .acts a {
+      text-decoration: none
+    }
+
+    .empty {
+      color: #333;
+      text-align: center;
+      padding: 2rem;
+      font-size: .9rem
+    }
+
+    .pagination {
+      display: flex;
+      gap: .4rem;
+      justify-content: center;
+      margin-top: .8rem;
+      flex-wrap: wrap
+    }
+  </style>
+</head>
+
+<body>
+  <nav>
+    <a href="/">Upload</a>
+    <a href="/stream">Live stream</a>
+    <a href="/history">History</a>
+  </nav>
+  <h1>History</h1>
+  <p class="sub">All recorded tracks — click to expand</p>
+
+  <div class="card">
+    <div class="filter-row">
+      <div>
+        <label>Filter by email</label>
+        <input type="email" id="filter-email" placeholder="user@example.com" oninput="debounceLoad()">
+      </div>
+      <div style="flex:0">
+        <label>&nbsp;</label>
+        <button class="sec" onclick="document.getElementById('filter-email').value='';loadHistory()">Clear</button>
+      </div>
+    </div>
+    <div id="track-list" class="track-list">
+      <div class="empty">Loading...</div>
+    </div>
+    <div class="pagination" id="pagination"></div>
+  </div>
+
+  <script>
+    const PAGE = 20;
+    let allJobs = [], page = 0, debounceTimer = null;
+
+    function debounceLoad() {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(loadHistory, 400);
+    }
+
+    async function loadHistory() {
+      const em = document.getElementById('filter-email').value.trim();
+      try {
+        const url = '/api/jobs?limit=500' + (em ? '&email=' + encodeURIComponent(em) : '');
+        const r = await fetch(url);
+        const data = await r.json();
+        allJobs = data.jobs || [];
+        page = 0;
+        renderList();
+      } catch (e) {
+        document.getElementById('track-list').innerHTML =
+          '<div class="empty">Error: ' + e.message + '</div>';
+      }
+    }
+
+    function renderList() {
+      const list = document.getElementById('track-list');
+      if (!allJobs.length) {
+        list.innerHTML = '<div class="empty">No tracks found</div>';
+        document.getElementById('pagination').innerHTML = '';
+        return;
+      }
+      const start = page * PAGE, slice = allJobs.slice(start, start + PAGE);
+      list.innerHTML = slice.map(j => buildTrackHTML(j)).join('');
+
+      const pages = Math.ceil(allJobs.length / PAGE);
+      document.getElementById('pagination').innerHTML = pages <= 1 ? '' :
+        Array.from({ length: pages }, (_, i) =>
+          `<button class="${i === page ? '' : 'sec'}" onclick="goPage(${i})">${i + 1}</button>`
+        ).join('');
+    }
+
+    function goPage(p) { page = p; renderList(); window.scrollTo(0, 0); }
+
+    function buildTrackHTML(j) {
+      const stCls = 'st-' + (j.status || 'queued');
+      const date = j.created_at ? new Date(j.created_at).toLocaleString() : '—';
+      const email = j.user_email || '—';
+      const src = j.source_type || '—';
+      const dur = j.duration_sec ? j.duration_sec.toFixed(1) + 's' : '—';
+      const cnt = j.sample_count || 0;
+      return `<div class="track-item" id="ti-${j.id}" onclick="toggleDetail('${j.id}')">
+    <div class="track-header">
+      <span class="track-status ${stCls}"></span>
+      <span class="track-date">${date}</span>
+      <span class="track-email">${email}</span>
+      <span class="track-src">${src}</span>
+      <span style="color:#555;font-size:.75rem">${dur} · ${cnt} samples</span>
+    </div>
+    <div class="track-id">${j.id}</div>
+    <div class="track-detail" id="td-${j.id}"></div>
+  </div>`;
+    }
+
+    async function toggleDetail(id) {
+      const item = document.getElementById('ti-' + id);
+      const open = item.classList.contains('expanded');
+      document.querySelectorAll('.track-item.expanded').forEach(el => el.classList.remove('expanded'));
+      if (open) return;
+      item.classList.add('expanded');
+      const td = document.getElementById('td-' + id);
+      if (td.dataset.loaded) return;
+      td.innerHTML = '<div style="color:#555;padding:.5rem">Loading...</div>';
+      await renderDetail(id, td);
+      td.dataset.loaded = '1';
+    }
+
+    async function renderDetail(id, td) {
+      try {
+        // Fetch status + samples + physics in parallel
+        const [statusR, samplesR, physR] = await Promise.allSettled([
+          fetch('/status/' + id),
+          fetch('/results/' + id),
+          fetch('/physics/' + id),
+        ]);
+
+        const info = statusR.status === 'fulfilled' && statusR.value.ok
+          ? await statusR.value.json() : {};
+        const samples = samplesR.status === 'fulfilled' && samplesR.value.ok
+          ? await samplesR.value.json() : [];
+        const phys = physR.status === 'fulfilled' && physR.value.ok
+          ? await physR.value.json() : null;
+
+        let html = '';
+
+        // ── Metrics ──────────────────────────────────────────────────────────
+        if (samples.length) {
+          const last = samples[samples.length - 1];
+          const maxC = Math.max(...samples.map(s => Math.abs(+s.cumulative_deg)));
+          const avgS = Math.round(samples.reduce((a, s) => a + (+s.confidence_pct), 0) / samples.length);
+          html += `<div class="metrics">
+        <div class="met"><span class="v">${samples.length}</span><span class="l">Samples</span></div>
+        <div class="met"><span class="v">${(+last.timestamp_sec).toFixed(1)}s</span><span class="l">Duration</span></div>
+        <div class="met"><span class="v">${maxC.toFixed(1)}°</span><span class="l">Max rotation</span></div>
+        <div class="met"><span class="v">${(+last.cumulative_deg).toFixed(1)}°</span><span class="l">Final angle</span></div>
+        <div class="met"><span class="v">${avgS}%</span><span class="l">Avg significance</span></div>
+      </div>`;
+        }
+
+        // ── Physics ───────────────────────────────────────────────────────────
+        const msg = phys?.message || {};
+        const result = phys?.result || {};
+
+        if (msg.message || Object.keys(msg.display || {}).length) {
+          html += '<div class="phys-card">';
+          if (msg.message) html += `<div class="phys-msg">${msg.message}</div>`;
+          if (msg.warning) html += `<div class="phys-warn">${msg.warning}</div>`;
+
+          // Display values
+          const disp = msg.display || {};
+          const labels = {
+            rotation_deg: 'Rotation', force_N: 'Force', power_W: 'Power',
+            work_J: 'Work', planck_freq_Hz: 'Planck Hz'
+          };
+          const colors = {
+            rotation_deg: '', force_N: 'amber', power_W: 'blue',
+            work_J: 'yellow', planck_freq_Hz: 'red'
+          };
+          if (Object.keys(disp).length) {
+            html += '<div class="phys-display">';
+            for (const [k, v] of Object.entries(disp)) {
+              html += `<div class="phys-val ${colors[k] || ''}">
+            <div class="pv">${v}</div>
+            <div class="pl">${labels[k] || k}</div></div>`;
+            }
+            html += '</div>';
+          }
+
+          // t_Lajtner
+          if (msg.t_lajtner_s != null)
+            html += `<div class="phys-lajtner">t_Lajtner: <span>${msg.t_lajtner_s}s</span>
+                  &nbsp;&nbsp; a_Lajtner: <span>${msg.a_lajtner || '—'}</span></div>`;
+
+          // Rank
+          if (msg.rank_message) {
+            const cls = msg.rank_medal === 'gold' ? 'rank-gold' :
+              msg.rank_medal === 'silver' ? 'rank-silver' : 'rank-bronze';
+            html += `<div class="rank-box ${cls}">${msg.rank_message}</div>`;
+          }
+
+          // 20-variable table
+          if (result.air || result.ideal) {
+            const VARS = [['t_total', 's'], ['phi_total', 'rad'], ['omega_max', 'rad/s'], ['J', 'kgm2'],
+            ['M_res', 'Nm'], ['M_motor_accel', 'Nm'], ['M_motor_const', 'Nm'], ['M_avg_active', 'Nm'],
+            ['F_const', 'N'], ['F_accel', 'N'], ['F_avg_active', 'N'], ['F_max', 'N'],
+            ['E_kin_max', 'J'], ['E_kin_const', 'J'], ['E_kin_avg_active', 'J'],
+            ['P_peak', 'W'], ['P_const', 'W'], ['P_avg', 'W'], ['W_total', 'J'], ['L_ang', 'kgm2/s']];
+            html += `<details style="margin-top:.6rem" onclick="event.stopPropagation()">
+          <summary style="color:#555;font-size:.78rem;cursor:pointer">Show 20 variables</summary>
+          <div class="phys-tbl-wrap">
+          <table class="phys-tbl"><thead><tr>
+            <th>#</th><th>Variable</th><th>Unit</th>
+            <th class="ideal">Ideal</th><th class="air">Air</th><th class="water">Water</th>
+          </tr></thead><tbody>`;
+            VARS.forEach(([v, u], i) => {
+              html += `<tr>
+            <td style="color:#333">${i + 1}</td><td>${v}</td><td style="color:#333">${u}</td>
+            <td class="ideal">${result.ideal?.[v] != null ? fSI(result.ideal[v], u) : '—'}</td>
+            <td class="air">${result.air?.[v] != null ? fSI(result.air[v], u) : '—'}</td>
+            <td class="water">${result.water?.[v] != null ? fSI(result.water[v], u) : '—'}</td>
+          </tr>`;
+            });
+            html += '</tbody></table></div></details>';
+          }
+          html += '</div>'; // phys-card
+        }
+
+        // ── Actions ───────────────────────────────────────────────────────────
+        if (info.status === 'done' || info.filename) {
+          html += `<div class="acts">
+        <a href="/download/${id}"><button>↓ Download video</button></a>
+        <a href="/csv/${id}"><button class="sec">↓ CSV</button></a>
+      </div>`;
+        }
+
+        td.innerHTML = html || '<div style="color:#555;font-size:.8rem">No data</div>';
+      } catch (e) {
+        td.innerHTML = '<div style="color:#555">' + e.message + '</div>';
+      }
+    }
+
+    const _SI = [[1e12, 'T'], [1e9, 'G'], [1e6, 'M'], [1e3, 'k'], [1, ''],
+    [1e-3, 'm'], [1e-6, '\u00b5'], [1e-9, 'n'], [1e-12, 'p'], [1e-15, 'f']];
+    function fSI(v, u, d = 3) {
+      if (v === 0 || v == null) return '0'; const a = Math.abs(v);
+      for (const [f, p] of _SI) if (a >= f) return (v / f).toFixed(d) + ' ' + p + u;
+      return v.toExponential(2) + ' ' + u;
+    }
+
+    loadHistory();
+    setInterval(loadHistory, 15000);
+  </script>
+</body>
+
+</html>
