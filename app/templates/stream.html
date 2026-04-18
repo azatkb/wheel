@@ -439,16 +439,24 @@ async function startStream() {
       const frameInterval = 1000 / fps;
 
       // Send continuously — no waiting for reply, server drops excess frames
-      sendLoop = setInterval(() => {
-        if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        const w = video.videoWidth || 640, h = video.videoHeight || 480;
-        camFrozenCanvas.width = w; camFrozenCanvas.height = h;
-        camFrozenCanvas.getContext('2d').drawImage(video, 0, 0, w, h);
+      // Step mode: send next frame only after server replies → no queue buildup
+      const SEND_MAX = 640;
+      let _waiting = false;
+
+      function sendFrame() {
+        if (!ws || ws.readyState !== WebSocket.OPEN || _waiting) return;
+        const vw = video.videoWidth || 640, vh = video.videoHeight || 480;
+        const scale = vw > SEND_MAX ? SEND_MAX / vw : 1;
+        const sw = Math.round(vw * scale), sh = Math.round(vh * scale);
+        camFrozenCanvas.width = sw; camFrozenCanvas.height = sh;
+        camFrozenCanvas.getContext('2d').drawImage(video, 0, 0, sw, sh);
         camFrozenCanvas.toBlob(b => {
           if (!b || !ws || ws.readyState !== WebSocket.OPEN) return;
-          b.arrayBuffer().then(buf => ws.send(buf));
-        }, 'image/jpeg', 0.75);
-      }, frameInterval);
+          b.arrayBuffer().then(buf => { ws.send(buf); _waiting = true; });
+        }, 'image/jpeg', 0.7);
+      }
+      // Poll at configured FPS — but only sends if not waiting for reply
+      sendLoop = setInterval(sendFrame, frameInterval);
     };
     ws.onclose = () => { addLog('WebSocket closed'); };
     ws.onerror = () => { addLog('WebSocket error'); };
@@ -459,8 +467,8 @@ async function startStream() {
         if (d.type === 'init') { streamJobId = d.job_id; addLog('Job: ' + streamJobId); return; }
         drawCamOverlayFrozen(d);
         updateDisplay(d);
-      
-      } catch(e) { camWaitingReply = false; }
+        _waiting = false;  // server replied — ready for next frame
+      } catch(e) { _waiting = false; }
     };
     document.getElementById('btn-start').disabled = true;
     document.getElementById('btn-stop').disabled  = false;

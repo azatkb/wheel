@@ -26,6 +26,7 @@ wheeltracker/
 ```bash
 pip install -r requirements.txt
 pip install onnxruntime-gpu
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 # Optional but recommended: apt install ffmpeg
 ```
 
@@ -82,8 +83,7 @@ Or environment variables: `SUPABASE_URL`, `SUPABASE_KEY`
 
 ## Run
 
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+```bas
 ```
 
 HTTPS (for phone camera):
