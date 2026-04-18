@@ -181,7 +181,7 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
       </div>
       <div class="test-row" style="margin-top:4px">
         <div style="font-size:.78rem;color:#666">FPS</div>
-        <input type="number" id="test-fps" value="5" min="1" max="30" style="width:55px">
+        <input type="number" id="test-fps" value="10" min="1" max="30" style="width:55px">
         <button onclick="startTestStream()" id="test-btn-start">Send frames via WS</button>
         <button onclick="stopTestStream()" id="test-btn-stop" class="stop" disabled>Stop</button>
       </div>
@@ -202,6 +202,7 @@ canvas#minichart { display: block; border-radius: 8px; background: #111;
 /* ── State ── */
 let ws = null, camStream = null, sendLoop = null;
 let camWaitingReply = false, camFrozenCanvas = null;
+let _camWaiting = false;  // step mode sync — shared between onopen and onmessage
 let streamJobId = null;
 let testVidW = 1, testVidH = 1;
 const HISTORY = 120;
@@ -417,7 +418,7 @@ function drawMiniChart() {
 /* ── WebSocket stream ── */
 async function startStream() {
   const sel = document.getElementById('cam-select');
-  const fps = +document.getElementById('fps-input').value || 5;
+  const fps = +document.getElementById('fps-input').value || 15;
   const med = document.getElementById('cam-medium').value;
   const ver = document.getElementById('cam-version').value;
   const lng = document.getElementById('cam-lang').value;
@@ -441,10 +442,9 @@ async function startStream() {
       // Send continuously — no waiting for reply, server drops excess frames
       // Step mode: send next frame only after server replies → no queue buildup
       const SEND_MAX = 640;
-      let _waiting = false;
 
       function sendFrame() {
-        if (!ws || ws.readyState !== WebSocket.OPEN || _waiting) return;
+        if (!ws || ws.readyState !== WebSocket.OPEN || _camWaiting) return;
         const vw = video.videoWidth || 640, vh = video.videoHeight || 480;
         const scale = vw > SEND_MAX ? SEND_MAX / vw : 1;
         const sw = Math.round(vw * scale), sh = Math.round(vh * scale);
@@ -452,7 +452,7 @@ async function startStream() {
         camFrozenCanvas.getContext('2d').drawImage(video, 0, 0, sw, sh);
         camFrozenCanvas.toBlob(b => {
           if (!b || !ws || ws.readyState !== WebSocket.OPEN) return;
-          b.arrayBuffer().then(buf => { ws.send(buf); _waiting = true; });
+          b.arrayBuffer().then(buf => { ws.send(buf); _camWaiting = true; });
         }, 'image/jpeg', 0.7);
       }
       // Poll at configured FPS — but only sends if not waiting for reply
@@ -467,8 +467,8 @@ async function startStream() {
         if (d.type === 'init') { streamJobId = d.job_id; addLog('Job: ' + streamJobId); return; }
         drawCamOverlayFrozen(d);
         updateDisplay(d);
-        _waiting = false;  // server replied — ready for next frame
-      } catch(e) { _waiting = false; }
+        _camWaiting = false;  // server replied — ready for next frame
+      } catch(e) { _camWaiting = false; }
     };
     document.getElementById('btn-start').disabled = true;
     document.getElementById('btn-stop').disabled  = false;
@@ -481,7 +481,7 @@ function stopStream() {
   if (ws)        ws.close();
   if (camStream) camStream.getTracks().forEach(t => t.stop());
   ws = camStream = sendLoop = camFrozenCanvas = null;
-  camWaitingReply = false; lastDet = null;
+  camWaitingReply = false; _camWaiting = false; lastDet = null;
   document.getElementById('btn-start').disabled = false;
   document.getElementById('btn-stop').disabled  = true;
   addLog('Stream stopped');
@@ -614,7 +614,7 @@ function connectTestWs() {
     document.getElementById('test-btn-start').disabled=true;
     document.getElementById('test-btn-stop').disabled=false;
     document.getElementById('test-job').textContent='WS stream active';
-    const fps=+document.getElementById('test-fps').value||5;
+    const fps=+document.getElementById('test-fps').value||10;
     const frameInterval=1000/fps;
     testCanvas2d=document.createElement('canvas');
 
