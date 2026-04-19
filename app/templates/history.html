@@ -265,7 +265,7 @@ async function renderDetail(id, td){
     parts.push(`<div class="acts" style="margin-top:.5rem">
       <a href="/download/${id}"><button>↓ Download video</button></a>
       <a href="/csv/${id}"><button class="sec">↓ CSV</button></a>
-      ${!hasPhysics ? `<button class="sec" onclick="rerunPhysics('${id}',this)">&#8635; Recalculate physics</button>` : ''}
+
     </div>`);
 
     td.innerHTML = parts.join('') || '<div style="color:#555;font-size:.8rem">No data</div>';
@@ -293,25 +293,6 @@ function fSI(v,u,d=3){
 
 loadHistory();
 
-async function rerunPhysics(id, btn){
-  btn.disabled = true;
-  btn.textContent = 'Calculating...';
-  try {
-    const r = await fetch('/admin/rerun-physics/'+id, {method:'POST'});
-    const d = await r.json();
-    if (d.ok){
-      btn.textContent = 'Done! Reload to see';
-      // Reload detail
-      const td = document.getElementById('td-'+id);
-      if (td) { td.dataset.loaded=''; td.innerHTML=''; }
-      await renderDetail(id, td);
-    } else {
-      btn.textContent = 'Error'; btn.disabled = false;
-    }
-  } catch(e) {
-    btn.textContent = 'Error: '+e.message; btn.disabled = false;
-  }
-}
 </script>
 </body>
 </html>
