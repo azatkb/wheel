@@ -368,17 +368,42 @@ def _process_video_seg(video_path, out_path, job_id="local",
 
     cap.release()
     out_vid.release()
+    # Sort by timestamp to fix out-of-order frames
+    all_samples.sort(key=lambda s: s["timestamp_sec"])
     rem = len(all_samples) % 20
     if rem: persist_samples(job_id, all_samples[-rem:])
     log.info(f"[VIDEO] done — {len(all_samples)} samples → {out_path}")
     return all_samples
 
 # ── Upload pipeline ────────────────────────────────────────────────────────
+def _clear_samples(job_id: str):
+    """Delete all existing samples for a job (CSV + Supabase) before reprocessing."""
+    from app.database import CSV_DIR, TABLE_SAMPLES
+    csv_path = CSV_DIR / f"{job_id}.csv"
+    if csv_path.exists():
+        csv_path.unlink()
+        log.info(f"[JOB] cleared CSV samples: {job_id}")
+    try:
+        from app.database import _sb
+        sb = _sb()
+        if sb:
+            sb.table(TABLE_SAMPLES).delete().eq("job_id", job_id).execute()
+            log.info(f"[JOB] cleared Supabase samples: {job_id}")
+    except Exception as e:
+        log.warning(f"[JOB] clear samples failed: {e}")
+
 def _run_job(job_id, raw_path, direction, medium, hand_visible,
              info_level, user_email, version, lang):
     try:
         jobs[job_id]["status"]   = "preprocessing"
         jobs[job_id]["progress"] = {"pct":0,"frame":0,"total":0}
+        # Remove old samples CSV to avoid duplicates from stream pre-detection
+        old_csv = get_csv_path(job_id)
+        if old_csv.exists():
+            old_csv.unlink()
+            log.info(f"[JOB] cleared old samples CSV: {old_csv}")
+        # Clear old samples from stream phase before reprocessing
+        _clear_samples(job_id)
         upload_dt = datetime.datetime.utcnow().strftime("%Y.%m.%d.%H.%M")
         if PREPROCESS_ENABLED:
             prep = INPUTS_DIR / f"{job_id}_prep.mp4"
@@ -725,8 +750,6 @@ async def stream_ws(ws: WebSocket):
                     source="SEG",
                 ))
                 next_sample_at += sample_interval
-                if len(all_samples) % 20 == 0:
-                    persist_samples(job_id, all_samples[-20:])
 
             # ── Buffer frame for later video write ────────────────────────
             frame_buffer.append(frame_s.copy())
@@ -778,8 +801,6 @@ async def stream_ws(ws: WebSocket):
             writer.release()
             log.info(f"[WS] video saved: {out_path}")
         frame_buffer.clear()
-        rem = len(all_samples) % 20
-        if rem: persist_samples(job_id, all_samples[-rem:])
         finish_job(job_id, len(all_samples),
                    all_samples[-1]["timestamp_sec"] if all_samples else 0)
         # Process recorded video in background — same as upload pipeline

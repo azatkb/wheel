@@ -138,7 +138,7 @@ tr:hover td{background:#1a1a1a}
     </div>
   </div>
   <div style="margin-top:.8rem">
-    <button id="btn-start" onclick="startStream()">▶ Start stream</button>
+    <button id="btn-start" onclick="startStream()">▶ Start Streaming</button>
     <button id="btn-stop" class="stop" onclick="stopStream()" disabled>■ Stop &amp; Process</button>
     <button class="sec" onclick="resetZero()">↺ Reset 0°</button>
   </div>
@@ -212,7 +212,9 @@ tr:hover td{background:#1a1a1a}
 <script>
 // ── CONFIG — edit here ────────────────────────────────────────────────────
 const API = 'https://wheelttt.xyz';   // API base URL (empty string for same host)
-const WSS = 'wss://wheelttt.xyz';     // WebSocket URL
+const WSS = location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+  ? 'ws://localhost:8000'
+  : 'wss://wheelttt.xyz';  // WebSocket URL
 // ──────────────────────────────────────────────────────────────────────────
 
 // API base URL — auto-detect
@@ -384,17 +386,16 @@ function updateStreamMetrics(d){
 // ── WebSocket ──────────────────────────────────────────────────────────────
 async function startStream(){
   const sel = document.getElementById('cam-select');
-  const med = document.getElementById('cam-medium').value;
-  const ver = document.getElementById('cam-version').value;
-  const lng = document.getElementById('cam-lang').value;
+  const lng = (document.getElementById('cam-lang')||{value:'en'}).value;
   try {
+    const deviceId = sel ? sel.value : undefined;
     camStream = await navigator.mediaDevices.getUserMedia({
-      video: { deviceId: sel.value || undefined, width: 640, height: 480 }
+      video: { deviceId: deviceId || undefined, width: 640, height: 480 }
     });
     document.getElementById('cam').srcObject = camStream;
 
     const eml = encodeURIComponent(document.getElementById('cam-email').value || '');
-    ws = new WebSocket(`${WSS}/stream?medium=${med}&version=${ver}&lang=${lng}&direction=auto&email=${eml}`);
+    ws = new WebSocket(`${WSS}/stream?lang=${lng}&direction=auto&email=${eml}`);
 
     ws.onopen = () => {
       addLog('Recording...');
@@ -704,12 +705,40 @@ function fSI(v,u,d=3){
   return v.toExponential(2)+' '+u;
 }
 
+
+function drawWave(canvas){
+  canvas.width = canvas.offsetWidth||800;
+  canvas.height = 200;
+  const ctx = canvas.getContext('2d'), W = canvas.width, H = canvas.height;
+  ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0,0,W,H);
+  const cx = W/2, cy = H/2, amp = H*0.28, freq = 2.5;
+  // Sine wave
+  ctx.beginPath();
+  ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 2;
+  for(let x=0; x<W; x++){
+    const y = cy + amp * Math.sin((x/W)*Math.PI*2*freq);
+    x===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  // Second wave offset
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(0,255,136,0.2)'; ctx.lineWidth = 1;
+  for(let x=0; x<W; x++){
+    const y = cy + amp*0.5 * Math.sin((x/W)*Math.PI*2*freq*1.5 + 1);
+    x===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  // Label
+  ctx.fillStyle='#333'; ctx.font='13px system-ui'; ctx.textAlign='center';
+  ctx.fillText('Not enough data to display chart', cx, cy+amp+24);
+}
+
 function drawChart(s){
   const c=document.getElementById('chart');
   c.width=c.offsetWidth||800; c.height=200;
   const ctx=c.getContext('2d'),W=c.width,H=c.height;
   ctx.fillStyle='#0a0a0a'; ctx.fillRect(0,0,W,H);
-  if (s.length<2) return;
+  if(s.length<10){ drawWave(c); return; }
   const pad={l:48,r:12,t:14,b:24},cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
   const ts=s.map(x=>+x.timestamp_sec),cs=s.map(x=>+x.cumulative_deg),qs=s.map(x=>+x.confidence_pct);
   const tMin=Math.min(...ts),tMax=Math.max(...ts)||1,vMin=Math.min(...cs,0),vMax=Math.max(...cs,1),vR=vMax-vMin||1;
