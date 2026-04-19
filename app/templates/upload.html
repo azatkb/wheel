@@ -93,7 +93,7 @@ tr:hover td{background:#1a1a1a}
 </head>
 <body>
 <nav>
-     <a href="/upload.html">Upload</a>
+  <a href="/upload.html">Upload</a>
   <a href="/stream.html">Live stream</a>
   <a href="/history.html">History</a>
   
@@ -213,8 +213,12 @@ tr:hover td{background:#1a1a1a}
 </div>
 
 <script>
+
+// API base URL — auto-detect
+const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? ''
+  : 'https://wheelttt.xyz';
 // ── API server address ─────────────────────────────────────────────────────
-const API = "http://localhost:8000"//"https://wheelttt.xyz"//'https://schema-zone-completely-bundle.trycloudflare.com';
 
 let jid=null, statusTimer=null, sse=null, vidFile=null;
 let vidW=0, vidH=0, totalSec=0;

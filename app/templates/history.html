@@ -99,6 +99,11 @@ label{display:block;color:#888;font-size:.75rem;margin-bottom:.2rem}
 </div>
 
 <script>
+
+// API base URL — auto-detect
+const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? ''
+  : 'https://wheelttt.xyz';
 const PAGE = 20;
 let allJobs = [], page = 0, debTimer = null;
 
@@ -171,9 +176,9 @@ async function toggleDetail(id){
 async function renderDetail(id, td){
   try {
     const [sR, pR, stR] = await Promise.allSettled([
-      fetch('/results/'+id),
-      fetch('/physics/'+id),
-      fetch('/status/'+id),
+      fetch(API+'/results/'+id),
+      fetch(API+'/physics/'+id),
+      fetch(API+'/status/'+id),
     ]);
     const samples = sR.status==='fulfilled'&&sR.value.ok ? await sR.value.json() : [];
     const phys    = pR.status==='fulfilled'&&pR.value.ok ? await pR.value.json() : null;
@@ -263,8 +268,8 @@ async function renderDetail(id, td){
     // ── Actions — always shown ────────────────────────────────────────────
     const hasPhysics = !!(msg.message || Object.keys(msg.display||{}).length);
     parts.push(`<div class="acts" style="margin-top:.5rem">
-      <a href="/download/${id}"><button>↓ Download video</button></a>
-      <a href="/csv/${id}"><button class="sec">↓ CSV</button></a>
+      <a href="${API}/download/${id}"><button>↓ Download video</button></a>
+      <a href="${API}/csv/${id}"><button class="sec">↓ CSV</button></a>
 
     </div>`);
 

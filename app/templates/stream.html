@@ -96,7 +96,7 @@ tr:hover td{background:#1a1a1a}
 </head>
 <body>
 <nav>
-    <a href="/upload.html">Upload</a>
+  <a href="/upload.html">Upload</a>
   <a href="/stream.html">Live stream</a>
   <a href="/history.html">History</a>
 </nav>
@@ -212,6 +212,11 @@ tr:hover td{background:#1a1a1a}
 </div>
 
 <script>
+
+// API base URL — auto-detect
+const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? ''
+  : 'https://wheelttt.xyz';
 // ── State ──────────────────────────────────────────────────────────────────
 let ws = null, camStream = null, sendLoop = null;
 let _camWaiting = false, camFrozenCanvas = null;
@@ -457,7 +462,7 @@ const STAGE_LBL = {
 async function pollStatus(){
   if (!jid) return;
   try {
-    const d = await(await fetch('/status/'+jid)).json();
+    const d = await(await fetch(API+'/status/'+jid)).json();
     if (d.status !== 'processing'){
       setProg(STAGE_PCT[d.status]||30, 'processing');
       setLabel(STAGE_LBL[d.status]||d.status);
@@ -586,10 +591,10 @@ function drawOverlay(d, hint){
 
 // ── Results (same as upload) ───────────────────────────────────────────────
 async function showResults(jid, info){
-  const samples = await(await fetch('/results/'+jid)).json();
+  const samples = await(await fetch(API+'/results/'+jid)).json();
   addLog('Loaded '+samples.length+' samples');
   try {
-    const pr = await(await fetch('/physics/'+jid)).json();
+    const pr = await(await fetch(API+'/physics/'+jid)).json();
     if (pr && pr.message) renderPhysics(pr.message);
   } catch(e) { addLog('Physics: '+e.message); }
   document.getElementById('res').style.display = 'block';
@@ -605,8 +610,8 @@ async function showResults(jid, info){
       <div class="met"><span class="v">${avgS}%</span><span class="l">Avg significance</span></div>`;
   }
   document.getElementById('acts').innerHTML=`
-    <a href="/download/${jid}"><button>↓ Download video</button></a>
-    <a href="/csv/${jid}"><button class="sec">↓ Download CSV</button></a>`;
+    <a href="${API}/download/${jid}"><button>↓ Download video</button></a>
+    <a href="${API}/csv/${jid}"><button class="sec">↓ Download CSV</button></a>`;
   drawChart(samples);
   const tb=document.getElementById('tb'); tb.innerHTML='';
   samples.forEach(s=>{
@@ -653,7 +658,7 @@ function renderPhysics(msg){
 
 async function fetchPhysicsTable(job_id){
   try {
-    const pr=await(await fetch('/physics/'+job_id)).json();
+    const pr=await(await fetch(API+'/physics/'+job_id)).json();
     const result=pr.result||{};
     if (!result||!result.ideal) return;
     const VARS=[['t_total','s'],['phi_total','rad'],['omega_max','rad/s'],['J','kgm2'],
@@ -830,13 +835,13 @@ async function pollTestStatus(){
   const id=document.getElementById('test-job').dataset.jid;
   if(!id) return;
   try{
-    const d=await(await fetch('/status/'+id)).json();
+    const d=await(await fetch(API+'/status/'+id)).json();
     if(d.status==='done'){
       clearInterval(testStatusTimer);
       if(testSse){testSse.close(); testSse=null;}
       document.getElementById('test-job').innerHTML=
-        'Done! <a href="/download/'+id+'" style="color:#00ff88">\u2193 Download video</a>'
-        +' &nbsp; <a href="/csv/'+id+'" style="color:#888">\u2193 CSV</a>';
+        'Done! <a href="${API}/download/'+id+'" style="color:#00ff88">\u2193 Download video</a>'
+        +' &nbsp; <a href="${API}/csv/'+id+'" style="color:#888">\u2193 CSV</a>';
     } else if(d.status==='error'){
       clearInterval(testStatusTimer);
       if(testSse){testSse.close(); testSse=null;}
