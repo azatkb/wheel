@@ -14,7 +14,7 @@ Endpoints:
   GET  /health
 """
 
-import uuid, shutil, asyncio, json, logging, math, datetime
+import uuid, os, shutil, asyncio, json, logging, math, datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
@@ -26,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import (
     INPUTS_DIR, OUTPUTS_DIR, SAMPLES_PER_SECOND,
-    SUPABASE_URL,
+    SUPABASE_URL, BAR_HEIGHT,
     DEFAULT_DIRECTION, DEFAULT_MEDIUM, DEFAULT_HAND, DEFAULT_INFO_LEVEL,
     PREPROCESS_ENABLED,
 )
@@ -181,12 +181,12 @@ def _process_video_seg(video_path, out_path, job_id="local",
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     fourcc  = cv2.VideoWriter_fourcc(*"mp4v")
-    out_vid = cv2.VideoWriter(str(out_path), fourcc, fps, (W, H))
+    out_vid = cv2.VideoWriter(str(out_path), fourcc, fps, (W, H + BAR_HEIGHT))
     if not out_vid.isOpened():
         log.warning(f"[VIDEO] VideoWriter failed to open: {out_path}, trying avc1")
         fourcc  = cv2.VideoWriter_fourcc(*"avc1")
-        out_vid = cv2.VideoWriter(str(out_path), fourcc, fps, (W, H))
-    log.info(f"[VIDEO] writer opened={out_vid.isOpened()} path={out_path} size={W}x{H} fps={fps:.1f}")
+        out_vid = cv2.VideoWriter(str(out_path), fourcc, fps, (W, H + BAR_HEIGHT))
+    log.info(f"[VIDEO] writer opened={out_vid.isOpened()} path={out_path} size={W}x{H}+{BAR_HEIGHT} fps={fps:.1f}")
 
     stab        = Stabilizer()
     rot_prev    = None
@@ -263,20 +263,73 @@ def _process_video_seg(video_path, out_path, job_id="local",
             if d < -180: d += 360
             vel_dps = d * fps
 
+        # Confidence
+        conf_disp = 100 if has_orange else (60 if has_hub else 0)
+
         # Draw
         ann = frame_s.copy()
         draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cum, bbox)
+
+        # Draw info bar below frame
+        bar = np.full((BAR_HEIGHT, W, 3), (18, 18, 18), np.uint8)
+        cv2.line(bar, (0, 0), (W, 0), (55, 55, 55), 1)
+        # Time, rotation, cumulative, velocity, confidence
+        GREEN  = (0, 255, 128); WHITE = (230, 230, 230)
+        GRAY   = (120, 120, 120); YELLOW = (0, 220, 220)
+        rot_s  = f"{rot_smooth:.1f}" if rot_smooth is not None else "---"
+        cum_s  = f"{-rot_cum:+.1f}"
+        vel_s  = f"{-vel_dps:+.1f}" if vel_dps else "0.0"
+        conf_c = (40,200,40) if conf_disp>=80 else ((0,200,220) if conf_disp>=50 else (40,40,220))
+        t_s    = f"{t_sec:.2f} s"
+        col1, col2, col3 = 14, W//3, 2*W//3
+        # Time
+        cv2.putText(bar,"TIME",(col1,22),cv2.FONT_HERSHEY_SIMPLEX,0.38,GRAY,1)
+        cv2.putText(bar,t_s,(col1,50),cv2.FONT_HERSHEY_SIMPLEX,0.85,WHITE,2,cv2.LINE_AA)
+        # Rotation
+        cv2.putText(bar,"ROTATION",(col1,78),cv2.FONT_HERSHEY_SIMPLEX,0.38,GRAY,1)
+        cv2.putText(bar,rot_s,(col1,108),cv2.FONT_HERSHEY_SIMPLEX,0.95,YELLOW,2,cv2.LINE_AA)
+        cv2.putText(bar,"deg",(col1+90,108),cv2.FONT_HERSHEY_SIMPLEX,0.50,YELLOW,1)
+        # Cumulative
+        cv2.putText(bar,"TOTAL",(col1,150),cv2.FONT_HERSHEY_SIMPLEX,0.38,GRAY,1)
+        cv2.putText(bar,cum_s,(col1,192),cv2.FONT_HERSHEY_SIMPLEX,1.25,GREEN,3,cv2.LINE_AA)
+        cv2.putText(bar,"deg",(col1+130,192),cv2.FONT_HERSHEY_SIMPLEX,0.55,GREEN,2)
+        cv2.putText(bar,f"vel: {vel_s} deg/s",(col1,228),cv2.FONT_HERSHEY_SIMPLEX,0.38,GRAY,1)
+        # Confidence
+        cv2.putText(bar,"SIGNIFICANCE",(col2,22),cv2.FONT_HERSHEY_SIMPLEX,0.38,GRAY,1)
+        cv2.putText(bar,f"{conf_disp}%",(col2,68),cv2.FONT_HERSHEY_SIMPLEX,1.15,conf_c,2,cv2.LINE_AA)
+        bw = col3 - col2 - 20
+        cv2.rectangle(bar,(col2,76),(col2+bw,92),(40,40,40),-1)
+        fw = int(bw * conf_disp / 100)
+        if fw > 0: cv2.rectangle(bar,(col2,76),(col2+fw,92),conf_c,-1)
+        cv2.rectangle(bar,(col2,76),(col2+bw,92),(70,70,70),1)
+        # Source
+        if hub is not None:
+            cv2.putText(bar,"Hub: SEG",(col2,118),cv2.FONT_HERSHEY_SIMPLEX,0.40,WHITE,1)
+        # Dial
+        dcx = col3 + (W-col3)//2; dcy = 100; dr = 68
+        cv2.circle(bar,(dcx,dcy),dr,(45,45,45),-1)
+        cv2.circle(bar,(dcx,dcy),dr,(80,80,80),1)
+        cv2.putText(bar,"+",(dcx-dr+4,dcy-dr+14),cv2.FONT_HERSHEY_SIMPLEX,0.40,(80,200,80),1)
+        cv2.putText(bar,"-",(dcx+dr-14,dcy-dr+14),cv2.FONT_HERSHEY_SIMPLEX,0.40,(80,80,200),1)
+        cv2.line(bar,(dcx,dcy-dr),(dcx,dcy-dr+8),(90,90,90),1)
+        if rot_smooth is not None:
+            rad_a = math.radians(rot_smooth)
+            ncol  = (40,200,40) if rot_cum<=0 else (40,40,200)
+            cv2.line(bar,(dcx,dcy),(int(dcx+(dr-10)*math.sin(rad_a)),
+                     int(dcy-(dr-10)*math.cos(rad_a))),ncol,2,cv2.LINE_AA)
+        cv2.circle(bar,(dcx,dcy),4,conf_c,-1)
+        cv2.putText(bar,f"{rot_smooth:.1f} deg" if rot_smooth else "---",
+                    (dcx-32,dcy+dr+18),cv2.FONT_HERSHEY_SIMPLEX,0.46,conf_c,1,cv2.LINE_AA)
+        # Watermark
         if watermark:
-            cv2.putText(ann, watermark, (8, H-8),
-                        cv2.FONT_HERSHEY_SIMPLEX, max(0.4, W/1280*0.7),
-                        (0,0,0), 2, cv2.LINE_AA)
-            cv2.putText(ann, watermark, (8, H-8),
-                        cv2.FONT_HERSHEY_SIMPLEX, max(0.4, W/1280*0.7),
-                        (200,200,200), 1, cv2.LINE_AA)
-        # Write annotated frame
+            cv2.putText(ann,watermark,(8,H-8),cv2.FONT_HERSHEY_SIMPLEX,
+                        max(0.4,W/1280*0.7),(0,0,0),2,cv2.LINE_AA)
+            cv2.putText(ann,watermark,(8,H-8),cv2.FONT_HERSHEY_SIMPLEX,
+                        max(0.4,W/1280*0.7),(200,200,200),1,cv2.LINE_AA)
+        # Write frame + bar
         if ann.shape[1] != W or ann.shape[0] != H:
             ann = cv2.resize(ann, (W, H))
-        out_vid.write(ann)
+        out_vid.write(np.vstack([ann, bar]))
 
         # Sample
         if t_sec >= next_sample_at:
@@ -468,11 +521,18 @@ def list_jobs():
     return {"jobs":{k:{kk:vv for kk,vv in v.items() if kk!="progress"}
                     for k,v in jobs.items()}}
 
+# Secret token for internal API endpoints
+_API_TOKEN = os.environ.get("API_TOKEN", "")
+
+def _check_token(token: str = ""):
+    if _API_TOKEN and token != _API_TOKEN:
+        raise HTTPException(401, "Unauthorized")
+
 @app.get("/api/jobs")
-def api_jobs(email: str = "", limit: int = 200):
+def api_jobs(email: str = "", limit: int = 200, token: str = ""):
     """Return jobs from Supabase DB for history page."""
+    _check_token(token)
     rows = get_all_jobs(email_filter=email, limit=limit)
-    # Enrich with physics data from in-memory jobs if available
     for row in rows:
         mem = jobs.get(row["id"], {})
         if mem.get("physics"):

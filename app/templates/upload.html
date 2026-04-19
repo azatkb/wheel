@@ -107,22 +107,13 @@ tr:hover td{background:#1a1a1a}
   <div id="file-info" style="font-size:.78rem;color:#555;margin-bottom:.3rem"></div>
   <div class="row">
     <div><label>User email</label><input type="email" id="email" placeholder="user@example.com"></div>
-    <div><label>Direction</label>
-      <select id="dir">
-        <option value="auto">Auto-detect</option><option value="cw">Clockwise</option>
-        <option value="ccw">Counter-clockwise</option><option value="cw+ccw">CW+CCW</option>
-        <option value="ccw+cw">CCW+CW</option>
-      </select>
-    </div>
-    <div><label>Medium</label>
-      <select id="med"><option value="air">Air</option><option value="water">Water</option></select>
-    </div>
     <div><label>Hand visible</label>
       <select id="hand"><option value="false">No hand</option><option value="true">Hand visible</option></select>
     </div>
-    <div><label>Info level</label>
-      <select id="info"><option value="basic">Basic</option><option value="full">Full</option></select>
-    </div>
+    
+    
+    
+    
     <div><label>Version</label>
       <select id="ver"><option value="free">Free</option><option value="paid">Paid</option></select>
     </div>
@@ -213,11 +204,26 @@ tr:hover td{background:#1a1a1a}
 </div>
 
 <script>
+// ── CONFIG — edit here ────────────────────────────────────────────────────
+const API = 'https://wheelttt.xyz';   // API base URL (empty string for same host)
+const WSS = 'wss://wheelttt.xyz';     // WebSocket URL
+// ──────────────────────────────────────────────────────────────────────────
 
 // API base URL — auto-detect
-const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-  ? ''
-  : 'https://wheelttt.xyz';
+
+// ── Get email from URL param or localStorage ──────────────────────────────
+(function(){
+  const params = new URLSearchParams(location.search);
+  const emailFromUrl = params.get('email');
+  if (emailFromUrl) {
+    localStorage.setItem('wt_email', emailFromUrl);
+  }
+  const savedEmail = localStorage.getItem('wt_email') || emailFromUrl || '';
+  // Set email field if exists
+  const emailField = document.getElementById('email') || document.getElementById('cam-email') || document.getElementById('filter-email');
+  if (emailField && savedEmail) emailField.value = savedEmail;
+})();
+
 // ── API server address ─────────────────────────────────────────────────────
 
 let jid=null, statusTimer=null, sse=null, vidFile=null;
@@ -268,10 +274,7 @@ function go(){
   const fd=new FormData();
   fd.append('file',           f.files[0]);
   fd.append('user_email',     document.getElementById('email').value);
-  fd.append('direction',      document.getElementById('dir').value);
-  fd.append('medium',         document.getElementById('med').value);
   fd.append('hand_visible',   document.getElementById('hand').value);
-  fd.append('info_level',     document.getElementById('info').value);
   fd.append('version',        document.getElementById('ver').value);
   fd.append('lang',           document.getElementById('lang').value);
 

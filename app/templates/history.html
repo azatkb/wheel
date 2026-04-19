@@ -99,11 +99,27 @@ label{display:block;color:#888;font-size:.75rem;margin-bottom:.2rem}
 </div>
 
 <script>
+// ── CONFIG — edit here ────────────────────────────────────────────────────
+const API = 'https://wheelttt.xyz';   // API base URL (empty string for same host)
+const WSS = 'wss://wheelttt.xyz';     // WebSocket URL
+// ──────────────────────────────────────────────────────────────────────────
 
 // API base URL — auto-detect
-const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-  ? ''
-  : 'https://wheelttt.xyz';
+const API_TOKEN = 'wt_secret_2026'; // match API_TOKEN env var on server
+
+// ── Get email from URL param or localStorage ──────────────────────────────
+(function(){
+  const params = new URLSearchParams(location.search);
+  const emailFromUrl = params.get('email');
+  if (emailFromUrl) {
+    localStorage.setItem('wt_email', emailFromUrl);
+  }
+  const savedEmail = localStorage.getItem('wt_email') || emailFromUrl || '';
+  // Set email field if exists
+  const emailField = document.getElementById('email') || document.getElementById('cam-email') || document.getElementById('filter-email');
+  if (emailField && savedEmail) emailField.value = savedEmail;
+})();
+
 const PAGE = 20;
 let allJobs = [], page = 0, debTimer = null;
 
@@ -115,7 +131,7 @@ function debounceLoad(){
 async function loadHistory(){
   const em = document.getElementById('filter-email').value.trim();
   try {
-    const url = '/api/jobs?limit=500'+(em?'&email='+encodeURIComponent(em):'');
+    const url = API+'/api/jobs?limit=500&token='+API_TOKEN+(em?'&email='+encodeURIComponent(em):'');
     const data = await (await fetch(url)).json();
     allJobs = data.jobs || [];
     page = 0;

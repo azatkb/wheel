@@ -126,14 +126,8 @@ tr:hover td{background:#1a1a1a}
       <input type="email" id="cam-email" placeholder="user@example.com"
              style="width:100%;background:#1e1e1e;border:1px solid #2e2e2e;border-radius:6px;padding:.45rem .65rem;color:#ccc;font-size:.88rem">
     </div>
-    <div>
-      <label>Medium</label>
-      <select id="cam-medium" style="width:100%"><option value="air">Air</option><option value="water">Water</option></select>
-    </div>
-    <div>
-      <label>Version</label>
-      <select id="cam-version" style="width:100%"><option value="free">Free</option><option value="paid">Paid</option></select>
-    </div>
+    
+    
     <div>
       <label>Language</label>
       <select id="cam-lang" style="width:100%"><option value="en">EN</option><option value="hu">HU</option><option value="de">DE</option></select>
@@ -212,11 +206,26 @@ tr:hover td{background:#1a1a1a}
 </div>
 
 <script>
+// ── CONFIG — edit here ────────────────────────────────────────────────────
+const API = 'https://wheelttt.xyz';   // API base URL (empty string for same host)
+const WSS = 'wss://wheelttt.xyz';     // WebSocket URL
+// ──────────────────────────────────────────────────────────────────────────
 
 // API base URL — auto-detect
-const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-  ? ''
-  : 'https://wheelttt.xyz';
+
+// ── Get email from URL param or localStorage ──────────────────────────────
+(function(){
+  const params = new URLSearchParams(location.search);
+  const emailFromUrl = params.get('email');
+  if (emailFromUrl) {
+    localStorage.setItem('wt_email', emailFromUrl);
+  }
+  const savedEmail = localStorage.getItem('wt_email') || emailFromUrl || '';
+  // Set email field if exists
+  const emailField = document.getElementById('email') || document.getElementById('cam-email') || document.getElementById('filter-email');
+  if (emailField && savedEmail) emailField.value = savedEmail;
+})();
+
 // ── State ──────────────────────────────────────────────────────────────────
 let ws = null, camStream = null, sendLoop = null;
 let _camWaiting = false, camFrozenCanvas = null;
@@ -380,9 +389,8 @@ async function startStream(){
     });
     document.getElementById('cam').srcObject = camStream;
 
-    const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
     const eml = encodeURIComponent(document.getElementById('cam-email').value || '');
-    ws = new WebSocket(`${wsProto}://${location.host}/stream?medium=${med}&version=${ver}&lang=${lng}&direction=auto&email=${eml}`);
+    ws = new WebSocket(`${WSS}/stream?medium=${med}&version=${ver}&lang=${lng}&direction=auto&email=${eml}`);
 
     ws.onopen = () => {
       addLog('Recording...');
@@ -773,12 +781,11 @@ function startTestStream(){
 }
 
 function connectTestWs(){
-  const wsProto=location.protocol==='https:'?'wss':'ws';
   const eml=encodeURIComponent(document.getElementById('cam-email').value||'');
   const med=document.getElementById('cam-medium').value;
   const ver=document.getElementById('cam-version').value;
   const lng=document.getElementById('cam-lang').value;
-  testWs=new WebSocket(wsProto+'://'+location.host+'/stream?email='+eml+'&medium='+med+'&version='+ver+'&lang='+lng);
+  testWs=new WebSocket(WSS+'/stream?email='+eml+'&medium='+med+'&version='+ver+'&lang='+lng);
   testWs.onopen=()=>{
     addTestLog('Recording...');
     document.getElementById('test-btn-start').disabled=true;
@@ -840,8 +847,8 @@ async function pollTestStatus(){
       clearInterval(testStatusTimer);
       if(testSse){testSse.close(); testSse=null;}
       document.getElementById('test-job').innerHTML=
-        'Done! <a href="${API}/download/'+id+'" style="color:#00ff88">\u2193 Download video</a>'
-        +' &nbsp; <a href="${API}/csv/'+id+'" style="color:#888">\u2193 CSV</a>';
+        'Done! <a href="'+API+'/download/'+id+'" style="color:#00ff88">\u2193 Download video</a>'
+        +' &nbsp; <a href="'+API+'/csv/'+id+'" style="color:#888">\u2193 CSV</a>';
     } else if(d.status==='error'){
       clearInterval(testStatusTimer);
       if(testSse){testSse.close(); testSse=null;}
