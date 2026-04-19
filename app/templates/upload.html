@@ -205,7 +205,7 @@ tr:hover td{background:#1a1a1a}
 
 <script>
 // ── CONFIG — edit here ────────────────────────────────────────────────────
-const API = 'https://wheelttt.xyz';   // API base URL (empty string for same host)
+const API = 'http://localhost:8000';   // API base URL (empty string for same host)
 const WSS = 'wss://wheelttt.xyz';     // WebSocket URL
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -708,12 +708,40 @@ function fSI(v,u,d=3){
   return v.toExponential(2)+' '+u;
 }
 
+
+function drawWave(canvas){
+  canvas.width = canvas.offsetWidth||800;
+  canvas.height = 200;
+  const ctx = canvas.getContext('2d'), W = canvas.width, H = canvas.height;
+  ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0,0,W,H);
+  const cx = W/2, cy = H/2, amp = H*0.28, freq = 2.5;
+  // Sine wave
+  ctx.beginPath();
+  ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 2;
+  for(let x=0; x<W; x++){
+    const y = cy + amp * Math.sin((x/W)*Math.PI*2*freq);
+    x===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  // Second wave offset
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(0,255,136,0.2)'; ctx.lineWidth = 1;
+  for(let x=0; x<W; x++){
+    const y = cy + amp*0.5 * Math.sin((x/W)*Math.PI*2*freq*1.5 + 1);
+    x===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  // Label
+  ctx.fillStyle='#333'; ctx.font='13px system-ui'; ctx.textAlign='center';
+  ctx.fillText('Not enough data to display chart', cx, cy+amp+24);
+}
+
 function drawChart(s){
   const c=document.getElementById('chart');
   c.width=c.offsetWidth||800; c.height=200;
   const ctx=c.getContext('2d'),W=c.width,H=c.height;
   ctx.fillStyle='#0a0a0a'; ctx.fillRect(0,0,W,H);
-  if(s.length<2) return;
+  if(s.length<10){ drawWave(c); return; }
   const pad={l:48,r:12,t:14,b:24},cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
   const ts=s.map(x=>+x.timestamp_sec),cs=s.map(x=>+x.cumulative_deg),qs=s.map(x=>+x.confidence_pct);
   const tMin=Math.min(...ts),tMax=Math.max(...ts)||1,vMin=Math.min(...cs,0),vMax=Math.max(...cs,1),vR=vMax-vMin||1;
@@ -727,6 +755,16 @@ function drawChart(s){
   ctx.fillStyle='rgba(0,255,136,0.05)';ctx.beginPath();ctx.moveTo(tx(ts[0]),pad.t+cH);
   s.forEach((x,i)=>ctx.lineTo(tx(ts[i]),pad.t+(1-qs[i]/100)*cH));
   ctx.lineTo(tx(ts[ts.length-1]),pad.t+cH);ctx.closePath();ctx.fill();
+  // Zero line
+  if(vMin<=0 && vMax>=0){
+    const zy=pad.t+(1-(0-vMin)/vR)*cH;
+    ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=1;
+    ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(pad.l,zy); ctx.lineTo(W-pad.r,zy); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='#555'; ctx.font='9px system-ui';
+    ctx.fillText('0°',2,zy+3);
+  }
   ctx.strokeStyle='#00ff88';ctx.lineWidth=2;ctx.beginPath();
   s.forEach((x,i)=>i===0?ctx.moveTo(tx(ts[i]),ty(cs[i])):ctx.lineTo(tx(ts[i]),ty(cs[i])));
   ctx.stroke();

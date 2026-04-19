@@ -211,7 +211,7 @@ tr:hover td{background:#1a1a1a}
 
 <script>
 // ── CONFIG — edit here ────────────────────────────────────────────────────
-const API = 'https://wheelttt.xyz';   // API base URL (empty string for same host)
+const API = 'http://localhost:8000';   // API base URL (empty string for same host)
 const WSS = location.hostname === 'localhost' || location.hostname === '127.0.0.1'
   ? 'ws://localhost:8000'
   : 'wss://wheelttt.xyz';  // WebSocket URL
@@ -395,7 +395,7 @@ async function startStream(){
     document.getElementById('cam').srcObject = camStream;
 
     const eml = encodeURIComponent(document.getElementById('cam-email').value || '');
-    ws = new WebSocket(`${WSS}/stream?lang=${lng}&direction=auto&email=${eml}`);
+    ws = new WebSocket(`${WSS}/stream?medium=${med}&version=${ver}&lang=${lng}&direction=auto&email=${eml}`);
 
     ws.onopen = () => {
       addLog('Recording...');
@@ -404,10 +404,10 @@ async function startStream(){
       document.getElementById('rec-indicator').style.display = 'flex';
       camFrozenCanvas = document.createElement('canvas');
       const video = document.getElementById('cam');
-      const SEND_MAX = 640;
+      const SEND_MAX = 1280;
 
       function sendFrame(){
-        if (!ws || ws.readyState !== WebSocket.OPEN || _camWaiting) return;
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
         const vw = video.videoWidth||640, vh = video.videoHeight||480;
         const scale = vw > SEND_MAX ? SEND_MAX/vw : 1;
         const sw = Math.round(vw*scale), sh = Math.round(vh*scale);
@@ -415,20 +415,18 @@ async function startStream(){
         camFrozenCanvas.getContext('2d').drawImage(video, 0, 0, sw, sh);
         camFrozenCanvas.toBlob(b => {
           if (!b || !ws || ws.readyState !== WebSocket.OPEN) return;
-          b.arrayBuffer().then(buf => { ws.send(buf); _camWaiting = true; });
-        }, 'image/jpeg', 0.7);
+          b.arrayBuffer().then(buf => ws.send(buf));
+        }, 'image/jpeg', 0.92);
       }
-      sendLoop = setInterval(sendFrame, 200); // 5fps
+      sendLoop = setInterval(sendFrame, 33); // 5fps
     };
     ws.onclose = () => {};
     ws.onerror = () => { addLog('WebSocket error'); };
     ws.onmessage = event => {
       try {
         const d = JSON.parse(event.data);
-        _camWaiting = false;
         if (d.type === 'init') { streamJobId = d.job_id; addLog('Job: ' + streamJobId); }
-        // No live detection — just recording
-      } catch(e) { _camWaiting = false; }
+      } catch(e) {}
     };
     document.getElementById('btn-start').disabled = true;
     document.getElementById('btn-stop').disabled = false;
@@ -440,7 +438,6 @@ function stopStream(){
   if (ws) ws.close();
   if (camStream) camStream.getTracks().forEach(t => t.stop());
   ws = camStream = sendLoop = camFrozenCanvas = null;
-  _camWaiting = false;
   document.getElementById('rec-indicator').style.display = 'none';
   document.getElementById('btn-start').disabled = false;
   document.getElementById('btn-stop').disabled = true;
@@ -749,6 +746,16 @@ function drawChart(s){
     ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();
     ctx.fillStyle='#444';ctx.font='9px system-ui';ctx.fillText(v.toFixed(0)+'°',2,y+3);
   });
+  // Zero line
+  if(vMin<=0 && vMax>=0){
+    const zy=pad.t+(1-(0-vMin)/vR)*cH;
+    ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=1;
+    ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(pad.l,zy); ctx.lineTo(W-pad.r,zy); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='#555'; ctx.font='9px system-ui';
+    ctx.fillText('0°',2,zy+3);
+  }
   ctx.strokeStyle='#00ff88'; ctx.lineWidth=2; ctx.beginPath();
   s.forEach((x,i)=>i===0?ctx.moveTo(tx(ts[i]),ty(cs[i])):ctx.lineTo(tx(ts[i]),ty(cs[i])));
   ctx.stroke();
@@ -784,6 +791,7 @@ function drawChart(s){
     <div class="live-box sig"><div class="lv" id="t-conf">—</div><div class="ll">confidence</div></div>
   </div>
   <canvas id="test-canvas" style="display:block;width:100%;border-radius:8px;background:#111;margin-top:4px"></canvas>
+  <canvas id="test-chart" style="display:none;width:100%;height:160px;border-radius:8px;background:#0a0a0a;margin-top:6px"></canvas>
   <pre id="test-log" style="font-family:monospace;font-size:.72rem;color:#555;
        margin-top:6px;max-height:100px;overflow-y:auto;line-height:1.5;
        background:#0a0a0a;border-radius:8px;padding:.5rem;border:1px solid #1e1e1e"></pre>
@@ -896,12 +904,27 @@ function startTestSse(job_id){
   testSse.onmessage=e=>{
     try{
       const d=JSON.parse(e.data);
-      if(d.done){testSse.close(); testSse=null; return;}
+      if(d.done){
+        testSse.close(); testSse=null;
+        // Load samples and draw chart
+        fetch(API+'/results/'+job_id).then(r=>r.json()).then(samples=>{
+          if(!samples.length) return;
+          const c=document.getElementById('test-chart');
+          c.style.display='block';
+          // Reuse drawChart with test-chart canvas
+          const orig=document.getElementById('chart');
+          const saved=orig.id; orig.id='__tmp';
+          c.id='chart';
+          drawChart(samples);
+          c.id='test-chart'; orig.id=saved;
+        }).catch(()=>{});
+        return;
+      }
       if(d.error||d.t_sec===undefined) return;
-      document.getElementById('t-ang').textContent=d.rotation_deg!=null?d.rotation_deg.toFixed(1)+'\u00b0':'\u2014';
+      document.getElementById('t-ang').textContent=d.rotation_deg!=null?d.rotation_deg.toFixed(1)+'°':'—';
       const cum=d.cumulative_deg||0;
-      document.getElementById('t-cum').textContent=(cum>=0?'+':'')+cum.toFixed(1)+'\u00b0';
-      document.getElementById('t-vel').textContent=d.angular_vel_dps!=null?d.angular_vel_dps.toFixed(1):'\u2014';
+      document.getElementById('t-cum').textContent=(cum>=0?'+':'')+cum.toFixed(1)+'°';
+      document.getElementById('t-vel').textContent=d.angular_vel_dps!=null?d.angular_vel_dps.toFixed(1):'—';
       document.getElementById('t-conf').textContent=(d.confidence_pct||0)+'%';
     }catch(ex){}
   };

@@ -578,21 +578,18 @@ def api_jobs(email: str = "", limit: int = 200, token: str = ""):
 @app.websocket("/stream")
 async def stream_ws(ws: WebSocket):
     await ws.accept()
-    params    = dict(ws.query_params)
-    direction = params.get("direction",  DEFAULT_DIRECTION)
-    medium    = params.get("medium",     DEFAULT_MEDIUM)
-    email     = params.get("email",      "")
-    job_id    = str(uuid.uuid4())
+    params  = dict(ws.query_params)
+    email   = params.get("email",   "")
+    job_id  = str(uuid.uuid4())
 
-    # Save params now — ws.query_params may be unavailable after disconnect
     _sp = {
-        "direction": direction,
-        "medium":    medium,
+        "direction": params.get("direction", DEFAULT_DIRECTION),
+        "medium":    params.get("medium",    DEFAULT_MEDIUM),
         "email":     email,
-        "version":   params.get("version", DEFAULT_VERSION),
-        "lang":      params.get("lang",    DEFAULT_LANG),
+        "version":   params.get("version",   DEFAULT_VERSION),
+        "lang":      params.get("lang",       DEFAULT_LANG),
     }
-    create_job(job_id, email, "stream", direction, medium, False, "basic")
+    create_job(job_id, email, "stream", _sp["direction"], _sp["medium"], False, "basic")
     jobs[job_id] = {"status":"streaming", "user_email": email,
                     "source_type": "stream",
                     "created_at": datetime.datetime.utcnow().isoformat(),
@@ -600,181 +597,31 @@ async def stream_ws(ws: WebSocket):
     log.info(f"[WS] {ws.client}  job={job_id}")
     await ws.send_text(json.dumps({"type":"init","job_id":job_id}))
 
-    # ── State ──────────────────────────────────────────────────────────────
-    rot_prev    = None
-    rot_cum     = 0.0
-    rot_buf     = []
-    zero_offset = None
-    vel_dps     = 0.0
-    last_ora    = None
-    conf_smooth = 0.0
-    stab        = Stabilizer()
+    import time as _time
+    frame_times  = []
+    frame_buffer = []
     fps_assumed  = 5.0
-    frame_times  = []    # real arrival timestamps
-    frame_buffer = []    # store raw frames, write video after stream ends
-
-    # Video recording
-    out_path    = OUTPUTS_DIR / f"{job_id}_stream.mp4"
-    out_vid     = None
-
-    # Seg cache — run every YOLO_EVERY frames
-    _last_mask    = None
-    _last_hub     = None
-    _last_contour = None
-    _last_tips    = []
-    _last_bbox    = None
-    _no_mask_frames = 0          # consecutive frames without mask
-    NO_MASK_RESET   = 10         # reset angle after this many frames without mask
-
-    sample_interval = 1.0 / SAMPLES_PER_SECOND
-    next_sample_at  = 0.0
-    all_samples     = []
-    frame_idx       = 0
+    out_path     = OUTPUTS_DIR / f"{job_id}_stream.mp4"
+    frame_idx    = 0
 
     try:
         while True:
             data  = await ws.receive_bytes()
             frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
             if frame is None:
-                await ws.send_text(json.dumps({"error":"bad frame"})); continue
+                await ws.send_text(json.dumps({"error":"bad frame"}))
+                continue
 
-            h, w   = frame.shape[:2]
-            import time as _time
+            # Track real FPS
             frame_times.append(_time.monotonic())
-            # Compute real FPS from last N frames
             if len(frame_times) > 20: frame_times.pop(0)
             if len(frame_times) >= 2:
                 elapsed = frame_times[-1] - frame_times[0]
-                fps_assumed = max(1.0, (len(frame_times)-1) / elapsed) if elapsed > 0 else fps_assumed
-            t_sec  = frame_idx / fps_assumed
-            frame_s = stab.stabilize(frame)
-            preproc = cv2.bilateralFilter(frame_s, 7, 50, 50)
-            hsv     = cv2.cvtColor(preproc, cv2.COLOR_BGR2HSV)
+                if elapsed > 0:
+                    fps_assumed = max(1.0, (len(frame_times)-1) / elapsed)
 
-            # ── Buffer first frame size ───────────────────────────────────
-            if out_vid is None:
-                _stream_w, _stream_h = w, h
-
-            # ── Seg detection every YOLO_EVERY frames ──────────────────────
-            if frame_idx % YOLO_EVERY == 0:
-                mask, hub, contour, conf, bbox = detect_seg(_seg, preproc)
-                if mask is not None:
-                    _last_mask    = mask
-                    _last_hub     = hub
-                    _last_contour = contour
-                    _last_tips    = find_spoke_tips(mask, hub)
-                    _last_bbox    = bbox
-                else:
-                    # No detection — clear cache, no gap fill
-                    _last_mask = None; _last_hub = None
-                    _last_contour = None; _last_tips = []; _last_bbox = None
-
-            # ── No mask → count consecutive misses, maybe reset ───────────
-            if _last_mask is None:
-                _no_mask_frames += 1
-                if _no_mask_frames >= NO_MASK_RESET:
-                    # Reset all detection state — wheel left frame
-                    rot_prev=None; rot_cum=0.0; rot_buf=[]
-                    zero_offset=None; vel_dps=0.0
-                    last_ora=None; conf_smooth=0.0
-                await ws.send_text(json.dumps({
-                    "frame": frame_idx, "no_ground": True,
-                    "hint":  "Place wheel in frame, camera above",
-                    "confidence_pct": 0,
-                    "hub": None, "orange": None, "ground": None,
-                    "rotation_deg": None,
-                    "cumulative_deg": round(-rot_cum, 2),
-                    "angular_vel_dps": 0, "vid_w": w, "vid_h": h,
-                }))
-                frame_idx += 1
-                continue
-            _no_mask_frames = 0  # mask found — reset counter
-
-            hub     = _last_hub
-            tips    = _last_tips
-
-            # ── Orange: find at spoke tips ──────────────────────────────────
-            ora_blob = find_orange_tip(hsv, tips, hub, last_ora)
-            if ora_blob is not None:
-                last_ora = ora_blob
-                has_orange = True
-            else:
-                # No gap fill for orange — only use fresh detection
-                has_orange = False
-                ora_blob   = None
-
-            # ── Angle math ─────────────────────────────────────────────────
-            rot_raw = None
-            if hub is not None and has_orange:
-                rot_raw = orange_angle(ora_blob, hub)
-
-            if rot_raw is not None and zero_offset is None:
-                zero_offset = rot_raw
-
-            rot_z = ((rot_raw - zero_offset) % 360
-                     if rot_raw is not None and zero_offset is not None else None)
-
-            if rot_z is not None:
-                rot_buf.append(rot_z)
-                if len(rot_buf) > SEG_SMOOTH_N: rot_buf.pop(0)
-                rot_smooth = math.degrees(math.atan2(
-                    np.mean([math.sin(math.radians(x)) for x in rot_buf]),
-                    np.mean([math.cos(math.radians(x)) for x in rot_buf]))) % 360
-            else:
-                rot_smooth = rot_buf[-1] if rot_buf else None
-
-            if rot_smooth is not None:
-                if rot_prev is not None:
-                    rot_cum = unwrap(rot_prev, rot_smooth, rot_cum)
-                rot_prev = rot_smooth
-
-            if len(rot_buf) >= 2:
-                d = rot_buf[-1] - rot_buf[-2]
-                if d >  180: d -= 360
-                if d < -180: d += 360
-                vel_dps = d * fps_assumed
-
-            # ── Confidence ─────────────────────────────────────────────────
-            conf = 100 if has_orange else 60
-            conf_smooth = conf_smooth * 0.6 + conf * 0.4
-            conf_disp   = int(round(conf_smooth))
-
-            # ── Sample ─────────────────────────────────────────────────────
-            if t_sec >= next_sample_at:
-                all_samples.append(make_sample(
-                    job_id=job_id, timestamp_sec=t_sec,
-                    rotation_deg=rot_smooth,
-                    cumulative_deg=-rot_cum,
-                    angular_vel_dps=-vel_dps,
-                    confidence_pct=conf_disp,
-                    source="SEG",
-                ))
-                next_sample_at += sample_interval
-
-            # ── Buffer frame for later video write ────────────────────────
-            frame_buffer.append(frame_s.copy())
-
-            # ── Send ───────────────────────────────────────────────────────
-            hub_px = [round(hub[0]), round(hub[1])] if hub else None
-            await ws.send_text(json.dumps({
-                "frame":           frame_idx,
-                "rotation_deg":    round(rot_smooth, 2) if rot_smooth is not None else None,
-                "rotation_rad":    round(math.radians(rot_smooth), 5) if rot_smooth is not None else None,
-                "cumulative_deg":  round(-rot_cum, 2),
-                "cumulative_rad":  round(math.radians(-rot_cum), 5),
-                "angular_vel_dps": round(-vel_dps, 2),
-                "angular_vel_rps": round(math.radians(-vel_dps), 5),
-                "confidence_pct":  conf_disp,
-                "hub":             hub_px,
-                "hub_px":          hub_px,
-                "orange":          [ora_blob[0], ora_blob[1], ora_blob[4]] if ora_blob else None,
-                "no_orange":       not has_orange,
-                "ground":          None,   # no ground bbox in seg mode
-                "vid_w":           w,
-                "vid_h":           h,
-                "source":          "SEG",
-                "hub_source":      "SEG",
-            }))
+            frame_buffer.append(frame.copy())
+            await ws.send_text(json.dumps({"type":"ack","frame":frame_idx}))
             frame_idx += 1
 
     except WebSocketDisconnect:
@@ -801,8 +648,7 @@ async def stream_ws(ws: WebSocket):
             writer.release()
             log.info(f"[WS] video saved: {out_path}")
         frame_buffer.clear()
-        finish_job(job_id, len(all_samples),
-                   all_samples[-1]["timestamp_sec"] if all_samples else 0)
+        finish_job(job_id, frame_idx, 0)
         # Process recorded video in background — same as upload pipeline
         if out_path.exists():
             jobs[job_id] = {"status":"queued","progress":{"pct":0},
