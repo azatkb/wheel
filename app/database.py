@@ -215,18 +215,43 @@ def read_samples(job_id: str) -> list:
 def get_csv_path(job_id: str) -> Path:
     return CSV_DIR / f"{job_id}.csv"
 
+def get_physics_from_db(job_id: str) -> dict:
+    """Return physics result for a job from Supabase."""
+    try:
+        sb = _sb()
+        if sb is None:
+            return {}
+        resp = (sb.table("physics_results")
+                .select("physics_json,t_lajtner,a_lajtner,cumulative_deg,w_total_air,f_max_air,omega_max")
+                .eq("job_id", job_id)
+                .limit(1)
+                .execute())
+        if not resp.data:
+            return {}
+        row = resp.data[0]
+        phys = json.loads(row.get("physics_json") or "{}")
+        return {
+            "result": phys,
+            "t_lajtner": row.get("t_lajtner"),
+            "a_lajtner": row.get("a_lajtner"),
+        }
+    except Exception as e:
+        log.warning(f"[DB] get_physics_from_db: {e}")
+        return {}
+
+
 def get_user_history(email: str) -> list:
     """
     Return list of past physics results for a user.
-    Each item: {"cumulative_deg": float, "W_total_air": float, "F_max_air": float}
+    Each item: {"cumulative_deg": float, "w_total_air": float, "f_max_air": float}
     Returns empty list if user has no history or DB unavailable.
     """
     try:
-        from app.database import _supabase  # your existing supabase client
-        if _supabase is None:
+        sb = _sb()
+        if sb is None:
             return []
-        resp = (_supabase.table("physics_results")
-                .select("cumulative_deg,W_total_air,F_max_air")
+        resp = (sb.table("physics_results")
+                .select("cumulative_deg,w_total_air,f_max_air")
                 .eq("email", email)
                 .order("created_at", desc=True)
                 .limit(50)
@@ -257,8 +282,8 @@ def save_physics_result(job_id: str, email: str, medium: str,
  
     # Save to Supabase
     try:
-        from app.database import _supabase
-        if _supabase is None:
+        sb = _sb()
+        if sb is None:
             return
  
         case = result.get("air", {})  # default to air case
@@ -267,9 +292,9 @@ def save_physics_result(job_id: str, email: str, medium: str,
             "email":         email,
             "medium":        medium,
             "cumulative_deg": abs(float(csv_row.get("phi_total_rad_rad", 0)) * 180 / 3.14159),
-            "W_total_air":   float(result.get("air",  {}).get("W_total", 0)),
-            "W_total_water": float(result.get("water",{}).get("W_total", 0)),
-            "F_max_air":     float(result.get("air",  {}).get("F_max",   0)),
+            "w_total_air":   float(result.get("air",  {}).get("W_total", 0)),
+            "w_total_water": float(result.get("water",{}).get("W_total", 0)),
+            "f_max_air":     float(result.get("air",  {}).get("F_max",   0)),
             "omega_max":     float(result.get("kinematics",{}).get("omega_max", 0)),
             "t_lajtner":     float(result.get("t_lajtner", 0)),
             "a_lajtner":     float(result.get("a_lajtner", 0)),
@@ -279,7 +304,7 @@ def save_physics_result(job_id: str, email: str, medium: str,
                 "water": result.get("water"),
             }),
         }
-        _supabase.table("physics_results").insert(record).execute()
+        sb.table("physics_results").insert(record).execute()
         log.info(f"[DB] Physics saved to Supabase: {job_id}")
     except Exception as e:
         log.warning(f"[DB] Physics Supabase save failed: {e}")

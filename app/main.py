@@ -80,28 +80,28 @@ _seg  = load_yolo_seg()          # segmentation model (cpica)
 _TMPL = Path(__file__).parent / "templates"
 
 # ── Frontend ───────────────────────────────────────────────────────────────
+def _tmpl(name):
+    p = _TMPL / name
+    if p.exists(): return p.read_text(encoding="utf-8")
+    raise HTTPException(404, f"{name} not found")
+
 @app.get("/", response_class=HTMLResponse)
+@app.get("/upload.html", response_class=HTMLResponse)
 async def page_upload():
-    return HTMLResponse((_TMPL/"upload.html").read_text(encoding="utf-8"),
+    return HTMLResponse(_tmpl("upload.html"),
                         headers={"Content-Type":"text/html; charset=utf-8"})
 
-@app.get("/stream", response_class=HTMLResponse)
+@app.get("/stream.html", response_class=HTMLResponse)
+@app.get("/stream-test", response_class=HTMLResponse)
 async def page_stream():
-    return HTMLResponse((_TMPL/"stream.html").read_text(encoding="utf-8"),
+    return HTMLResponse(_tmpl("stream.html"),
                         headers={"Content-Type":"text/html; charset=utf-8"})
 
+@app.get("/history.html", response_class=HTMLResponse)
 @app.get("/history", response_class=HTMLResponse)
 async def page_history():
-    p = _TMPL / "history.html"
-    if p.exists():
-        return HTMLResponse(p.read_text(encoding="utf-8"),
-                            headers={"Content-Type":"text/html; charset=utf-8"})
-    # Serve from same directory as main.py
-    p2 = Path(__file__).parent / "history.html"
-    if p2.exists():
-        return HTMLResponse(p2.read_text(encoding="utf-8"),
-                            headers={"Content-Type":"text/html; charset=utf-8"})
-    raise HTTPException(404, "history.html not found")
+    return HTMLResponse(_tmpl("history.html"),
+                        headers={"Content-Type":"text/html; charset=utf-8"})
 
 # ── Physics helper ─────────────────────────────────────────────────────────
 def _run_physics(samples, medium, direction, user_email, job_id, version, lang):
@@ -416,24 +416,46 @@ async def frames_sse(job_id: str):
 
 @app.get("/download/{job_id}")
 def download(job_id: str):
-    info = jobs.get(job_id)
-    if not info: raise HTTPException(404,"Not found")
-    if info.get("status")!="done": raise HTTPException(400,f"Not done: {info.get('status')}")
-    p = OUTPUTS_DIR/info["filename"]
-    if not p.exists(): raise HTTPException(500,"File missing")
-    return FileResponse(str(p),media_type="video/mp4",filename=p.name)
+    info = jobs.get(job_id, {})
+    # Try memory filename first
+    if info.get("filename"):
+        p = OUTPUTS_DIR / info["filename"]
+        if p.exists():
+            return FileResponse(str(p), media_type="video/mp4", filename=p.name)
+    # Search outputs dir for tracked or stream file
+    for suffix in ("_tracked.mp4", "_stream.mp4"):
+        p = OUTPUTS_DIR / f"{job_id}{suffix}"
+        if p.exists():
+            return FileResponse(str(p), media_type="video/mp4", filename=p.name)
+    raise HTTPException(404, "Video not found")
 
 @app.get("/results/{job_id}")
 def results(job_id: str): return read_samples(job_id)
 
 @app.get("/physics/{job_id}")
 def physics_results(job_id: str):
-    info = jobs.get(job_id)
-    if not info: raise HTTPException(404,"Not found")
-    if info.get("status") not in ("done","calculating"):
-        raise HTTPException(400,"Not ready")
-    return {"message":info.get("message",{}),"result":info.get("physics",{}),
-            "phases":info.get("phases",{}),"physics_url":f"/physics/{job_id}"}
+    info = jobs.get(job_id, {})
+    # Try memory first (fast)
+    if info.get("physics") or info.get("message"):
+        return {"message": info.get("message", {}),
+                "result":  info.get("physics",  {}),
+                "phases":  info.get("phases",   {}),
+                "physics_url": f"/physics/{job_id}"}
+    # Fallback: read from Supabase via _sb()
+    try:
+        from app.database import _sb
+        sb = _sb()
+        if sb:
+            resp = sb.table("physics_results").select(
+                "physics_json"
+            ).eq("job_id", job_id).limit(1).execute()
+            if resp.data:
+                phys = json.loads(resp.data[0].get("physics_json") or "{}")
+                return {"message": {}, "result": phys,
+                        "phases": {}, "physics_url": f"/physics/{job_id}"}
+    except Exception as e:
+        log.warning(f"[PHYSICS] DB read: {e}")
+    raise HTTPException(404, "Physics not found")
 
 @app.get("/csv/{job_id}")
 def csv_download(job_id: str):
@@ -469,6 +491,14 @@ async def stream_ws(ws: WebSocket):
     email     = params.get("email",      "")
     job_id    = str(uuid.uuid4())
 
+    # Save params now — ws.query_params may be unavailable after disconnect
+    _sp = {
+        "direction": direction,
+        "medium":    medium,
+        "email":     email,
+        "version":   params.get("version", DEFAULT_VERSION),
+        "lang":      params.get("lang",    DEFAULT_LANG),
+    }
     create_job(job_id, email, "stream", direction, medium, False, "basic")
     jobs[job_id] = {"status":"streaming", "user_email": email,
                     "source_type": "stream",
@@ -666,18 +696,31 @@ async def stream_ws(ws: WebSocket):
                    all_samples[-1]["timestamp_sec"] if all_samples else 0)
         # Process recorded video in background — same as upload pipeline
         if out_path.exists():
-            sp = dict(ws.query_params) if hasattr(ws, "query_params") else {}
-            jobs[job_id] = {"status":"queued","progress":{"pct":0}}
+            jobs[job_id] = {"status":"queued","progress":{"pct":0},
+                            "user_email": _sp["email"],
+                            "source_type": "stream"}
             asyncio.get_event_loop().run_in_executor(
                 executor, _run_job, job_id, out_path,
-                sp.get("direction", DEFAULT_DIRECTION),
-                sp.get("medium", DEFAULT_MEDIUM),
+                _sp["direction"], _sp["medium"],
                 False, "basic",
-                sp.get("email", ""),
-                sp.get("version", DEFAULT_VERSION),
-                sp.get("lang", DEFAULT_LANG),
+                _sp["email"], _sp["version"], _sp["lang"],
             )
-            log.info(f"[WS] queued processing job {job_id}")
+            log.info(f"[WS] queued _run_job {job_id} email={_sp['email']}")
+
+@app.post("/admin/rerun-physics/{job_id}")
+async def rerun_physics(job_id: str, medium: str = "air", version: str = "free",
+                        lang: str = "en", direction: str = "auto", email: str = ""):
+    """Re-run physics calculation for a job using saved samples."""
+    samples = read_samples(job_id)
+    if not samples:
+        raise HTTPException(404, "No samples found for this job")
+    physics = _run_physics(samples, medium, direction, email, job_id, version, lang)
+    if job_id in jobs:
+        jobs[job_id]["message"] = physics.get("message", {})
+        jobs[job_id]["physics"] = physics.get("result", {})
+        jobs[job_id]["phases"]  = physics.get("phases", {})
+    return {"ok": True, "samples": len(samples),
+            "message": physics.get("message", {}).get("message", "")}
 
 @app.get("/health")
 def health():
