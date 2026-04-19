@@ -104,8 +104,9 @@ def finish_job(job_id: str, sample_count: int, duration_sec: float) -> None:
                 "duration_sec": round(duration_sec, 2),
                 "finished_at":  datetime.now(timezone.utc).isoformat(),
             }).eq("id", job_id).execute()
+            log.info(f"[DB] finish_job done: {job_id}")
         except Exception as e:
-            log.error(f"[DB] finish_job: {e}")
+            log.error(f"[DB] finish_job FAILED: {e}", exc_info=True)
 
 
 def get_all_jobs(email_filter: str = "", limit: int = 200) -> list:
@@ -189,27 +190,48 @@ def persist_samples(job_id: str, samples: list) -> None:
         log.error(f"[CSV] write failed: {e}")
 
 
+def _parse_sample_row(row: dict) -> dict:
+    for k in ("timestamp_sec","rotation_deg","rotation_rad",
+              "cumulative_deg","cumulative_rad",
+              "angular_vel_dps","angular_vel_rps"):
+        if row.get(k) not in ("", "None", None):
+            row[k] = float(row[k])
+        else:
+            row[k] = None
+    row["confidence_pct"] = int(row.get("confidence_pct") or 0)
+    return row
+
 def read_samples(job_id: str) -> list:
-    """Read all samples for a job from CSV (fast, no Supabase roundtrip)."""
+    """Read samples: CSV first, fallback to Supabase."""
     csv_path = CSV_DIR / f"{job_id}.csv"
-    if not csv_path.exists():
-        return []
-    rows = []
+    if csv_path.exists():
+        rows = []
+        try:
+            with open(csv_path, "r", encoding="utf-8") as f:
+                for row in csv.DictReader(f, delimiter=CSV_SEPARATOR):
+                    rows.append(_parse_sample_row(row))
+            if rows:
+                return rows
+        except Exception as e:
+            log.error(f"[CSV] read failed: {e}")
+    # Fallback: read from Supabase
     try:
-        with open(csv_path, "r", encoding="utf-8") as f:
-            for row in csv.DictReader(f, delimiter=CSV_SEPARATOR):
-                for k in ("timestamp_sec","rotation_deg","rotation_rad",
-                          "cumulative_deg","cumulative_rad",
-                          "angular_vel_dps","angular_vel_rps"):
-                    if row.get(k) not in ("", "None", None):
-                        row[k] = float(row[k])
-                    else:
-                        row[k] = None
-                row["confidence_pct"] = int(row.get("confidence_pct") or 0)
-                rows.append(row)
+        sb = _sb()
+        if sb:
+            resp = (sb.table(TABLE_SAMPLES)
+                    .select("job_id,timestamp_sec,rotation_deg,rotation_rad,"
+                            "cumulative_deg,cumulative_rad,"
+                            "angular_vel_dps,angular_vel_rps,"
+                            "confidence_pct,source")
+                    .eq("job_id", job_id)
+                    .order("timestamp_sec")
+                    .execute())
+            if resp.data:
+                log.info(f"[DB] read {len(resp.data)} samples from Supabase: {job_id}")
+                return resp.data
     except Exception as e:
-        log.error(f"[CSV] read failed: {e}")
-    return rows
+        log.error(f"[DB] read_samples Supabase: {e}")
+    return []
 
 
 def get_csv_path(job_id: str) -> Path:
