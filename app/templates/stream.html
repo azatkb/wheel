@@ -132,6 +132,10 @@ tr:hover td{background:#1a1a1a}
       <label>Language</label>
       <select id="cam-lang" style="width:100%"><option value="en">EN</option><option value="hu">HU</option><option value="de">DE</option></select>
     </div>
+    <div>
+      <label>Hand visible</label>
+      <select id="cam-hand" style="width:100%"><option value="false">No hand</option><option value="true">Hand visible</option></select>
+    </div>
   </div>
   <div style="margin-top:.8rem">
     <button id="btn-start" onclick="startStream()">▶ Start stream</button>
@@ -781,11 +785,9 @@ function startTestStream(){
 }
 
 function connectTestWs(){
-  const eml=encodeURIComponent(document.getElementById('cam-email').value||'');
-  const med=document.getElementById('cam-medium').value;
-  const ver=document.getElementById('cam-version').value;
-  const lng=document.getElementById('cam-lang').value;
-  testWs=new WebSocket(WSS+'/stream?email='+eml+'&medium='+med+'&version='+ver+'&lang='+lng);
+  const eml=encodeURIComponent((document.getElementById('cam-email')||{value:''}).value||'');
+  const lng=(document.getElementById('cam-lang')||{value:'en'}).value;
+  testWs=new WebSocket(WSS+'/stream?email='+eml+'&lang='+lng);
   testWs.onopen=()=>{
     addTestLog('Recording...');
     document.getElementById('test-btn-start').disabled=true;

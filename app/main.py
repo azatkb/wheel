@@ -55,6 +55,7 @@ log = logging.getLogger(__name__)
 
 # ── App settings ───────────────────────────────────────────────────────────
 WATERMARK_TEXT       = "© enyem.com"
+MAX_ANGLE_JUMP       = 30.0   # degrees — reject spoke-hop jumps
 DEFAULT_LANG         = "en"
 DEFAULT_VERSION      = "free"
 SAMPLE_INTERVAL_MS   = 1000
@@ -245,6 +246,13 @@ def _process_video_seg(video_path, out_path, job_id="local",
             zero_offset = rot_raw
         rot_z = ((rot_raw - zero_offset) % 360
                  if rot_raw is not None and zero_offset is not None else None)
+        # Reject angle jumps > MAX_ANGLE_JUMP (spoke-hopping filter)
+        if rot_z is not None and rot_buf:
+            diff = rot_z - rot_buf[-1]
+            if diff >  180: diff -= 360
+            if diff < -180: diff += 360
+            if abs(diff) > MAX_ANGLE_JUMP:
+                rot_z = None  # reject this measurement
         if rot_z is not None:
             rot_buf.append(rot_z)
             if len(rot_buf) > SEG_SMOOTH_N: rot_buf.pop(0)
@@ -576,11 +584,13 @@ async def stream_ws(ws: WebSocket):
     last_ora    = None
     conf_smooth = 0.0
     stab        = Stabilizer()
-    fps_assumed = 30.0
+    fps_assumed  = 5.0
+    frame_times  = []    # real arrival timestamps
+    frame_buffer = []    # store raw frames, write video after stream ends
 
     # Video recording
     out_path    = OUTPUTS_DIR / f"{job_id}_stream.mp4"
-    out_vid     = None   # created on first frame (need w,h)
+    out_vid     = None
 
     # Seg cache — run every YOLO_EVERY frames
     _last_mask    = None
@@ -604,15 +614,21 @@ async def stream_ws(ws: WebSocket):
                 await ws.send_text(json.dumps({"error":"bad frame"})); continue
 
             h, w   = frame.shape[:2]
+            import time as _time
+            frame_times.append(_time.monotonic())
+            # Compute real FPS from last N frames
+            if len(frame_times) > 20: frame_times.pop(0)
+            if len(frame_times) >= 2:
+                elapsed = frame_times[-1] - frame_times[0]
+                fps_assumed = max(1.0, (len(frame_times)-1) / elapsed) if elapsed > 0 else fps_assumed
             t_sec  = frame_idx / fps_assumed
             frame_s = stab.stabilize(frame)
             preproc = cv2.bilateralFilter(frame_s, 7, 50, 50)
             hsv     = cv2.cvtColor(preproc, cv2.COLOR_BGR2HSV)
 
-            # ── Init video writer on first frame ──────────────────────────
+            # ── Buffer first frame size ───────────────────────────────────
             if out_vid is None:
-                fourcc  = cv2.VideoWriter_fourcc(*"mp4v")
-                out_vid = cv2.VideoWriter(str(out_path), fourcc, fps_assumed, (w, h))
+                _stream_w, _stream_h = w, h
 
             # ── Seg detection every YOLO_EVERY frames ──────────────────────
             if frame_idx % YOLO_EVERY == 0:
@@ -712,9 +728,8 @@ async def stream_ws(ws: WebSocket):
                 if len(all_samples) % 20 == 0:
                     persist_samples(job_id, all_samples[-20:])
 
-            # ── Write raw frame to video (no overlay) ─────────────────────
-            if out_vid is not None:
-                out_vid.write(frame_s)
+            # ── Buffer frame for later video write ────────────────────────
+            frame_buffer.append(frame_s.copy())
 
             # ── Send ───────────────────────────────────────────────────────
             hub_px = [round(hub[0]), round(hub[1])] if hub else None
@@ -741,15 +756,28 @@ async def stream_ws(ws: WebSocket):
 
     except WebSocketDisconnect:
         log.info(f"[WS] disconnected after {frame_idx} frames")
-        if out_vid: out_vid.release(); out_vid = None
     except Exception as exc:
         log.error(f"[WS] error: {exc}", exc_info=True)
         try: await ws.send_text(json.dumps({"error":str(exc)}))
         except: pass
     finally:
-        if out_vid:
-            out_vid.release()
+        # Write buffered frames with real FPS
+        if frame_buffer:
+            if len(frame_times) >= 2:
+                elapsed = frame_times[-1] - frame_times[0]
+                real_fps = max(1.0, (len(frame_times)-1) / elapsed)
+            else:
+                real_fps = fps_assumed
+            log.info(f"[WS] writing {len(frame_buffer)} frames at {real_fps:.1f} fps")
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            _w = frame_buffer[0].shape[1]
+            _h = frame_buffer[0].shape[0]
+            writer = cv2.VideoWriter(str(out_path), fourcc, real_fps, (_w, _h))
+            for f in frame_buffer:
+                writer.write(f)
+            writer.release()
             log.info(f"[WS] video saved: {out_path}")
+        frame_buffer.clear()
         rem = len(all_samples) % 20
         if rem: persist_samples(job_id, all_samples[-rem:])
         finish_job(job_id, len(all_samples),
