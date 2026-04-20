@@ -41,10 +41,11 @@ ORA_PATCH  = 25   # half-size of patch to sample at spoke tip (px)
 # Spoke tip detection
 N_TIPS       = 8    # expected number of spokes
 TIP_FRAC     = 0.85
-MAX_ORA_JUMP = 120  # px — stabilization
+MAX_ORA_JUMP = 60   # px — max jump between frames (reduced to avoid spoke-hopping)
 # How far from tip toward hub to search for orange marker
-# 0.0 = exactly at tip, 0.15 = 15% toward center (≈3mm inset)
 ORA_INSET    = 0.15
+# Max angle jump per frame (degrees) — 360/8/2 = 22.5° per spoke half-gap
+MAX_ANGLE_JUMP = 30.0  # degrees
 
 # Smoothing
 SMOOTH_N   = 4
@@ -254,9 +255,9 @@ def find_orange_tip(hsv, tips, hub, last_ora=None):
         else:
             score = 0.0
 
-        # log.info(f"[TIP] tip=({tx:.0f},{ty:.0f}) sample=({sx:.0f},{sy:.0f}) "
-        #          f"px={count} score={score:.0f} "
-        #          f"H={int(patch_h.mean())} S={int(patch_s.mean())} sat_th={sat_thresh}")
+        log.info(f"[TIP] tip=({tx:.0f},{ty:.0f}) sample=({sx:.0f},{sy:.0f}) "
+                 f"px={count} score={score:.0f} "
+                 f"H={int(patch_h.mean())} S={int(patch_s.mean())} sat_th={sat_thresh}")
 
         if count > 0:
             ys_o, xs_o = np.where(orange_mask)
@@ -278,8 +279,8 @@ def find_orange_tip(hsv, tips, hub, last_ora=None):
     if best_blob is None:
         return None
 
-    # log.info(f"[ORA] best tip #{best_idx} score={scores[best_idx]:.0f} "
-    #          f"pos=({best_blob[0]:.0f},{best_blob[1]:.0f})")
+    log.info(f"[ORA] best tip #{best_idx} score={scores[best_idx]:.0f} "
+             f"pos=({best_blob[0]:.0f},{best_blob[1]:.0f})")
 
     # Stabilization
     if last_ora is not None:
@@ -306,62 +307,54 @@ def unwrap(prev, curr, cum):
 # ── Drawing ─────────────────────────────────────────────────────────────────
 
 def draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cum, bbox=None):
-    """Draw seg detection on ann (in-place)."""
-    PURPLE = (220, 0, 255)
-    CYAN   = (0, 220, 220)
+    """Draw seg detection on ann (in-place). Neon green circle style."""
+    NEON    = (0, 255, 128)   # neon green BGR
+    NEON_DIM= (0, 120, 60)
+    CYAN    = (0, 220, 220)
     ORANGE_BGR = (0, 100, 255)
 
-    # Semi-transparent mask fill
-    if mask is not None:
-        overlay = ann.copy()
-        overlay[mask > 0] = (overlay[mask > 0] * 0.5 + np.array([80, 0, 120]) * 0.5).astype(np.uint8)
-        cv2.addWeighted(overlay, 0.4, ann, 0.6, 0, ann)
+    # ── Neon green circle around wheel (inscribed in seg bbox) ────────────
+    if contour is not None and hub is not None:
+        hx, hy = int(hub[0]), int(hub[1])
+        # Compute radius from hub to farthest contour point
+        pts = contour.reshape(-1, 2).astype(float)
+        dists = np.sqrt((pts[:,0]-hx)**2 + (pts[:,1]-hy)**2)
+        r = int(np.percentile(dists, 90))  # 90th percentile avoids outliers
+        if r > 5:
+            # Glow effect: outer dim ring
+            cv2.circle(ann, (hx, hy), r+4, NEON_DIM, 2, cv2.LINE_AA)
+            cv2.circle(ann, (hx, hy), r+2, NEON_DIM, 1, cv2.LINE_AA)
+            # Main neon circle
+            cv2.circle(ann, (hx, hy), r, NEON, 2, cv2.LINE_AA)
 
-    # Contour outline
-    if contour is not None:
-        cv2.drawContours(ann, [contour], -1, PURPLE, 2, cv2.LINE_AA)
-
-    # Spoke tips (small dots)
-    for (tx, ty) in (tips or []):
-        cv2.circle(ann, (int(tx), int(ty)), 5, (100, 100, 255), -1, cv2.LINE_AA)
-
-    # YOLO bbox (debug) — green like ultralytics
-    if bbox is not None:
-        bx1, by1, bx2, by2 = bbox
-        cv2.rectangle(ann, (bx1, by1), (bx2, by2), (0, 255, 0), 2, cv2.LINE_AA)
-        bcx, bcy = (bx1+bx2)//2, (by1+by2)//2
-        cv2.circle(ann, (bcx, bcy), 5, (0, 255, 0), -1, cv2.LINE_AA)
-        cv2.putText(ann, f"bbox {bx2-bx1}x{by2-by1}", (bx1, by1-4),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0,255,0), 1, cv2.LINE_AA)
-
-    # Hub crosshair
+    # Hub dot
     if hub is not None:
         hx, hy = int(hub[0]), int(hub[1])
-        arm = 14
-        cv2.line(ann, (hx-arm, hy), (hx+arm, hy), CYAN, 2, cv2.LINE_AA)
-        cv2.line(ann, (hx, hy-arm), (hx, hy+arm), CYAN, 2, cv2.LINE_AA)
-        cv2.circle(ann, (hx, hy), 5, CYAN, -1, cv2.LINE_AA)
+        cv2.circle(ann, (hx, hy), 7, (0,0,0), -1, cv2.LINE_AA)
+        cv2.circle(ann, (hx, hy), 5, NEON, -1, cv2.LINE_AA)
 
-    # Orange marker
+    # Orange marker + line from hub
     if ora_blob is not None and hub is not None:
         ox, oy = int(ora_blob[0]), int(ora_blob[1])
         hx, hy = int(hub[0]), int(hub[1])
-        # Line hub→orange
-        cv2.line(ann, (hx,hy), (ox,oy), (0,200,150), 1, cv2.LINE_AA)
-        # Orange circle
-        cv2.circle(ann, (ox,oy), 12, (0,40,120), -1, cv2.LINE_AA)
-        cv2.circle(ann, (ox,oy), 10, ORANGE_BGR, -1, cv2.LINE_AA)
-        cv2.circle(ann, (ox,oy), 10, (0,60,200),  1, cv2.LINE_AA)
-        cv2.putText(ann, "ORA", (ox+13, oy+4),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, ORANGE_BGR, 1, cv2.LINE_AA)
+        # Dashed line hub→orange
+        cv2.line(ann, (hx,hy), (ox,oy), NEON_DIM, 1, cv2.LINE_AA)
+        # Neon orange circle
+        cv2.circle(ann, (ox,oy), 13, (0,0,0),    -1, cv2.LINE_AA)
+        cv2.circle(ann, (ox,oy), 11, ORANGE_BGR,  -1, cv2.LINE_AA)
+        cv2.circle(ann, (ox,oy), 11, (0, 60, 180), 2, cv2.LINE_AA)
 
     # Angle text box
     if rot_smooth is not None:
-        ang = f"{rot_smooth:.1f}°"
-        cum = f"{-rot_cum:+.1f}°"
-        cv2.rectangle(ann, (6,6), (150,58), (0,0,0), -1)
-        cv2.putText(ann, ang, (12,30), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.9, (0,220,220), 2, cv2.LINE_AA)
-        col = (0,255,128) if rot_cum <= 0 else (0,100,255)
-        cv2.putText(ann, cum, (12,52), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.75, col, 2, cv2.LINE_AA)
+        ang = f"{rot_smooth:.1f}"
+        cum = f"{-rot_cum:+.1f}"
+        W = ann.shape[1]
+        # Semi-transparent bg
+        overlay = ann.copy()
+        cv2.rectangle(overlay, (6,6), (160,62), (0,0,0), -1)
+        cv2.addWeighted(overlay, 0.55, ann, 0.45, 0, ann)
+        cv2.putText(ann, ang + u"°", (12,32), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.95, CYAN, 2, cv2.LINE_AA)
+        col = NEON if rot_cum <= 0 else (0,100,255)
+        cv2.putText(ann, cum + u"°", (12,56), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.78, col, 2, cv2.LINE_AA)

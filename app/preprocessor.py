@@ -41,12 +41,14 @@ def preprocess_video(src: Path, dst: Path) -> dict:
 
 def _ffmpeg(src: Path, dst: Path) -> dict:
     log.info(f"[PREP/ffmpeg] {src.name} → {dst.name}")
+    # Scale to 480p (max height 480, keep aspect ratio)
+    vf = "fps=%d,scale=trunc(oh*a/2)*2:min(480,ih)" % OUTPUT_FPS
     cmd = [
         "ffmpeg", "-y",
         "-i",  str(src),
         "-t",  str(MAX_DURATION_SEC),
         "-r",  str(OUTPUT_FPS),
-        "-vf", f"fps={OUTPUT_FPS}",
+        "-vf", vf,
         "-an",                         # no audio
         "-c:v", "libx264",
         "-preset", "fast", "-crf", "23",
@@ -80,6 +82,12 @@ def _opencv(src: Path, dst: Path) -> dict:
     if auto_rotate in (cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_90_COUNTERCLOCKWISE):
         W, H = H, W
 
+    # Resize to 480p (max height 480, keep aspect ratio)
+    MAX_H = 480
+    if H > MAX_H:
+        scale = MAX_H / H
+        W = int(W * scale) & ~1  # ensure even width
+        H = MAX_H
     writer = cv2.VideoWriter(str(dst), cv2.VideoWriter_fourcc(*"mp4v"),
                              OUTPUT_FPS, (W, H))
     ratio         = src_fps / OUTPUT_FPS
@@ -95,6 +103,9 @@ def _opencv(src: Path, dst: Path) -> dict:
         if not ret: break
         if auto_rotate is not None:
             frame = cv2.rotate(frame, auto_rotate)
+        fh, fw = frame.shape[:2]
+        if fh != H or fw != W:
+            frame = cv2.resize(frame, (W, H))
         writer.write(frame)
         written += 1; out_idx += 1
 

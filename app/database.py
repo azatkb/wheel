@@ -202,7 +202,7 @@ def _parse_sample_row(row: dict) -> dict:
     return row
 
 def read_samples(job_id: str) -> list:
-    """Read samples: CSV first, fallback to Supabase."""
+    """Read samples: CSV first, fallback to Supabase. Always sorted by timestamp."""
     csv_path = CSV_DIR / f"{job_id}.csv"
     if csv_path.exists():
         rows = []
@@ -211,6 +211,7 @@ def read_samples(job_id: str) -> list:
                 for row in csv.DictReader(f, delimiter=CSV_SEPARATOR):
                     rows.append(_parse_sample_row(row))
             if rows:
+                rows.sort(key=lambda r: float(r.get("timestamp_sec") or 0))
                 return rows
         except Exception as e:
             log.error(f"[CSV] read failed: {e}")
@@ -262,6 +263,34 @@ def get_physics_from_db(job_id: str) -> dict:
         return {}
 
 
+def get_group_averages() -> dict:
+    """Return average physics values across ALL users for group ranking."""
+    try:
+        sb = _sb()
+        if not sb:
+            return {}
+        resp = (sb.table("physics_results")
+                .select("cumulative_deg,w_total_air,f_max_air,omega_max")
+                .limit(1000)
+                .execute())
+        if not resp.data:
+            return {}
+        rows = resp.data
+        def avg(key):
+            vals = [float(r[key]) for r in rows if r.get(key) is not None]
+            return sum(vals)/len(vals) if vals else 0.0
+        return {
+            "cumulative_deg": avg("cumulative_deg"),
+            "W_total_air":    avg("w_total_air"),
+            "F_max_air":      avg("f_max_air"),
+            "omega_max":      avg("omega_max"),
+            "count":          len(rows),
+        }
+    except Exception as e:
+        log.warning(f"[DB] get_group_averages: {e}")
+        return {}
+
+
 def get_user_history(email: str) -> list:
     """
     Return list of past physics results for a user.
@@ -309,6 +338,11 @@ def save_physics_result(job_id: str, email: str, medium: str,
             return
  
         case = result.get("air", {})  # default to air case
+        # Direction summation: 4 columns (absolute values, deg)
+        # cw_deg, ccw_deg, cw_ccw_deg (cw+ccw sum), ccw_cw_deg (ccw+cw sum)
+        all_phases = result.get("all_phases", [])
+        cw_total  = sum(abs(p.get("phi_total_deg", 0)) for p in all_phases if p.get("direction") == "CW")
+        ccw_total = sum(abs(p.get("phi_total_deg", 0)) for p in all_phases if p.get("direction") == "CCW")
         record = {
             "job_id":        job_id,
             "email":         email,
@@ -320,10 +354,15 @@ def save_physics_result(job_id: str, email: str, medium: str,
             "omega_max":     float(result.get("kinematics",{}).get("omega_max", 0)),
             "t_lajtner":     float(result.get("t_lajtner", 0)),
             "a_lajtner":     float(result.get("a_lajtner", 0)),
+            "cw_deg":        round(cw_total, 2),
+            "ccw_deg":       round(ccw_total, 2),
+            "cw_ccw_deg":    round(cw_total + ccw_total, 2),
+            "ccw_cw_deg":    round(ccw_total + cw_total, 2),
             "physics_json":  json.dumps({
                 "ideal": result.get("ideal"),
                 "air":   result.get("air"),
                 "water": result.get("water"),
+                "all_phases": all_phases,
             }),
         }
         sb.table("physics_results").insert(record).execute()

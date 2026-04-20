@@ -14,13 +14,13 @@ Endpoints:
   GET  /health
 """
 
-import uuid, os, shutil, asyncio, json, logging, math, datetime
+import uuid, os, shutil, asyncio, json, logging, math, datetime, hashlib, secrets
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, UploadFile, File, Form, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -45,7 +45,7 @@ from app.preprocessor import preprocess_video, get_video_info
 from app.database import (
     create_job, finish_job, make_sample,
     persist_samples, read_samples, get_csv_path,
-    get_user_history, save_physics_result, get_all_jobs,
+    get_user_history, save_physics_result, get_all_jobs, get_group_averages,
 )
 from app.stabilizer import Stabilizer
 
@@ -146,6 +146,40 @@ def _run_physics(samples, medium, direction, user_email, job_id, version, lang):
         msg_data["rank_message"] = rank_msg
         msg_data["rank_medal"]   = rank_medal
         msg_data["pct_vs_avg"]   = round(pct, 1)
+    # ── Group ranking (shown to all users) ────────────────────────────────
+    if version == "paid":
+        try:
+            group_avg = get_group_averages()
+            group_count = group_avg.get("count", 0)
+            if group_count >= 2:
+                g_avg_val = group_avg.get("cumulative_deg", 0)
+                g_pct = (cum_deg - g_avg_val) / g_avg_val * 100 if g_avg_val else 0
+                msg_data["group_intro"] = {
+                    "en": f"Let's see your ranking among {group_count} people!",
+                    "hu": f"Nézzük az eredményed {group_count} ember között!",
+                }.get(lang, f"Let's see your ranking among {group_count} people!")
+                if g_pct > 5:
+                    msg_data["group_message"] = {
+                        "en": "Congrats, this is above average! 🏆",
+                        "hu": "Gratulálok, ez átlag feletti! 🏆",
+                    }.get(lang, "Congrats, this is above average! 🏆")
+                    msg_data["group_medal"] = "gold"
+                elif g_pct >= -5:
+                    msg_data["group_message"] = {
+                        "en": "Congrats, Your result is great, only a few will beat you! 🥈",
+                        "hu": "Gratulálok, nagyszerű eredmény, csak kevesen előznek meg! 🥈",
+                    }.get(lang, "Great result! 🥈")
+                    msg_data["group_medal"] = "silver"
+                else:
+                    msg_data["group_message"] = {
+                        "en": "Congrats, You're not above average yet, but with practice you'll soon be! 🥉",
+                        "hu": "Gratulálok, még nem vagy átlag felett, de gyakorlással hamarosan leszel! 🥉",
+                    }.get(lang, "Keep going! 🥉")
+                    msg_data["group_medal"] = "bronze"
+                msg_data["pct_vs_group_avg"] = round(g_pct, 1)
+        except Exception as e:
+            log.warning(f"[PHYSICS] group ranking: {e}")
+
     if is_outlier:
         msg_data["warning"] = {"en":"Are you sure this result came out correctly? ⚠️",
                                "hu":"Biztos, hogy ez az eredmény helyes? ⚠️"}.get(lang,"Check result ⚠️")
@@ -436,6 +470,77 @@ def _run_job(job_id, raw_path, direction, medium, hand_visible,
     except Exception as exc:
         log.error(f"[{job_id}] failed: {exc}", exc_info=True)
         jobs[job_id] = {"status":"error","detail":str(exc)}
+
+# ── Auth ──────────────────────────────────────────────────────────────────
+# SQL: CREATE TABLE IF NOT EXISTS wt_users (
+#   email TEXT PRIMARY KEY, password_hash TEXT, created_at TEXT
+# );
+
+def _hash_pw(pw: str) -> str:
+    return hashlib.sha256(pw.encode()).hexdigest()
+
+def _get_user(email: str):
+    try:
+        from app.database import _sb
+        sb = _sb()
+        if not sb: return None
+        r = sb.table("wt_users").select("*").eq("email", email).limit(1).execute()
+        return r.data[0] if r.data else None
+    except: return None
+
+@app.post("/auth/register")
+async def auth_register(request: Request):
+    body = await request.json()
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+    if not email or not password:
+        raise HTTPException(400, "Email and password required")
+    if _get_user(email):
+        raise HTTPException(409, "Email already registered")
+    try:
+        from app.database import _sb
+        sb = _sb()
+        sb.table("wt_users").insert({
+            "email": email,
+            "password_hash": _hash_pw(password),
+            "plan": "free",
+            "created_at": datetime.datetime.utcnow().isoformat(),
+        }).execute()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+@app.post("/auth/plan")
+async def auth_update_plan(request: Request):
+    body = await request.json()
+    email = (body.get("email") or "").strip().lower()
+    plan  = (body.get("plan") or "free").strip().lower()
+    if plan not in ("free", "paid"):
+        raise HTTPException(400, "Invalid plan")
+    if not email:
+        raise HTTPException(400, "Email required")
+    try:
+        from app.database import _sb
+        sb = _sb()
+        if not sb:
+            raise HTTPException(500, "DB unavailable")
+        sb.table("wt_users").update({"plan": plan}).eq("email", email).execute()
+        return {"ok": True, "plan": plan}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+@app.post("/auth/login")
+async def auth_login(request: Request):
+    body = await request.json()
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+    user = _get_user(email)
+    if not user or user.get("password_hash") != _hash_pw(password):
+        raise HTTPException(401, "Invalid email or password")
+    token = secrets.token_hex(32)
+    return {"token": token, "email": email, "plan": user.get("plan", "free")}
 
 @app.post("/upload")
 async def upload(

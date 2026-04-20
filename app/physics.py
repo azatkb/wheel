@@ -81,7 +81,7 @@ def format_sci(value: float, unit: str) -> str:
 # ══════════════════════════════════════════════════════════════════════
 
 def detect_phases(timestamps: list, angles_rad: list,
-                  min_move_thresh: float = 0.05,   # rad/s — min speed to count as movement (~3 deg/s)
+                  min_move_thresh: float = 0.15,   # rad/s — min speed to count as movement (~8.6 deg/s)
                   const_thresh:    float = 0.10,   # fraction of peak for constant phase detection
                   direction_filter: str  = "auto") -> dict:
     """
@@ -131,8 +131,8 @@ def detect_phases(timestamps: list, angles_rad: list,
     # Find first movement → t_Lajtner
     # Require CONSECUTIVE frames above threshold to avoid noise spikes
     # Use 3 consecutive frames moving in same direction
-    t_start = timestamps[0]
-    CONSEC_REQUIRED = 3
+    t_start = 0.0  # time from video start to first movement
+    CONSEC_REQUIRED = 4  # require 4 consecutive frames
     for i in range(len(omegas) - CONSEC_REQUIRED + 1):
         window = omegas[i:i+CONSEC_REQUIRED]
         # All frames must exceed threshold in same direction
@@ -220,6 +220,8 @@ def detect_phases(timestamps: list, angles_rad: list,
 
     return {
         "t_start":    t_start,
+        "timestamps": timestamps,
+        "omegas":     omegas,
         "t_accel":    _dt(accel_slice),
         "t_const":    _dt(const_slice),
         "t_decel":    _dt(decel_slice),
@@ -367,8 +369,22 @@ def calculate(phases: dict) -> dict:
 
     # ── Lajtner values ─────────────────────────────────────────────────
     t_lajtner = phases.get("t_start", 0.0)
-    # a_Lajtner: angular acceleration at start of motion (rad/s²)
-    a_lajtner = beta_accel
+    # a_Lajtner: angular jerk in first 0.25s of motion (rad/s³)
+    # Find samples within first 0.25s after t_lajtner and compute omega change rate
+    LAJTNER_WINDOW = 0.25  # seconds
+    a_lajtner = beta_accel  # fallback
+    if phases.get("t_start") is not None and "timestamps" in phases:
+        ts_all = phases["timestamps"]
+        om_all = phases.get("omegas", [])
+        t0 = t_lajtner
+        t1 = t0 + LAJTNER_WINDOW
+        idx0 = next((i for i,t in enumerate(ts_all) if t >= t0), None)
+        idx1 = next((i for i,t in enumerate(ts_all) if t >= t1), None)
+        if idx0 is not None and idx1 is not None and idx1 > idx0 and len(om_all) > idx1:
+            dt_w = ts_all[idx1] - ts_all[idx0]
+            if dt_w > 0:
+                dom = om_all[idx1] - om_all[idx0]
+                a_lajtner = dom / dt_w  # rad/s² over first 0.25s
 
     # Correct t_total: physics time starts from first movement, not t=0
     # t_total already = t_accel + t_const + t_decel which is relative to motion start
