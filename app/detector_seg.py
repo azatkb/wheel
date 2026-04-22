@@ -28,7 +28,7 @@ YOLO_SEG_CONF    = 0.25
 YOLO_SEG_MASK_TH = 0.45
 ONNX_INPUT_SIZE  = 640
 YOLO_EVERY       = 2   # run seg every N processed frames
-SKIP_FRAMES      = 2   # process every N-th raw frame
+SKIP_FRAMES      = 4   # process every N-th raw frame
 
 # Orange HSV (OpenCV H: 0-180)
 # OpenCV: H=0-180, true orange ≈ H=8-18, S>150, V>100
@@ -41,7 +41,7 @@ ORA_PATCH  = 25   # half-size of patch to sample at spoke tip (px)
 # Spoke tip detection
 N_TIPS       = 8    # expected number of spokes
 TIP_FRAC     = 0.85
-MAX_ORA_JUMP = 60   # px — max jump between frames (reduced to avoid spoke-hopping)
+MAX_ORA_JUMP = 600   # px — max jump between frames (reduced to avoid spoke-hopping)
 # How far from tip toward hub to search for orange marker
 ORA_INSET    = 0.15
 # Max angle jump per frame (degrees) — 360/8/2 = 22.5° per spoke half-gap
@@ -304,9 +304,84 @@ def unwrap(prev, curr, cum):
     return cum + d
 
 
+
+
+# ── Multi-color tip detection ───────────────────────────────────────────────
+# HSV ranges for each marker color (H in OpenCV: 0-180)
+TIP_COLORS = {
+    "orange": {"h_lo": 5,   "h_hi": 18,  "s_min": 100, "v_min": 80,  "bgr": (0,  120, 255)},
+    "red":    {"h_lo": 0,   "h_hi": 5,   "s_min": 100, "v_min": 80,  "bgr": (0,   0,  220), "h_lo2": 170, "h_hi2": 180},
+    "yellow": {"h_lo": 20,  "h_hi": 35,  "s_min": 100, "v_min": 100, "bgr": (0,  220, 220)},
+    "green":  {"h_lo": 40,  "h_hi": 80,  "s_min": 80,  "v_min": 60,  "bgr": (0,  200,  60)},
+}
+
+def _color_score(patch_h, patch_s, patch_v, cdef):
+    """Score how well a patch matches a color definition."""
+    if patch_h.size == 0:
+        return 0.0, None
+    mask = (patch_h >= cdef["h_lo"]) & (patch_h <= cdef["h_hi"])
+    # red wraps around 180
+    if "h_lo2" in cdef:
+        mask |= (patch_h >= cdef["h_lo2"]) & (patch_h <= cdef["h_hi2"])
+    mask &= (patch_s >= cdef["s_min"]) & (patch_v >= cdef["v_min"])
+    count = int(mask.sum())
+    if count < 3:
+        return 0.0, None
+    score = count * float(np.mean(patch_s[mask])) / 255.0
+    return score, mask
+
+
+def find_all_tip_colors(hsv, tips, hub):
+    """
+    For each spoke tip, detect which color marker is present.
+    Returns list of dicts: [{tip, color, score, cx, cy, bgr}, ...]
+    Only returns tips where a color was clearly detected.
+    """
+    H, W = hsv.shape[:2]
+    hx, hy = hub
+    results = []
+
+    for (tx, ty) in tips:
+        sx = tx + ORA_INSET * (hx - tx)
+        sy = ty + ORA_INSET * (hy - ty)
+        x0 = max(0, int(sx) - ORA_PATCH)
+        x1 = min(W, int(sx) + ORA_PATCH)
+        y0 = max(0, int(sy) - ORA_PATCH)
+        y1 = min(H, int(sy) + ORA_PATCH)
+
+        patch_h = hsv[y0:y1, x0:x1, 0]
+        patch_s = hsv[y0:y1, x0:x1, 1]
+        patch_v = hsv[y0:y1, x0:x1, 2]
+
+        best_color = None
+        best_score = 5.0  # minimum threshold
+        best_mask  = None
+
+        for cname, cdef in TIP_COLORS.items():
+            score, cmask = _color_score(patch_h, patch_s, patch_v, cdef)
+            if score > best_score:
+                best_score = score
+                best_color = cname
+                best_mask  = cmask
+
+        if best_color is not None and best_mask is not None:
+            ys_c, xs_c = np.where(best_mask)
+            cx = float(np.mean(xs_c) + x0)
+            cy = float(np.mean(ys_c) + y0)
+            results.append({
+                "tip":   (tx, ty),
+                "color": best_color,
+                "score": best_score,
+                "cx":    cx,
+                "cy":    cy,
+                "bgr":   TIP_COLORS[best_color]["bgr"],
+            })
+
+    return results
+
 # ── Drawing ─────────────────────────────────────────────────────────────────
 
-def draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cum, bbox=None):
+def draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cum, bbox=None, tip_colors=None):
     """Draw seg detection on ann (in-place). Neon green circle style."""
     NEON    = (0, 255, 128)   # neon green BGR
     NEON_DIM= (0, 120, 60)
@@ -333,13 +408,23 @@ def draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cu
         cv2.circle(ann, (hx, hy), 7, (0,0,0), -1, cv2.LINE_AA)
         cv2.circle(ann, (hx, hy), 5, NEON, -1, cv2.LINE_AA)
 
-    # Orange marker + line from hub
-    if ora_blob is not None and hub is not None:
+    # Draw all detected color markers
+    if tip_colors and hub is not None:
+        hx2, hy2 = int(hub[0]), int(hub[1])
+        for tc in tip_colors:
+            mx, my = int(tc["cx"]), int(tc["cy"])
+            bgr = tc["bgr"]
+            bgr_dim = tuple(int(c * 0.3) for c in bgr)
+            cv2.line(ann, (hx2, hy2), (mx, my), bgr_dim, 1, cv2.LINE_AA)
+            cv2.circle(ann, (mx, my), 13, (0, 0, 0), -1, cv2.LINE_AA)
+            cv2.circle(ann, (mx, my), 11, bgr,        -1, cv2.LINE_AA)
+            cv2.circle(ann, (mx, my),  9, bgr_dim,     1, cv2.LINE_AA)
+            cv2.putText(ann, tc["color"][:3].upper(), (mx+13, my+4),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.32, bgr, 1, cv2.LINE_AA)
+    elif ora_blob is not None and hub is not None:
         ox, oy = int(ora_blob[0]), int(ora_blob[1])
         hx, hy = int(hub[0]), int(hub[1])
-        # Dashed line hub→orange
         cv2.line(ann, (hx,hy), (ox,oy), NEON_DIM, 1, cv2.LINE_AA)
-        # Neon orange circle
         cv2.circle(ann, (ox,oy), 13, (0,0,0),    -1, cv2.LINE_AA)
         cv2.circle(ann, (ox,oy), 11, ORANGE_BGR,  -1, cv2.LINE_AA)
         cv2.circle(ann, (ox,oy), 11, (0, 60, 180), 2, cv2.LINE_AA)

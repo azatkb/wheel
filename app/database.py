@@ -313,6 +313,95 @@ def get_user_history(email: str) -> list:
         return []
  
  
+
+def get_master_data(limit: int = 1000) -> list:
+    """Master user: read ALL physics results from ALL users."""
+    try:
+        sb = _sb()
+        if sb is None: return []
+        resp = (sb.table("physics_results")
+                .select("job_id,email,medium,cumulative_deg,w_total_air,w_total_water,"
+                        "f_max_air,omega_max,t_lajtner,a_lajtner,cw_deg,ccw_deg,"
+                        "cw_ccw_deg,ccw_cw_deg,physics_json,created_at")
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute())
+        return resp.data or []
+    except Exception as e:
+        log.warning(f"[DB] get_master_data: {e}")
+        return []
+
+
+def get_user_bar_data(email: str) -> dict:
+    """
+    Return data for bar chart:
+    - last 2 measurements for this user
+    - user average
+    - group average
+    """
+    try:
+        sb = _sb()
+        if sb is None: return {}
+
+        # Last 2 user measurements
+        resp = (sb.table("physics_results")
+                .select("job_id,cumulative_deg,w_total_air,f_max_air,omega_max,created_at")
+                .eq("email", email)
+                .order("created_at", desc=True)
+                .limit(2)
+                .execute())
+        last2 = resp.data or []
+
+        # User average (all measurements)
+        resp_all = (sb.table("physics_results")
+                   .select("cumulative_deg,w_total_air,f_max_air,omega_max")
+                   .eq("email", email)
+                   .execute())
+        user_rows = resp_all.data or []
+
+        def avg(rows, key):
+            vals = [float(r[key]) for r in rows if r.get(key) is not None]
+            return round(sum(vals)/len(vals), 3) if vals else 0.0
+
+        user_avg = {
+            "cumulative_deg": avg(user_rows, "cumulative_deg"),
+            "w_total_air":    avg(user_rows, "w_total_air"),
+            "f_max_air":      avg(user_rows, "f_max_air"),
+            "omega_max":      avg(user_rows, "omega_max"),
+            "count":          len(user_rows),
+        }
+
+        # Group average (all users)
+        group = get_group_averages()
+
+        return {
+            "last2":     last2,
+            "user_avg":  user_avg,
+            "group_avg": group,
+        }
+    except Exception as e:
+        log.warning(f"[DB] get_user_bar_data: {e}")
+        return {}
+
+
+def export_to_master_csv(out_path: str) -> int:
+    """Export all physics_results to a master CSV for Excel import."""
+    import csv as csv_mod
+    rows = get_master_data(limit=10000)
+    if not rows: return 0
+    try:
+        fieldnames = list(rows[0].keys())
+        with open(out_path, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv_mod.DictWriter(f, fieldnames=fieldnames, delimiter=";")
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+        log.info(f"[DB] Master CSV exported: {out_path} ({len(rows)} rows)")
+        return len(rows)
+    except Exception as e:
+        log.warning(f"[DB] export_to_master_csv: {e}")
+        return 0
+
 def save_physics_result(job_id: str, email: str, medium: str,
                         result: dict, csv_row: dict) -> None:
     """

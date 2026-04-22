@@ -28,11 +28,11 @@ from app.config import (
     INPUTS_DIR, OUTPUTS_DIR, SAMPLES_PER_SECOND,
     SUPABASE_URL, BAR_HEIGHT,
     DEFAULT_DIRECTION, DEFAULT_MEDIUM, DEFAULT_HAND, DEFAULT_INFO_LEVEL,
-    PREPROCESS_ENABLED,
+    PREPROCESS_ENABLED, DETECT_OTHER_COLORS,
 )
 from app.detector_seg import (
     load_yolo_seg, detect_seg,
-    find_spoke_tips, find_orange_tip,
+    find_spoke_tips, find_orange_tip, find_all_tip_colors,
     orange_angle, unwrap,
     draw_seg_overlay,
     YOLO_EVERY, SMOOTH_N as SEG_SMOOTH_N,
@@ -46,6 +46,7 @@ from app.database import (
     create_job, finish_job, make_sample,
     persist_samples, read_samples, get_csv_path,
     get_user_history, save_physics_result, get_all_jobs, get_group_averages,
+    get_master_data, get_user_bar_data, export_to_master_csv,
 )
 from app.stabilizer import Stabilizer
 
@@ -273,6 +274,9 @@ def _process_video_seg(video_path, out_path, job_id="local",
         else:
             has_orange = False
 
+        # Detect all tip colors for video overlay (controlled by DETECT_OTHER_COLORS)
+        tip_colors = find_all_tip_colors(hsv, tips, hub) if (DETECT_OTHER_COLORS and has_hub and tips) else []
+
         rot_raw = None
         if has_hub and has_orange:
             rot_raw = orange_angle(ora_blob, hub)
@@ -310,7 +314,7 @@ def _process_video_seg(video_path, out_path, job_id="local",
 
         # Draw
         ann = frame_s.copy()
-        draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cum, bbox)
+        draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cum, bbox, tip_colors=tip_colors)
 
         # Draw info bar below frame
         bar = np.full((BAR_HEIGHT, W, 3), (18, 18, 18), np.uint8)
@@ -766,6 +770,48 @@ async def stream_ws(ws: WebSocket):
                 _sp["email"], _sp["version"], _sp["lang"],
             )
             log.info(f"[WS] queued _run_job {job_id} email={_sp['email']}")
+
+# ── Master user endpoints ─────────────────────────────────────────────────
+MASTER_TOKEN = os.environ.get("MASTER_TOKEN", "wt_master_2026")
+
+@app.get("/master/all")
+def master_all(token: str = "", limit: int = 1000):
+    """Master: read all physics results from all users."""
+    if token != MASTER_TOKEN:
+        raise HTTPException(401, "Unauthorized")
+    rows = get_master_data(limit=limit)
+    return {"count": len(rows), "rows": rows}
+
+@app.get("/master/export-csv")
+def master_export_csv(token: str = ""):
+    """Master: export all data to CSV for Excel."""
+    if token != MASTER_TOKEN:
+        raise HTTPException(401, "Unauthorized")
+    from app.config import OUTPUTS_DIR
+    out = OUTPUTS_DIR / "master_export.csv"
+    n = export_to_master_csv(str(out))
+    if n == 0:
+        raise HTTPException(404, "No data")
+    return FileResponse(str(out), media_type="text/csv",
+                        filename="wheel_tracker_all_data.csv")
+
+@app.get("/master/users")
+def master_users(token: str = ""):
+    """Master: list all unique users with measurement counts."""
+    if token != MASTER_TOKEN:
+        raise HTTPException(401, "Unauthorized")
+    rows = get_master_data(limit=10000)
+    from collections import defaultdict
+    users = defaultdict(int)
+    for r in rows:
+        users[r.get("email","?")] += 1
+    return {"users": [{"email": e, "count": c} for e,c in sorted(users.items())]}
+
+@app.get("/bar-data/{email}")
+def bar_data(email: str, token: str = ""):
+    """Return bar chart data: last2 + user_avg + group_avg."""
+    data = get_user_bar_data(email)
+    return data
 
 @app.post("/admin/rerun-physics/{job_id}")
 async def rerun_physics(job_id: str, medium: str = "air", version: str = "free",

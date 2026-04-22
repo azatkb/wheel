@@ -64,6 +64,8 @@ TABLE_SAMPLES  = "wt_samples"   # one row per data sample
 CSV_SEPARATOR = ";"
 
 # ── Job defaults (overridden by form submission) ───────────────────────────
+DETECT_OTHER_COLORS = False        # detect red/yellow/green markers on spoke tips
+
 DEFAULT_DIRECTION   = "auto"      # "cw" | "ccw" | "cw+ccw" | "ccw+cw" | "auto"
 DEFAULT_MEDIUM      = "air"       # "air" | "water"
 DEFAULT_HAND        = False       # True = hand visible in frame
