@@ -65,6 +65,7 @@ CSV_SEPARATOR = ";"
 
 # ── Job defaults (overridden by form submission) ───────────────────────────
 DETECT_OTHER_COLORS = False        # detect red/yellow/green markers on spoke tips
+DRAW_MESH_OVERLAY   = True        # draw spoke mesh shape overlay on output video
 
 DEFAULT_DIRECTION   = "auto"      # "cw" | "ccw" | "cw+ccw" | "ccw+cw" | "auto"
 DEFAULT_MEDIUM      = "air"       # "air" | "water"

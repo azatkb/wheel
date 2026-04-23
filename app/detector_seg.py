@@ -41,9 +41,9 @@ ORA_PATCH  = 25   # half-size of patch to sample at spoke tip (px)
 # Spoke tip detection
 N_TIPS       = 8    # expected number of spokes
 TIP_FRAC     = 0.85
-MAX_ORA_JUMP = 600   # px — max jump between frames (reduced to avoid spoke-hopping)
+MAX_ORA_JUMP = 60   # px — max jump between frames (reduced to avoid spoke-hopping)
 # How far from tip toward hub to search for orange marker
-ORA_INSET    = 0.15
+ORA_INSET    = 0.12
 # Max angle jump per frame (degrees) — 360/8/2 = 22.5° per spoke half-gap
 MAX_ANGLE_JUMP = 30.0  # degrees
 
@@ -377,16 +377,43 @@ def find_all_tip_colors(hsv, tips, hub):
                 "bgr":   TIP_COLORS[best_color]["bgr"],
             })
 
-    return results
+    # Deduplicate by color: orange=1, red=2, yellow=2, green=2
+    MAX_PER_COLOR = {"orange": 1, "red": 2, "yellow": 2, "green": 2}
+    from collections import defaultdict
+    by_color = defaultdict(list)
+    for r in results:
+        by_color[r["color"]].append(r)
+    deduped = []
+    for color, items in by_color.items():
+        items.sort(key=lambda x: -x["score"])
+        deduped.extend(items[:MAX_PER_COLOR.get(color, 1)])
+    return deduped
 
 # ── Drawing ─────────────────────────────────────────────────────────────────
 
-def draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cum, bbox=None, tip_colors=None):
+def draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cum, bbox=None, tip_colors=None, draw_mesh=True):
     """Draw seg detection on ann (in-place). Neon green circle style."""
     NEON    = (0, 255, 128)   # neon green BGR
     NEON_DIM= (0, 120, 60)
     CYAN    = (0, 220, 220)
     ORANGE_BGR = (0, 100, 255)
+    MESH    = (0, 180, 80)    # mesh spokes color
+
+    # ── Spoke mesh shape ───────────────────────────────────────────────────
+    if draw_mesh and hub is not None and tips:
+        hx, hy = int(hub[0]), int(hub[1])
+        for (tx, ty) in tips:
+            # Spoke line hub -> tip
+            cv2.line(ann, (hx, hy), (int(tx), int(ty)), NEON_DIM, 1, cv2.LINE_AA)
+        # Connect tips to form outer polygon
+        tip_pts = [(int(tx), int(ty)) for tx, ty in tips]
+        for i in range(len(tip_pts)):
+            p1 = tip_pts[i]
+            p2 = tip_pts[(i+1) % len(tip_pts)]
+            cv2.line(ann, p1, p2, NEON_DIM, 1, cv2.LINE_AA)
+        # Small circle at each spoke tip
+        for p in tip_pts:
+            cv2.circle(ann, p, 3, MESH, -1, cv2.LINE_AA)
 
     # ── Neon green circle around wheel (inscribed in seg bbox) ────────────
     if contour is not None and hub is not None:

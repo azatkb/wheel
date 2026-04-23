@@ -28,7 +28,7 @@ from app.config import (
     INPUTS_DIR, OUTPUTS_DIR, SAMPLES_PER_SECOND,
     SUPABASE_URL, BAR_HEIGHT,
     DEFAULT_DIRECTION, DEFAULT_MEDIUM, DEFAULT_HAND, DEFAULT_INFO_LEVEL,
-    PREPROCESS_ENABLED, DETECT_OTHER_COLORS,
+    PREPROCESS_ENABLED, DETECT_OTHER_COLORS, DRAW_MESH_OVERLAY,
 )
 from app.detector_seg import (
     load_yolo_seg, detect_seg,
@@ -314,7 +314,7 @@ def _process_video_seg(video_path, out_path, job_id="local",
 
         # Draw
         ann = frame_s.copy()
-        draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cum, bbox, tip_colors=tip_colors)
+        draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cum, bbox, tip_colors=tip_colors, draw_mesh=DRAW_MESH_OVERLAY)
 
         # Draw info bar below frame
         bar = np.full((BAR_HEIGHT, W, 3), (18, 18, 18), np.uint8)
