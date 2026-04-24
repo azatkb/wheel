@@ -232,9 +232,11 @@ def _process_video_seg(video_path, out_path, job_id="local",
     vel_dps     = 0.0
     last_ora    = None
     _last_mask  = None
-    _last_hub   = None
+    _last_hub     = None
     _last_contour = None
-    _last_tips  = []
+    _last_tips    = []
+    _last_bbox        = None
+    _last_yolo_orange = None
 
     sample_interval = 1.0 / SAMPLES_PER_SECOND
     next_sample_at  = 0.0
@@ -251,20 +253,38 @@ def _process_video_seg(video_path, out_path, job_id="local",
         hsv     = cv2.cvtColor(preproc, cv2.COLOR_BGR2HSV)
 
         if fi % YOLO_EVERY == 0:
-            mask, hub, contour, conf, bbox = detect_seg(_seg, preproc)
-            if mask is not None:
-                _last_mask    = mask
-                _last_hub     = hub
-                _last_contour = contour
-                _last_tips    = find_spoke_tips(mask, hub)
+            _mask_d, _hub_d, _cont_d, _conf_d, _bbox_d, _yolo_ora_d = detect_seg(_seg, preproc)
+            if _mask_d is not None:
+                _last_mask       = _mask_d
+                _last_hub        = _hub_d
+                _last_contour    = _cont_d
+                _last_tips       = find_spoke_tips(_mask_d, _hub_d)
+                _last_bbox       = _bbox_d
+            if _yolo_ora_d is not None:
+                _last_yolo_orange = _yolo_ora_d
 
         hub      = _last_hub
         tips     = _last_tips
         contour  = _last_contour
         mask     = _last_mask
+        bbox     = _last_bbox
         has_hub  = hub is not None
 
-        ora_blob = find_orange_tip(hsv, tips, hub, last_ora) if has_hub else None
+        # Priority 1: YOLO orange (class 1 from model)
+        yolo_orange = _last_yolo_orange
+        if yolo_orange is not None and has_hub:
+            if tips:
+                max_r = max(math.hypot(tx-hub[0], ty-hub[1]) for tx,ty in tips) * 1.2
+                ora_dist = math.hypot(yolo_orange[0]-hub[0], yolo_orange[1]-hub[1])
+                ora_blob = yolo_orange if ora_dist <= max_r else None
+            else:
+                ora_blob = yolo_orange
+        else:
+            ora_blob = None
+        # Priority 2: HSV fallback
+        if ora_blob is None and has_hub:
+            ora_blob = find_orange_tip(hsv, tips, hub, last_ora)
+
         if ora_blob is not None:
             last_ora = ora_blob
             has_orange = True

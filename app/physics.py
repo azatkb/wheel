@@ -118,7 +118,18 @@ def detect_phases(timestamps: list, angles_rad: list,
         omegas.append((angles_rad[i] - angles_rad[i-1]) / dt)
     omegas.append(omegas[-1])
 
-    # Smooth velocities: 5-frame median filter removes detection spikes
+    # Smooth velocities: outlier rejection + 5-frame median filter
+    # Step 1: hard clip at 3x IQR
+    import statistics
+    if len(omegas) >= 4:
+        sorted_o = sorted(abs(o) for o in omegas)
+        q1 = sorted_o[len(sorted_o)//4]
+        q3 = sorted_o[3*len(sorted_o)//4]
+        iqr = q3 - q1
+        clip_max = q3 + 3.0 * iqr if iqr > 0 else q3 * 3.0
+        clip_max = max(clip_max, min_move_thresh * 2)
+        omegas = [max(-clip_max, min(clip_max, o)) for o in omegas]
+    # Step 2: 5-frame median filter
     if len(omegas) >= 5:
         smoothed = []
         for i in range(len(omegas)):
@@ -222,6 +233,7 @@ def detect_phases(timestamps: list, angles_rad: list,
         "t_start":    t_start,
         "timestamps": timestamps,
         "omegas":     omegas,
+        "angles_rad": angles_rad,
         "t_accel":    _dt(accel_slice),
         "t_const":    _dt(const_slice),
         "t_decel":    _dt(decel_slice),
@@ -358,6 +370,11 @@ def calculate(phases: dict) -> dict:
     # t_start (t_Lajtner) is the waiting time before movement
     t_total    = t_accel + t_const_calc + t_decel
     phi_total  = phi_accel + phi_const + phi_decel
+    # Sanity check: phi_total should match total cumulative from data
+    if "angles_rad" in phases and len(phases.get("angles_rad", [])) >= 2:
+        _direct = abs(phases["angles_rad"][-1] - phases["angles_rad"][0])
+        if _direct > 0 and abs(_direct - phi_total) / max(_direct, 1e-9) > 0.3:
+            phi_total = _direct  # override with direct measurement
     t_active   = max(t_accel + t_const_calc, 1e-6)
     phi_active = max(phi_accel + phi_const,  1e-9)
 

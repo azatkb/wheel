@@ -31,24 +31,21 @@ YOLO_EVERY       = 2   # run seg every N processed frames
 SKIP_FRAMES      = 4   # process every N-th raw frame
 
 # Orange HSV (OpenCV H: 0-180)
-# OpenCV: H=0-180, true orange ≈ H=8-18, S>150, V>100
 ORA_H_MIN  = 5
-ORA_H_MAX  = 18   # strict — wood/table is H=55-95, blue spoke is H=100-130
-ORA_S_MIN  = 150  # very vivid only — wood has S=30-70
+ORA_H_MAX  = 18
+ORA_S_MIN  = 150
 ORA_V_MIN  = 100
-ORA_PATCH  = 25   # half-size of patch to sample at spoke tip (px)
+ORA_PATCH  = 25
 
 # Spoke tip detection
-N_TIPS       = 8    # expected number of spokes
-TIP_FRAC     = 0.85
-MAX_ORA_JUMP = 60   # px — max jump between frames (reduced to avoid spoke-hopping)
-# How far from tip toward hub to search for orange marker
-ORA_INSET    = 0.12
-# Max angle jump per frame (degrees) — 360/8/2 = 22.5° per spoke half-gap
-MAX_ANGLE_JUMP = 30.0  # degrees
+N_TIPS         = 8
+TIP_FRAC       = 0.85
+MAX_ORA_JUMP   = 60
+ORA_INSET      = 0.17
+MAX_ANGLE_JUMP = 30.0
 
 # Smoothing
-SMOOTH_N   = 4
+SMOOTH_N = 4
 
 
 # ── ONNX helpers ───────────────────────────────────────────────────────────
@@ -91,6 +88,7 @@ def detect_seg(sess, frame):
       hub      : (cx, cy) float centroid (or None)
       contour  : largest contour array (or None)
       conf     : float confidence (or 0)
+      bbox     : (x1,y1,x2,y2) or None
     """
     if sess is None:
         return None, None, None, 0.0, None
@@ -100,46 +98,52 @@ def detect_seg(sess, frame):
         blob, scale, pad_x, pad_y = _letterbox(frame)
 
         outs = sess.run(None, {sess.get_inputs()[0].name: blob})
-        # outs[0]: detections [1, 4+nc+32, 8400] or [1, 8400, 4+nc+32]
-        # outs[1]: proto      [1, 32, 160, 160]
         det_raw = outs[0]
-        proto   = outs[1]  # [1, 32, 160, 160]
+        proto   = outs[1]
 
-        # Transpose to [8400, cols]
         if det_raw.shape[1] < det_raw.shape[2]:
-            preds = det_raw[0].T   # was [1, cols, 8400]
+            preds = det_raw[0].T
         else:
-            preds = det_raw[0]     # was [1, 8400, cols]
+            preds = det_raw[0]
 
-        # YOLOv8-seg pred format: [cx, cy, w, h, conf, mask_coeff×32]
-        best_conf = YOLO_SEG_CONF
-        best_pred = None
+        # nc = number of classes (cols - 4 bbox - 32 mask)
+        nc = max(1, preds.shape[1] - 4 - 32)
+        log.info(f"[SEG] nc={nc} preds={preds.shape}")
+
+        best_conf   = YOLO_SEG_CONF
+        best_pred   = None   # class 0: cpica (spoke mask)
+        orange_pred = None   # class 1: orange marker
+        orange_conf = YOLO_SEG_CONF
+
         for pred in preds:
-            conf = float(pred[4])
-            if conf > best_conf:
-                best_conf = conf
-                best_pred = pred
+            if nc == 1:
+                conf = float(pred[4]); cls = 0
+            else:
+                cls_scores = pred[4:4+nc]
+                cls  = int(np.argmax(cls_scores))
+                conf = float(cls_scores[cls])
+            if cls == 0 and conf > best_conf:
+                best_conf = conf; best_pred = pred
+            elif nc > 1 and cls == 1 and conf > orange_conf:
+                orange_conf = conf; orange_pred = pred
 
         if best_pred is None:
-            return None, None, None, 0.0, None
+            return None, None, None, 0.0, None, None
 
-        # BBox: cx,cy,w,h in letterbox space → convert to xyxy in original frame
         cx_lb, cy_lb, bw_lb, bh_lb = best_pred[0], best_pred[1], best_pred[2], best_pred[3]
         x1 = max(0, int((cx_lb - bw_lb/2 - pad_x) / scale))
         y1 = max(0, int((cy_lb - bh_lb/2 - pad_y) / scale))
         x2 = min(w_f-1, int((cx_lb + bw_lb/2 - pad_x) / scale))
         y2 = min(h_f-1, int((cy_lb + bh_lb/2 - pad_y) / scale))
 
-        # Hub = bbox center (same as ultralytics)
         hub = (float((x1 + x2) / 2), float((y1 + y2) / 2))
 
-        # Decode segmentation mask
-        coeffs   = best_pred[5:5+32]
+        # mask coeffs start after bbox(4) + classes(nc)
+        coeffs   = best_pred[4+nc:4+nc+32]
         mask_160 = np.einsum('n,nhw->hw', coeffs, proto[0])
         mask_160 = (1 / (1 + np.exp(-mask_160)))
         mask_160 = (mask_160 > YOLO_SEG_MASK_TH).astype(np.uint8)
 
-        # Crop letterbox padding from 160×160
         s160 = 160 / ONNX_INPUT_SIZE
         nx = int(pad_x * s160); ny = int(pad_y * s160)
         nw_c = max(1, int((ONNX_INPUT_SIZE - 2*pad_x) * s160))
@@ -148,7 +152,6 @@ def detect_seg(sess, frame):
         crop = mask_160[ny:ny+nh_c, nx:nx+nw_c]
         mask = cv2.resize(crop, (w_f, h_f), interpolation=cv2.INTER_NEAREST)
 
-        # Clip mask to bbox area only (eliminates noise outside bbox)
         bbox_mask = np.zeros((h_f, w_f), np.uint8)
         cv2.rectangle(bbox_mask, (x1, y1), (x2, y2), 1, -1)
         mask = (mask & bbox_mask).astype(np.uint8)
@@ -156,31 +159,38 @@ def detect_seg(sess, frame):
         if mask.sum() < 50:
             return None, None, None, 0.0, None
 
-        # Morphological cleanup
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
         mask   = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
         mask   = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel)
 
-        # Largest contour
         cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contour = max(cnts, key=cv2.contourArea) if cnts else None
 
-        return mask, hub, contour, best_conf, (x1, y1, x2, y2)
+        # Parse orange bbox if detected
+        yolo_orange = None
+        if orange_pred is not None:
+            ox_lb = float(orange_pred[0]); oy_lb = float(orange_pred[1])
+            ow_lb = float(orange_pred[2]); oh_lb = float(orange_pred[3])
+            ox1 = max(0, int((ox_lb - ow_lb/2 - pad_x) / scale))
+            oy1 = max(0, int((oy_lb - oh_lb/2 - pad_y) / scale))
+            ox2 = min(w_f-1, int((ox_lb + ow_lb/2 - pad_x) / scale))
+            oy2 = min(h_f-1, int((oy_lb + oh_lb/2 - pad_y) / scale))
+            ocx = float((ox1+ox2)/2); ocy = float((oy1+oy2)/2)
+            r   = max(5, int(math.hypot(ox2-ox1, oy2-oy1)/2))
+            yolo_orange = (ocx, ocy, float(r*2), int(orange_conf*100), r)
+            log.info(f"[SEG] YOLO orange at ({ocx:.0f},{ocy:.0f}) conf={orange_conf:.2f}")
+
+        return mask, hub, contour, best_conf, (x1, y1, x2, y2), yolo_orange
 
     except Exception as e:
         log.warning(f"[SEG] error: {e}")
-        return None, None, None, 0.0, None
+        return None, None, None, 0.0, None, None
 
 
 # ── Spoke tip detection ─────────────────────────────────────────────────────
 
 def find_spoke_tips(mask, hub, n_tips=N_TIPS):
-    """
-    Find N spoke tips = farthest mask pixel per angular sector.
-    Uses all mask pixels (not just contour) for robustness.
-    """
     hx, hy = hub
-    # All mask pixel coords
     ys, xs = np.where(mask > 0)
     if len(xs) < 10:
         return []
@@ -198,7 +208,6 @@ def find_spoke_tips(mask, hub, n_tips=N_TIPS):
         in_sector = (angles >= lo) & (angles < hi)
         if not in_sector.any():
             continue
-        # Farthest point in this sector
         idx = np.argmax(np.where(in_sector, dists, 0))
         tips.append((float(pts[idx,0]), float(pts[idx,1])))
 
@@ -208,12 +217,6 @@ def find_spoke_tips(mask, hub, n_tips=N_TIPS):
 # ── Orange detection at tips ────────────────────────────────────────────────
 
 def find_orange_tip(hsv, tips, hub, last_ora=None):
-    """
-    For each spoke tip, compute an 'orangeness' score.
-    Score = weighted count of pixels in H:5-18 range.
-    Uses adaptive saturation threshold based on scene content.
-    Returns (cx, cy, area, sat, r) of best tip, or None.
-    """
     H, W = hsv.shape[:2]
     hx, hy = hub
 
@@ -221,7 +224,6 @@ def find_orange_tip(hsv, tips, hub, last_ora=None):
     blobs  = []
 
     for (tx, ty) in tips:
-        # Sample inset from tip toward hub
         sx = tx + ORA_INSET * (hx - tx)
         sy = ty + ORA_INSET * (hy - ty)
         x0 = max(0, int(sx) - ORA_PATCH)
@@ -235,10 +237,8 @@ def find_orange_tip(hsv, tips, hub, last_ora=None):
         if patch_h.size == 0:
             scores.append(0); blobs.append(None); continue
 
-        # Hue mask: strict orange range only
         hue_mask = (patch_h >= ORA_H_MIN) & (patch_h <= ORA_H_MAX)
 
-        # Adaptive saturation: use 60th percentile of patch saturation as floor
         if hue_mask.any():
             sat_vals = patch_s[hue_mask]
             sat_thresh = max(80, int(np.percentile(sat_vals, 40)))
@@ -248,16 +248,11 @@ def find_orange_tip(hsv, tips, hub, last_ora=None):
         orange_mask = hue_mask & (patch_s >= sat_thresh) & (patch_v >= ORA_V_MIN)
         count = int(orange_mask.sum())
 
-        # Orangeness score: pixels × mean saturation (vivid orange scores higher)
         if count > 0:
             mean_sat = float(np.mean(patch_s[orange_mask]))
             score = count * (mean_sat / 255.0)
         else:
             score = 0.0
-
-        log.info(f"[TIP] tip=({tx:.0f},{ty:.0f}) sample=({sx:.0f},{sy:.0f}) "
-                 f"px={count} score={score:.0f} "
-                 f"H={int(patch_h.mean())} S={int(patch_s.mean())} sat_th={sat_thresh}")
 
         if count > 0:
             ys_o, xs_o = np.where(orange_mask)
@@ -279,14 +274,18 @@ def find_orange_tip(hsv, tips, hub, last_ora=None):
     if best_blob is None:
         return None
 
-    log.info(f"[ORA] best tip #{best_idx} score={scores[best_idx]:.0f} "
-             f"pos=({best_blob[0]:.0f},{best_blob[1]:.0f})")
+    # Reject if outside wheel radius
+    if tips and hub is not None:
+        hx2, hy2 = hub
+        tip_dists = [math.hypot(tx-hx2, ty-hy2) for tx,ty in tips]
+        max_tip_r = max(tip_dists) * 1.15
+        ora_dist  = math.hypot(best_blob[0]-hx2, best_blob[1]-hy2)
+        if ora_dist > max_tip_r:
+            return None
 
-    # Stabilization
     if last_ora is not None:
         jump = math.hypot(best_blob[0]-last_ora[0], best_blob[1]-last_ora[1])
         if jump > MAX_ORA_JUMP:
-            log.info(f"[ORA] rejected jump={jump:.0f}px")
             return None
 
     return best_blob
@@ -304,10 +303,8 @@ def unwrap(prev, curr, cum):
     return cum + d
 
 
-
-
 # ── Multi-color tip detection ───────────────────────────────────────────────
-# HSV ranges for each marker color (H in OpenCV: 0-180)
+
 TIP_COLORS = {
     "orange": {"h_lo": 5,   "h_hi": 18,  "s_min": 100, "v_min": 80,  "bgr": (0,  120, 255)},
     "red":    {"h_lo": 0,   "h_hi": 5,   "s_min": 100, "v_min": 80,  "bgr": (0,   0,  220), "h_lo2": 170, "h_hi2": 180},
@@ -316,11 +313,9 @@ TIP_COLORS = {
 }
 
 def _color_score(patch_h, patch_s, patch_v, cdef):
-    """Score how well a patch matches a color definition."""
     if patch_h.size == 0:
         return 0.0, None
     mask = (patch_h >= cdef["h_lo"]) & (patch_h <= cdef["h_hi"])
-    # red wraps around 180
     if "h_lo2" in cdef:
         mask |= (patch_h >= cdef["h_lo2"]) & (patch_h <= cdef["h_hi2"])
     mask &= (patch_s >= cdef["s_min"]) & (patch_v >= cdef["v_min"])
@@ -332,11 +327,6 @@ def _color_score(patch_h, patch_s, patch_v, cdef):
 
 
 def find_all_tip_colors(hsv, tips, hub):
-    """
-    For each spoke tip, detect which color marker is present.
-    Returns list of dicts: [{tip, color, score, cx, cy, bgr}, ...]
-    Only returns tips where a color was clearly detected.
-    """
     H, W = hsv.shape[:2]
     hx, hy = hub
     results = []
@@ -354,7 +344,7 @@ def find_all_tip_colors(hsv, tips, hub):
         patch_v = hsv[y0:y1, x0:x1, 2]
 
         best_color = None
-        best_score = 5.0  # minimum threshold
+        best_score = 5.0
         best_mask  = None
 
         for cname, cdef in TIP_COLORS.items():
@@ -377,7 +367,6 @@ def find_all_tip_colors(hsv, tips, hub):
                 "bgr":   TIP_COLORS[best_color]["bgr"],
             })
 
-    # Deduplicate by color: orange=1, red=2, yellow=2, green=2
     MAX_PER_COLOR = {"orange": 1, "red": 2, "yellow": 2, "green": 2}
     from collections import defaultdict
     by_color = defaultdict(list)
@@ -389,53 +378,46 @@ def find_all_tip_colors(hsv, tips, hub):
         deduped.extend(items[:MAX_PER_COLOR.get(color, 1)])
     return deduped
 
+
 # ── Drawing ─────────────────────────────────────────────────────────────────
 
 def draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cum, bbox=None, tip_colors=None, draw_mesh=True):
     """Draw seg detection on ann (in-place). Neon green circle style."""
-    NEON    = (0, 255, 128)   # neon green BGR
-    NEON_DIM= (0, 120, 60)
-    CYAN    = (0, 220, 220)
+    NEON       = (0, 255, 128)
+    NEON_DIM   = (0, 120, 60)
+    CYAN       = (0, 220, 220)
     ORANGE_BGR = (0, 100, 255)
-    MESH    = (0, 180, 80)    # mesh spokes color
+    MESH       = (0, 180, 80)
 
-    # ── Spoke mesh shape ───────────────────────────────────────────────────
+    # Spoke mesh
     if draw_mesh and hub is not None and tips:
         hx, hy = int(hub[0]), int(hub[1])
         for (tx, ty) in tips:
-            # Spoke line hub -> tip
             cv2.line(ann, (hx, hy), (int(tx), int(ty)), NEON_DIM, 1, cv2.LINE_AA)
-        # Connect tips to form outer polygon
         tip_pts = [(int(tx), int(ty)) for tx, ty in tips]
         for i in range(len(tip_pts)):
-            p1 = tip_pts[i]
-            p2 = tip_pts[(i+1) % len(tip_pts)]
-            cv2.line(ann, p1, p2, NEON_DIM, 1, cv2.LINE_AA)
-        # Small circle at each spoke tip
+            cv2.line(ann, tip_pts[i], tip_pts[(i+1) % len(tip_pts)], NEON_DIM, 1, cv2.LINE_AA)
         for p in tip_pts:
             cv2.circle(ann, p, 3, MESH, -1, cv2.LINE_AA)
 
-    # ── Neon green circle around wheel (inscribed in seg bbox) ────────────
+    # Neon green circle
     if contour is not None and hub is not None:
         hx, hy = int(hub[0]), int(hub[1])
-        # Compute radius from hub to farthest contour point
         pts = contour.reshape(-1, 2).astype(float)
         dists = np.sqrt((pts[:,0]-hx)**2 + (pts[:,1]-hy)**2)
-        r = int(np.percentile(dists, 90))  # 90th percentile avoids outliers
+        r = int(np.percentile(dists, 90))
         if r > 5:
-            # Glow effect: outer dim ring
             cv2.circle(ann, (hx, hy), r+4, NEON_DIM, 2, cv2.LINE_AA)
             cv2.circle(ann, (hx, hy), r+2, NEON_DIM, 1, cv2.LINE_AA)
-            # Main neon circle
-            cv2.circle(ann, (hx, hy), r, NEON, 2, cv2.LINE_AA)
+            cv2.circle(ann, (hx, hy), r,   NEON,     2, cv2.LINE_AA)
 
     # Hub dot
     if hub is not None:
         hx, hy = int(hub[0]), int(hub[1])
         cv2.circle(ann, (hx, hy), 7, (0,0,0), -1, cv2.LINE_AA)
-        cv2.circle(ann, (hx, hy), 5, NEON, -1, cv2.LINE_AA)
+        cv2.circle(ann, (hx, hy), 5, NEON,    -1, cv2.LINE_AA)
 
-    # Draw all detected color markers
+    # Color markers
     if tip_colors and hub is not None:
         hx2, hy2 = int(hub[0]), int(hub[1])
         for tc in tip_colors:
@@ -443,9 +425,9 @@ def draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cu
             bgr = tc["bgr"]
             bgr_dim = tuple(int(c * 0.3) for c in bgr)
             cv2.line(ann, (hx2, hy2), (mx, my), bgr_dim, 1, cv2.LINE_AA)
-            cv2.circle(ann, (mx, my), 13, (0, 0, 0), -1, cv2.LINE_AA)
-            cv2.circle(ann, (mx, my), 11, bgr,        -1, cv2.LINE_AA)
-            cv2.circle(ann, (mx, my),  9, bgr_dim,     1, cv2.LINE_AA)
+            cv2.circle(ann, (mx, my), 13, (0,0,0), -1, cv2.LINE_AA)
+            cv2.circle(ann, (mx, my), 11, bgr,      -1, cv2.LINE_AA)
+            cv2.circle(ann, (mx, my),  9, bgr_dim,   1, cv2.LINE_AA)
             cv2.putText(ann, tc["color"][:3].upper(), (mx+13, my+4),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.32, bgr, 1, cv2.LINE_AA)
     elif ora_blob is not None and hub is not None:
@@ -454,19 +436,15 @@ def draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cu
         cv2.line(ann, (hx,hy), (ox,oy), NEON_DIM, 1, cv2.LINE_AA)
         cv2.circle(ann, (ox,oy), 13, (0,0,0),    -1, cv2.LINE_AA)
         cv2.circle(ann, (ox,oy), 11, ORANGE_BGR,  -1, cv2.LINE_AA)
-        cv2.circle(ann, (ox,oy), 11, (0, 60, 180), 2, cv2.LINE_AA)
+        cv2.circle(ann, (ox,oy), 11, (0,60,180),   2, cv2.LINE_AA)
 
-    # Angle text box
+    # Angle text
     if rot_smooth is not None:
-        ang = f"{rot_smooth:.1f}"
-        cum = f"{-rot_cum:+.1f}"
-        W = ann.shape[1]
-        # Semi-transparent bg
         overlay = ann.copy()
         cv2.rectangle(overlay, (6,6), (160,62), (0,0,0), -1)
         cv2.addWeighted(overlay, 0.55, ann, 0.45, 0, ann)
-        cv2.putText(ann, ang + u"°", (12,32), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.95, CYAN, 2, cv2.LINE_AA)
+        cv2.putText(ann, f"{rot_smooth:.1f}\u00b0", (12,32),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.95, CYAN, 2, cv2.LINE_AA)
         col = NEON if rot_cum <= 0 else (0,100,255)
-        cv2.putText(ann, cum + u"°", (12,56), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.78, col, 2, cv2.LINE_AA)
+        cv2.putText(ann, f"{-rot_cum:+.1f}\u00b0", (12,56),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.78, col, 2, cv2.LINE_AA)
