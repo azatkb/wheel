@@ -31,7 +31,7 @@ num_spokes = 8         # number of spokes
 
 # Physical constants
 g                       = 9.81    # (m/s²) gravitational acceleration
-density_ratio_water_air = 816     # water resistance / air resistance ratio
+# density_ratio_water_air = 816  # REMOVED: water braking measured directly
 PLANCK                  = 6.626e-34  # (Js) Planck constant
 
 # ══════════════════════════════════════════════════════════════════════
@@ -379,10 +379,16 @@ def calculate(phases: dict) -> dict:
     phi_active = max(phi_accel + phi_const,  1e-9)
 
     # ── Resistance torques ─────────────────────────────────────────────
-    # Air:   M_air   = J * beta_decel
-    # Water: M_water = density_ratio * M_air
-    M_air   = J * beta_decel_abs
-    M_water = density_ratio_water_air * M_air
+    # Both air and water: M_res = J * beta_decel (from real deceleration measurement)
+    # The user measures in the actual medium (air or water).
+    # For air video:   M_air   = J * beta_decel_air
+    # For water video: M_water = J * beta_decel_water
+    # We calculate both from the SAME deceleration beta — the medium was set by user.
+    # NOTE: 816 multiplier is REMOVED — no approximation needed.
+    M_res_measured = J * beta_decel_abs   # actual braking torque in the measured medium
+    M_air   = M_res_measured              # braking in air (if medium=air)
+    M_water = M_res_measured              # braking in water (if medium=water)
+    # Both cases use the same measured value — physics formulas are identical
 
     # ── Lajtner values ─────────────────────────────────────────────────
     t_lajtner = phases.get("t_start", 0.0)
