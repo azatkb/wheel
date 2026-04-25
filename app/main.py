@@ -110,7 +110,7 @@ def _run_physics(samples, medium, direction, user_email, job_id, version, lang):
     if not samples:
         return {}
     timestamps = [s["timestamp_sec"] for s in samples]
-    angles_rad = [math.radians(abs(s["cumulative_deg"] or 0)) for s in samples]
+    angles_rad = [math.radians(s["cumulative_deg"] or 0) for s in samples]
     phases = detect_phases(timestamps, angles_rad, direction_filter=direction)
     result = calculate(phases)
     max_cum_deg = max(abs(s["cumulative_deg"] or 0) for s in samples)
@@ -126,7 +126,7 @@ def _run_physics(samples, medium, direction, user_email, job_id, version, lang):
         user_avg = DEFAULT_AVERAGES.copy()
     else:
         user_avg = {
-            "cumulative_deg": sum(abs(h.get("cumulative_deg",0)) for h in history)/len(history),
+            "cumulative_deg": sum(abs(h.get("cumulative_deg",0)) for h in history)/len(history),  # abs for ranking
             "W_total_air":    sum(h.get("W_total_air",0) for h in history)/len(history),
             "F_max_air":      sum(h.get("F_max_air",0)  for h in history)/len(history),
         }
