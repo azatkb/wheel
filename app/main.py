@@ -512,6 +512,91 @@ def _get_user(email: str):
         return r.data[0] if r.data else None
     except: return None
 
+
+# ── Password reset ─────────────────────────────────────────────────────────
+import random
+
+_reset_codes: dict = {}  # email -> {code, expires}
+
+@app.post("/auth/reset-request")
+async def reset_request(request: Request):
+    body = await request.json()
+    email = (body.get("email") or "").strip().lower()
+    if not email:
+        raise HTTPException(400, "Email required")
+    user = _get_user(email)
+    if not user:
+        # Don't reveal if email exists
+        return {"ok": True}
+    code = str(random.randint(100000, 999999))
+    import datetime as _dt
+    _reset_codes[email] = {
+        "code": code,
+        "expires": _dt.datetime.utcnow().timestamp() + 900  # 15 min
+    }
+    log.info(f"[RESET] code for {email}: {code}")
+    # Send email via Gmail SMTP
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    GMAIL_USER = os.environ.get("GMAIL_USER", "azatkb22@gmail.com")   # your@gmail.com
+    GMAIL_PASS = os.environ.get("GMAIL_PASS", "hzcb ynnj zujv czmt")   # Gmail App Password (not account password)
+    if GMAIL_USER and GMAIL_PASS:
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = "Wheel Tracker — Password Reset Code"
+            msg["From"]    = f"Wheel Tracker <{GMAIL_USER}>"
+            msg["To"]      = email
+            body_text = f"Your password reset code: {code}\n\nValid for 15 minutes.\n\nIf you did not request this, ignore this email."
+            body_html = f"""<div style="font-family:sans-serif;max-width:480px;margin:40px auto;background:#0d1117;color:#e2e8f0;border-radius:12px;padding:32px;border:1px solid #1e2a38">
+  <h2 style="color:#00ff88;margin-bottom:8px">Wheel Tracker</h2>
+  <p style="color:#64748b;margin-bottom:24px">Password reset request</p>
+  <div style="background:#141a22;border-radius:10px;padding:24px;text-align:center;margin-bottom:24px">
+    <div style="font-size:2.5rem;font-weight:700;letter-spacing:.4em;color:#00ff88;font-family:monospace">{code}</div>
+    <div style="color:#64748b;font-size:.85rem;margin-top:8px">Valid for 15 minutes</div>
+  </div>
+  <p style="color:#64748b;font-size:.82rem">If you did not request this, ignore this email.</p>
+</div>"""
+            msg.attach(MIMEText(body_text, "plain"))
+            msg.attach(MIMEText(body_html, "html"))
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+                s.login(GMAIL_USER, GMAIL_PASS)
+                s.sendmail(GMAIL_USER, email, msg.as_string())
+            log.info(f"[RESET] email sent to {email}")
+        except Exception as e:
+            log.error(f"[RESET] email send failed: {e}")
+            raise HTTPException(500, f"Failed to send email: {e}")
+    else:
+        log.warning("[RESET] GMAIL_USER/GMAIL_PASS not set — code logged only")
+    return {"ok": True}
+
+@app.post("/auth/reset-confirm")
+async def reset_confirm(request: Request):
+    body = await request.json()
+    email    = (body.get("email") or "").strip().lower()
+    code     = (body.get("code") or "").strip()
+    password = body.get("password") or ""
+    if not email or not code or not password:
+        raise HTTPException(400, "Email, code and password required")
+    import datetime as _dt
+    entry = _reset_codes.get(email)
+    if not entry:
+        raise HTTPException(400, "No reset requested for this email")
+    if _dt.datetime.utcnow().timestamp() > entry["expires"]:
+        del _reset_codes[email]
+        raise HTTPException(400, "Code expired — request a new one")
+    if entry["code"] != code:
+        raise HTTPException(400, "Invalid code")
+    # Update password
+    try:
+        from app.database import _sb
+        sb = _sb()
+        sb.table("wt_users").update({"password_hash": _hash_pw(password)}).eq("email", email).execute()
+        del _reset_codes[email]
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
 @app.post("/auth/register")
 async def auth_register(request: Request):
     body = await request.json()
