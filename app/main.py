@@ -302,8 +302,14 @@ def _process_video_seg(video_path, out_path, job_id="local",
             rot_raw = orange_angle(ora_blob, hub)
         if rot_raw is not None and zero_offset is None:
             zero_offset = rot_raw
-        rot_z = ((rot_raw - zero_offset) % 360
-                 if rot_raw is not None and zero_offset is not None else None)
+        # rot_z: signed angle relative to zero, range -180..+180
+        if rot_raw is not None and zero_offset is not None:
+            rot_z = rot_raw - zero_offset
+            # Normalize to -180..+180
+            if rot_z >  180: rot_z -= 360
+            if rot_z < -180: rot_z += 360
+        else:
+            rot_z = None
         # Reject angle jumps > MAX_ANGLE_JUMP (spoke-hopping filter)
         if rot_z is not None and rot_buf:
             diff = rot_z - rot_buf[-1]
@@ -314,9 +320,10 @@ def _process_video_seg(video_path, out_path, job_id="local",
         if rot_z is not None:
             rot_buf.append(rot_z)
             if len(rot_buf) > SEG_SMOOTH_N: rot_buf.pop(0)
+            # Signed smooth angle (no % 360 — preserve sign for CW/CCW)
             rot_smooth = math.degrees(math.atan2(
                 np.mean([math.sin(math.radians(x)) for x in rot_buf]),
-                np.mean([math.cos(math.radians(x)) for x in rot_buf]))) % 360
+                np.mean([math.cos(math.radians(x)) for x in rot_buf])))
         else:
             rot_smooth = rot_buf[-1] if rot_buf else None
         if rot_smooth is not None:
@@ -539,8 +546,8 @@ async def reset_request(request: Request):
     import smtplib
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
-    GMAIL_USER = os.environ.get("GMAIL_USER", "azatkb22@gmail.com")   # your@gmail.com
-    GMAIL_PASS = os.environ.get("GMAIL_PASS", "hzcb ynnj zujv czmt")   # Gmail App Password (not account password)
+    GMAIL_USER = os.environ.get("GMAIL_USER", "")   # your@gmail.com
+    GMAIL_PASS = os.environ.get("GMAIL_PASS", "")   # Gmail App Password (not account password)
     if GMAIL_USER and GMAIL_PASS:
         try:
             msg = MIMEMultipart("alternative")

@@ -49,13 +49,15 @@ _SI_PREFIXES = [
     (1e-15,"f"),  (1e-18,"a"),  (1e-21,"z"),
 ]
 
-def format_si(value: float, unit: str, decimals: int = 3) -> str:
+def format_si(value, unit: str, decimals: int = 3) -> str:
+    if value is None: return "n/a"
     """
     Format value with SI prefix for user display.
     Example: format_si(4.62e-9, "J") → "4.620 nJ"
     """
     if value == 0:
         return f"0.000 {unit}"
+    if value is None: return "n/a"
     abs_val = abs(value)
     for factor, prefix in _SI_PREFIXES:
         if abs_val >= factor:
@@ -140,18 +142,28 @@ def detect_phases(timestamps: list, angles_rad: list,
         omegas = smoothed
 
     # Find first movement → t_Lajtner
-    # Require CONSECUTIVE frames above threshold to avoid noise spikes
-    # Use 3 consecutive frames moving in same direction
-    t_start = 0.0  # time from video start to first movement
-    CONSEC_REQUIRED = 4  # require 4 consecutive frames
+    # direction_filter: 'cw' expects negative omegas, 'ccw' expects positive
+    _want_dir = direction_filter.lower() if direction_filter else "auto"
+    t_start = 0.0
+    CONSEC_REQUIRED = 4
     for i in range(len(omegas) - CONSEC_REQUIRED + 1):
         window = omegas[i:i+CONSEC_REQUIRED]
-        # All frames must exceed threshold in same direction
-        if all(abs(o) >= min_move_thresh for o in window):
-            # Check same direction (all positive or all negative)
-            if all(o > 0 for o in window) or all(o < 0 for o in window):
-                t_start = timestamps[i]
-                break
+        if not all(abs(o) >= min_move_thresh for o in window):
+            continue
+        all_pos = all(o > 0 for o in window)
+        all_neg = all(o < 0 for o in window)
+        if _want_dir in ("cw",):
+            # CW = negative omega
+            if all_neg:
+                t_start = timestamps[i]; break
+        elif _want_dir in ("ccw",):
+            # CCW = positive omega
+            if all_pos:
+                t_start = timestamps[i]; break
+        else:
+            # auto: any consistent direction
+            if all_pos or all_neg:
+                t_start = timestamps[i]; break
 
     # Determine overall direction
     cw_count  = sum(1 for o in omegas if o >  min_move_thresh)
@@ -418,11 +430,10 @@ def calculate(phases: dict) -> dict:
 
     # ── Lajtner values ─────────────────────────────────────────────────
     t_lajtner = phases.get("t_start", 0.0)
-    # a_Lajtner: angular jerk in first 0.25s of motion (rad/s³)
-    # Find samples within first 0.25s after t_lajtner and compute omega change rate
+    # a_Lajtner: only calculable if t_Lajtner > 0
     LAJTNER_WINDOW = 0.25  # seconds
-    a_lajtner = beta_accel  # fallback
-    if phases.get("t_start") is not None and "timestamps" in phases:
+    a_lajtner = None  # default: not calculable
+    if t_lajtner > 0 and phases.get("t_start") is not None and "timestamps" in phases:
         ts_all = phases["timestamps"]
         om_all = phases.get("omegas", [])
         t0 = t_lajtner
@@ -702,7 +713,7 @@ def build_user_message(result: dict, medium: str,
         "phi_deg":     round(phi_deg, 2),
         "F_max_si":    format_si(F_max,  "N"),
         "t_lajtner_s": round(result.get("t_lajtner", 0), 3),
-        "a_lajtner":   format_si(result.get("a_lajtner", 0), "rad/s²"),
+        "a_lajtner":   format_si(result.get("a_lajtner"), "rad/s²"),
         "message":     msgs["rotated_free"] if moved else msgs["not_rotated"],
     }
 
