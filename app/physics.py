@@ -202,11 +202,21 @@ def detect_phases(timestamps: list, angles_rad: list,
     sub_timestamps= timestamps[start_idx:]
     sub_angles    = angles_rad[start_idx:]
 
-    abs_omegas = [abs(o) for o in sub_omegas]
+    # Filter sub_omegas by primary direction sign for correct phase detection
+    _dir = primary.get("direction", "CCW")
+    _dir_sign = -1 if _dir == "CW" else 1
+    # For CW: omegas are negative, invert for peak detection
+    directed_omegas = [o * _dir_sign for o in sub_omegas]
+    abs_omegas = [abs(o) for o in directed_omegas]
     if not abs_omegas:
         return _empty_phases()
 
-    peak_idx = abs_omegas.index(max(abs_omegas))
+    # Use only frames moving in correct direction
+    signed_abs = [max(0, o * _dir_sign) for o in sub_omegas]
+    if max(signed_abs) > 0:
+        peak_idx = signed_abs.index(max(signed_abs))
+    else:
+        peak_idx = abs_omegas.index(max(abs_omegas))
     peak_val = abs_omegas[peak_idx]
 
     const_end = peak_idx
@@ -222,7 +232,13 @@ def detect_phases(timestamps: list, angles_rad: list,
     def _phi(sl):
         if sl.start >= len(sub_angles): return 0.0
         stop = min(sl.stop-1, len(sub_angles)-1)
+        # Use absolute value for magnitude; direction is tracked separately
         return abs(sub_angles[stop] - sub_angles[sl.start])
+
+    def _sign():
+        """Return sign of primary phase: +1 CCW, -1 CW."""
+        if primary.get("direction") == "CW": return -1
+        return 1
 
     def _dt(sl):
         start = min(sl.start, len(sub_timestamps)-1)
@@ -360,8 +376,13 @@ def calculate(phases: dict) -> dict:
     om = omega_max if omega_max > 0 else beta_accel * t_accel
 
     # Angular deceleration from deceleration phase
-    omega_start_decel = (2.0 * phi_decel) / t_decel if phi_decel > 0 else om
-    beta_decel_abs    = abs(omega_start_decel / t_decel)
+    # omega at start of decel = omega_max (wheel decelerates from max to 0)
+    # beta_decel = omega_max / t_decel
+    # Also verify with kinematics: beta_decel = 2*phi_decel / t_decel^2
+    beta_decel_kinematic = (2.0 * phi_decel) / (t_decel ** 2) if phi_decel > 0 else 0
+    beta_decel_dynamic   = om / t_decel if t_decel > 0 else 0
+    # Use average of both methods for robustness
+    beta_decel_abs = max(beta_decel_kinematic, beta_decel_dynamic)                      if (beta_decel_kinematic > 0 and beta_decel_dynamic > 0)                      else (beta_decel_kinematic or beta_decel_dynamic)
 
     # Constant phase time
     t_const_calc = (phi_const / om) if (om > 0 and phi_const > 0) else t_const
@@ -370,6 +391,8 @@ def calculate(phases: dict) -> dict:
     # t_start (t_Lajtner) is the waiting time before movement
     t_total    = t_accel + t_const_calc + t_decel
     phi_total  = phi_accel + phi_const + phi_decel
+    # Apply direction sign: CW = negative
+    phi_total_signed = phi_total * _dir_sign
     # Sanity check: phi_total should match total cumulative from data
     if "angles_rad" in phases and len(phases.get("angles_rad", [])) >= 2:
         _direct = abs(phases["angles_rad"][-1] - phases["angles_rad"][0])
