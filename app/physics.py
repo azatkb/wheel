@@ -258,6 +258,7 @@ def detect_phases(timestamps: list, angles_rad: list,
         "phi_decel":  _phi(decel_slice),
         "omega_max":  max(abs_omegas),
         "direction":  overall_dir,
+        "dir_sign":   _dir_sign,
         "all_phases": all_phases,
         "filtered_phases": filtered,
     }
@@ -317,8 +318,9 @@ def _empty_phases() -> dict:
     return {
         "t_start":0,"t_accel":0,"t_const":0,"t_decel":0,
         "phi_accel":0,"phi_const":0,"phi_decel":0,
-        "omega_max":0,"direction":"CW",
+        "omega_max":0,"direction":"CW","dir_sign":1,
         "all_phases":[],"filtered_phases":[],
+        "timestamps":[],"omegas":[],"angles_rad":[],
     }
 
 
@@ -363,6 +365,7 @@ def calculate(phases: dict) -> dict:
     phi_const = phases["phi_const"]
     phi_decel = phases["phi_decel"]
     omega_max = phases["omega_max"]
+    _dir_sign = phases.get("dir_sign", 1)  # +1 CCW, -1 CW
 
     # ── Inertia ────────────────────────────────────────────────────────
     inertia = calc_inertia()
