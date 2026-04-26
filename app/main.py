@@ -55,7 +55,7 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger(__name__)
 
 # ── App settings ───────────────────────────────────────────────────────────
-WATERMARK_TEXT       = "© enyem.com"
+WATERMARK_TEXT       = "lajtner.com"
 MAX_ANGLE_JUMP       = 30.0   # degrees — reject spoke-hop jumps
 DEFAULT_LANG         = "en"
 DEFAULT_VERSION      = "free"
