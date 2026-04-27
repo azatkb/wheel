@@ -66,7 +66,8 @@ def format_si(value, unit: str, decimals: int = 3) -> str:
     return f"{value:.{decimals}e} {unit}"
 
 
-def format_sci(value: float, unit: str) -> str:
+def format_sci(value, unit: str) -> str:
+    if value is None: return "n/a"
     """
     Format in scientific notation for database storage.
     Example: 8.123e-3 → "8.123*10^-3 J"
@@ -591,7 +592,7 @@ def build_csv_row(email: str, job_id: str, timestamp: str,
         "direction":          phases.get("direction", ""),
         # Lajtner values
         "t_lajtner_s":        format_sci(result["t_lajtner"], "s"),
-        "a_lajtner_rad_s2":   format_sci(result["a_lajtner"], "rad/s2"),
+        "a_lajtner_rad_s2":   format_sci(result.get("a_lajtner"), "rad/s2"),
         # Phase durations
         "t_accel_s":          format_sci(phases["t_accel"],   "s"),
         "t_const_s":          format_sci(phases["t_const"],   "s"),
