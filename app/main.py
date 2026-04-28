@@ -14,6 +14,7 @@ Endpoints:
   GET  /health
 """
 
+from dotenv import load_dotenv; load_dotenv()
 import uuid, os, shutil, asyncio, json, logging, math, datetime, hashlib, secrets
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -49,10 +50,6 @@ from app.database import (
     get_master_data, get_user_bar_data, export_to_master_csv,
 )
 from app.stabilizer import Stabilizer
-
-from dotenv import load_dotenv
-load_dotenv()
-
 
 logging.basicConfig(level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")
@@ -564,15 +561,24 @@ async def stripe_webhook(request: Request):
     """Handle Stripe webhook events."""
     if not STRIPE_SECRET_KEY:
         raise HTTPException(503, "Stripe not configured")
-    payload    = await request.body()
+    payload    = await request.body()  # raw bytes — must not be parsed before
     sig_header = request.headers.get("stripe-signature", "")
-    try:
-        import stripe
-        stripe.api_key = STRIPE_SECRET_KEY
-        event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
-    except Exception as e:
-        log.warning(f"[STRIPE] webhook verify failed: {e}")
-        raise HTTPException(400, str(e))
+    log.info(f"[STRIPE] webhook sig={sig_header[:40]}... secret_set={bool(STRIPE_WEBHOOK_SECRET)}")
+    if not STRIPE_WEBHOOK_SECRET:
+        # No webhook secret — parse event directly (dev mode only)
+        import json as _json
+        event = _json.loads(payload)
+        log.warning("[STRIPE] webhook secret not set — skipping signature verification")
+    else:
+        try:
+            import stripe
+            stripe.api_key = STRIPE_SECRET_KEY
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, STRIPE_WEBHOOK_SECRET
+            )
+        except Exception as e:
+            log.warning(f"[STRIPE] webhook verify failed: {e}")
+            raise HTTPException(400, str(e))
 
     evt = event["type"]
     log.info(f"[STRIPE] event: {evt}")
@@ -580,13 +586,26 @@ async def stripe_webhook(request: Request):
     if evt in ("checkout.session.completed", "customer.subscription.created",
                "invoice.paid"):
         obj = event["data"]["object"]
-        email = (obj.get("customer_email") or
-                 obj.get("metadata", {}).get("user_email") or "")
-        if not email and obj.get("customer"):
+        # Stripe objects use attribute access, not .get()
+        try:
+            email = getattr(obj, "customer_email", None) or ""
+        except Exception:
+            email = ""
+        if not email:
             try:
-                cust = stripe.Customer.retrieve(obj["customer"])
-                email = cust.get("email", "")
-            except Exception: pass
+                meta = getattr(obj, "metadata", {})
+                email = (meta.get("user_email") if isinstance(meta, dict)
+                         else getattr(meta, "user_email", "")) or ""
+            except Exception:
+                email = ""
+        if not email:
+            try:
+                cust_id = getattr(obj, "customer", None)
+                if cust_id:
+                    cust  = stripe.Customer.retrieve(cust_id)
+                    email = getattr(cust, "email", "") or ""
+            except Exception:
+                pass
         if email:
             try:
                 from app.database import _sb
@@ -599,8 +618,9 @@ async def stripe_webhook(request: Request):
     elif evt in ("customer.subscription.deleted", "customer.subscription.paused"):
         obj = event["data"]["object"]
         try:
-            cust = stripe.Customer.retrieve(obj["customer"])
-            email = cust.get("email", "")
+            cust_id = getattr(obj, "customer", None)
+            cust  = stripe.Customer.retrieve(cust_id)
+            email = getattr(cust, "email", "") or ""
         except Exception:
             email = ""
         if email:
