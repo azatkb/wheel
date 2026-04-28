@@ -523,6 +523,119 @@ def _get_user(email: str):
     except: return None
 
 
+
+# ── Stripe payment integration ─────────────────────────────────────────────
+STRIPE_SECRET_KEY     = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRICE_ID       = os.environ.get("STRIPE_PRICE_ID", "")  # monthly Pro price
+
+@app.post("/stripe/create-checkout")
+async def stripe_create_checkout(request: Request):
+    """Create Stripe checkout session for Pro plan."""
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(503, "Stripe not configured")
+    body = await request.json()
+    email = (body.get("email") or "").strip().lower()
+    if not email:
+        raise HTTPException(400, "Email required")
+    try:
+        import stripe
+        stripe.api_key = STRIPE_SECRET_KEY
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            mode="subscription",
+            customer_email=email,
+            line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
+            success_url=body.get("success_url", "https://enyem.com/subscription?success=1"),
+            cancel_url=body.get("cancel_url",  "https://enyem.com/subscription?cancelled=1"),
+            metadata={"user_email": email},
+        )
+        return {"url": session.url, "session_id": session.id}
+    except Exception as e:
+        log.error(f"[STRIPE] checkout error: {e}")
+        raise HTTPException(500, str(e))
+
+@app.post("/stripe/webhook")
+async def stripe_webhook(request: Request):
+    """Handle Stripe webhook events."""
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(503, "Stripe not configured")
+    payload    = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+    try:
+        import stripe
+        stripe.api_key = STRIPE_SECRET_KEY
+        event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
+    except Exception as e:
+        log.warning(f"[STRIPE] webhook verify failed: {e}")
+        raise HTTPException(400, str(e))
+
+    evt = event["type"]
+    log.info(f"[STRIPE] event: {evt}")
+
+    if evt in ("checkout.session.completed", "customer.subscription.created",
+               "invoice.paid"):
+        obj = event["data"]["object"]
+        email = (obj.get("customer_email") or
+                 obj.get("metadata", {}).get("user_email") or "")
+        if not email and obj.get("customer"):
+            try:
+                cust = stripe.Customer.retrieve(obj["customer"])
+                email = cust.get("email", "")
+            except Exception: pass
+        if email:
+            try:
+                from app.database import _sb
+                sb = _sb()
+                sb.table("wt_users").update({"plan": "paid"}).eq("email", email.lower()).execute()
+                log.info(f"[STRIPE] upgraded {email} to paid")
+            except Exception as e:
+                log.error(f"[STRIPE] db update failed: {e}")
+
+    elif evt in ("customer.subscription.deleted", "customer.subscription.paused"):
+        obj = event["data"]["object"]
+        try:
+            cust = stripe.Customer.retrieve(obj["customer"])
+            email = cust.get("email", "")
+        except Exception:
+            email = ""
+        if email:
+            try:
+                from app.database import _sb
+                sb = _sb()
+                sb.table("wt_users").update({"plan": "free"}).eq("email", email.lower()).execute()
+                log.info(f"[STRIPE] downgraded {email} to free")
+            except Exception as e:
+                log.error(f"[STRIPE] db update failed: {e}")
+
+    return {"ok": True}
+
+@app.post("/stripe/cancel")
+async def stripe_cancel(request: Request):
+    """Cancel subscription."""
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(503, "Stripe not configured")
+    body = await request.json()
+    email = (body.get("email") or "").strip().lower()
+    try:
+        import stripe
+        stripe.api_key = STRIPE_SECRET_KEY
+        customers = stripe.Customer.list(email=email, limit=1)
+        if not customers.data:
+            raise HTTPException(404, "No Stripe customer found")
+        cust_id = customers.data[0].id
+        subs = stripe.Subscription.list(customer=cust_id, status="active", limit=1)
+        if not subs.data:
+            raise HTTPException(404, "No active subscription found")
+        stripe.Subscription.cancel(subs.data[0].id)
+        from app.database import _sb
+        sb = _sb()
+        sb.table("wt_users").update({"plan": "free"}).eq("email", email).execute()
+        return {"ok": True, "message": "Subscription cancelled"}
+    except HTTPException: raise
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
 # ── Password reset ─────────────────────────────────────────────────────────
 import random
 
