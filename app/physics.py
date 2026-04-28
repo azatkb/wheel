@@ -68,6 +68,19 @@ def format_si(value, unit: str, decimals: int = 3) -> str:
 
 def format_sci(value, unit: str) -> str:
     if value is None: return "n/a"
+
+def format_math(value, unit: str, decimals: int = 3) -> str:
+    """Format as mathematical notation: 4.620×10⁻⁹ J"""
+    if value is None: return "n/a"
+    if value == 0: return f"0 {unit}"
+    import math as _math
+    exp = int(_math.floor(_math.log10(abs(value))))
+    mantissa = value / (10 ** exp)
+    # Superscript digits
+    sup = str.maketrans("0123456789-", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻")
+    exp_str = str(exp).translate(sup)
+    return f"{mantissa:.{decimals}f}×10{exp_str} {unit}"
+
     """
     Format in scientific notation for database storage.
     Example: 8.123e-3 → "8.123*10^-3 J"
@@ -385,11 +398,14 @@ def calculate(phases: dict) -> dict:
     J = inertia["J_total"]
 
     # ── Kinematics ─────────────────────────────────────────────────────
-    # Angular acceleration: beta = 2*phi / t²
-    beta_accel = (2.0 * phi_accel) / (t_accel ** 2)
-
-    # Peak angular velocity from measurement or formula
-    om = omega_max if omega_max > 0 else beta_accel * t_accel
+    # omega_max from measured peak (most reliable)
+    om = omega_max if omega_max > 0 else (2.0 * phi_accel / t_accel)
+    # beta_accel from omega_max / t_accel (dynamic) — consistent with om
+    # Also check kinematic beta = 2*phi/t²
+    beta_kin = (2.0 * phi_accel) / (t_accel ** 2) if t_accel > 0 else 0
+    beta_dyn = om / t_accel if t_accel > 0 else 0
+    # Use dynamic (from measured omega) as primary — more reliable
+    beta_accel = beta_dyn if beta_dyn > 0 else beta_kin
 
     # Angular deceleration from deceleration phase
     # omega at start of decel = omega_max (wheel decelerates from max to 0)
@@ -409,11 +425,12 @@ def calculate(phases: dict) -> dict:
     phi_total  = phi_accel + phi_const + phi_decel
     # Apply direction sign: CW = negative
     phi_total_signed = phi_total * _dir_sign
-    # Sanity check: phi_total should match total cumulative from data
-    if "angles_rad" in phases and len(phases.get("angles_rad", [])) >= 2:
-        _direct = abs(phases["angles_rad"][-1] - phases["angles_rad"][0])
-        if _direct > 0 and abs(_direct - phi_total) / max(_direct, 1e-9) > 0.3:
-            phi_total = _direct  # override with direct measurement
+    # phi_total = maximum excursion (peak rotation), not final position
+    # e.g. wheel goes CW 70° then returns to 15°: phi_total should be 70°
+    if "angles_rad" in phases and phases["angles_rad"]:
+        _peak = max(abs(a) for a in phases["angles_rad"])
+        if _peak > phi_total * 0.5:
+            phi_total = _peak  # use peak (max excursion)
     t_active   = max(t_accel + t_const_calc, 1e-6)
     phi_active = max(phi_accel + phi_const,  1e-9)
 
@@ -434,18 +451,25 @@ def calculate(phases: dict) -> dict:
     # a_Lajtner: only calculable if t_Lajtner > 0
     LAJTNER_WINDOW = 0.25  # seconds
     a_lajtner = None  # default: not calculable
-    if t_lajtner > 0 and phases.get("t_start") is not None and "timestamps" in phases:
+    # a_Lajtner = angular acceleration (rad/s²) in first 0.25s of motion
+    if t_lajtner > 0 and "timestamps" in phases and "omegas" in phases:
         ts_all = phases["timestamps"]
-        om_all = phases.get("omegas", [])
+        om_all = phases["omegas"]
         t0 = t_lajtner
         t1 = t0 + LAJTNER_WINDOW
+        # Find omega at start of motion and 0.25s later
         idx0 = next((i for i,t in enumerate(ts_all) if t >= t0), None)
         idx1 = next((i for i,t in enumerate(ts_all) if t >= t1), None)
-        if idx0 is not None and idx1 is not None and idx1 > idx0 and len(om_all) > idx1:
+        if idx0 is None:
+            idx0 = 0
+        if idx1 is None:
+            idx1 = min(idx0 + 1, len(ts_all) - 1)
+        if idx1 > idx0 and len(om_all) > max(idx0, idx1):
             dt_w = ts_all[idx1] - ts_all[idx0]
-            if dt_w > 0:
-                dom = om_all[idx1] - om_all[idx0]
-                a_lajtner = dom / dt_w  # rad/s² over first 0.25s
+            om_start = om_all[idx0]
+            om_end   = om_all[idx1]
+            if dt_w > 0 and (abs(om_start) > 1e-6 or abs(om_end) > 1e-6):
+                a_lajtner = (om_end - om_start) / dt_w  # rad/s²
 
     # Correct t_total: physics time starts from first movement, not t=0
     # t_total already = t_accel + t_const + t_decel which is relative to motion start
@@ -616,7 +640,7 @@ def build_csv_row(email: str, job_id: str, timestamp: str,
         for var in VARIABLE_NAMES:
             unit = UNITS.get(var, "")
             key  = f"{case_name}_{var}_{unit}"
-            row[key] = format_sci(case[var], unit)
+            row[key] = format_math(case[var], unit)
 
     return row
 

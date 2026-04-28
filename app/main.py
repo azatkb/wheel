@@ -39,7 +39,7 @@ from app.detector_seg import (
 )
 from app.physics import (
     detect_phases, calculate, build_csv_row,
-    build_user_message, format_si, format_sci,
+    build_user_message, format_si, format_sci, format_math,
 )
 from app.preprocessor import preprocess_video, get_video_info
 from app.database import (
@@ -55,7 +55,7 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger(__name__)
 
 # ── App settings ───────────────────────────────────────────────────────────
-WATERMARK_TEXT       = "lajtner.com"
+WATERMARK_TEXT       = "© enyem.com"
 MAX_ANGLE_JUMP       = 30.0   # degrees — reject spoke-hop jumps
 DEFAULT_LANG         = "en"
 DEFAULT_VERSION      = "free"
@@ -113,7 +113,7 @@ def _run_physics(samples, medium, direction, user_email, job_id, version, lang):
     angles_rad = [math.radians(s["cumulative_deg"] or 0) for s in samples]
     phases = detect_phases(timestamps, angles_rad, direction_filter=direction)
     result = calculate(phases)
-    max_cum_deg = max(abs(s["cumulative_deg"] or 0) for s in samples)
+    max_cum_deg = max((abs(s["cumulative_deg"] or 0) for s in samples), default=0)
     result["max_cum_deg"] = max_cum_deg
     cum_deg    = abs(samples[-1].get("cumulative_deg", 0))
     is_outlier = cum_deg > OUTLIER_THRESHOLD_DEG
@@ -407,9 +407,12 @@ def _process_video_seg(video_path, out_path, job_id="local",
         # Sample
         if t_sec >= next_sample_at:
             conf_disp = 100 if has_orange else (60 if has_hub else 0)
+            # rotation_deg: signed current spoke position (CW=neg, CCW=pos)
+            # cumulative_deg: signed running total (CW=neg, CCW=pos)
             all_samples.append(make_sample(
                 job_id=job_id, timestamp_sec=t_sec,
-                rotation_deg=rot_smooth, cumulative_deg=-rot_cum,
+                rotation_deg=round(rot_smooth, 2) if rot_smooth is not None else None,
+                cumulative_deg=-rot_cum,
                 angular_vel_dps=-vel_dps, confidence_pct=conf_disp, source="SEG",
             ))
             next_sample_at += sample_interval
@@ -425,7 +428,7 @@ def _process_video_seg(video_path, out_path, job_id="local",
                 "orange": [ora_blob[0], ora_blob[1], ora_blob[4]] if ora_blob else None,
                 "no_ground": hub is None,
                 "no_orange": not has_orange,
-                "rotation_deg": round(rot_smooth, 1) if rot_smooth else None,
+                "rotation_deg": round(abs(rot_smooth) % 360, 1) if rot_smooth else None,
                 "cumulative_deg": round(-rot_cum, 1),
                 "confidence_pct": 100 if has_orange else (60 if has_hub else 0),
             })

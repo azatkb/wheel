@@ -55,8 +55,8 @@ TRACK_CIRCLE_THICK = 3
 TRACK_CIRCLE_GLOW  = True            # draw a second slightly larger dim circle
 
 # ── Supabase ───────────────────────────────────────────────────────────────
-SUPABASE_URL   = os.getenv("SUPABASE_URL",   "https://rmjrqxixqerwkdqoahbc.supabase.co")
-SUPABASE_KEY   = os.getenv("SUPABASE_KEY",   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJtanJxeGl4cWVyd2tkcW9haGJjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTQ1NDkyNCwiZXhwIjoyMDkxMDMwOTI0fQ.9lQ9me_RCeLStmjDj7vvZrCLzfA5NuaIQo8Mk-vkTo4")
+SUPABASE_URL   = os.getenv("SUPABASE_URL",   "https://eslyzmgvffoldhocjfvc.supabase.co")
+SUPABASE_KEY   = os.getenv("SUPABASE_KEY",   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzbHl6bWd2ZmZvbGRob2NqZnZjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NzM1NjQwMSwiZXhwIjoyMDkyOTMyNDAxfQ.NZIFVmFwld93rpFpw2TOTqatU0xPH-S_sRUYgjRBcvI")
 TABLE_JOBS     = "wt_jobs"      # one row per uploaded video / session
 TABLE_SAMPLES  = "wt_samples"   # one row per data sample
 
