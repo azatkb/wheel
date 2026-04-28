@@ -556,6 +556,33 @@ async def stripe_create_checkout(request: Request):
         log.error(f"[STRIPE] checkout error: {e}")
         raise HTTPException(500, str(e))
 
+@app.get("/stripe/check-session")
+async def stripe_check_session(session_id: str = "", email: str = ""):
+    """After successful payment - verify session and update plan."""
+    if not STRIPE_SECRET_KEY or not session_id:
+        raise HTTPException(400, "Missing params")
+    try:
+        import stripe
+        stripe.api_key = STRIPE_SECRET_KEY
+        session = stripe.checkout.Session.retrieve(session_id)
+        status = getattr(session, "payment_status", "")
+        sub_status = getattr(session, "status", "")
+        if status == "paid" or sub_status == "complete":
+            cust_email = getattr(session, "customer_email", "") or email
+            if cust_email:
+                from app.database import _sb
+                sb = _sb()
+                sb.table("wt_users").update({"plan":"paid"}).eq("email", cust_email.lower()).execute()
+                log.info(f"[STRIPE] plan updated via check-session for {cust_email}")
+            return {"ok": True, "plan": "paid", "status": sub_status}
+        return {"ok": False, "status": sub_status}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+@app.get("/stripe/webhook")
+async def stripe_webhook_get():
+    return {"ok": True}
+
 @app.post("/stripe/webhook")
 async def stripe_webhook(request: Request):
     """Handle Stripe webhook events."""
