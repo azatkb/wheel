@@ -6,3 +6,4 @@ onnxruntime>=1.17.0
 python-multipart>=0.0.9
 supabase>=2.0.0
 python-dotenv>=1.0.0
+stripe>=5.0.0
