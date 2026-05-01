@@ -56,7 +56,7 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger(__name__)
 
 # ── App settings ───────────────────────────────────────────────────────────
-WATERMARK_TEXT       = "© enyem.com"
+WATERMARK_TEXT       = "mindpw.com"
 MAX_ANGLE_JUMP       = 30.0   # degrees — reject spoke-hop jumps
 DEFAULT_LANG         = "en"
 DEFAULT_VERSION      = "free"
@@ -343,6 +343,17 @@ def _process_video_seg(video_path, out_path, job_id="local",
         # Draw
         ann = frame_s.copy()
         draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cum, bbox, tip_colors=tip_colors, draw_mesh=DRAW_MESH_OVERLAY)
+        # Timestamp overlay bottom-right
+        _ts_str = f"{t_sec:.2f}s"
+        (_tw, _th), _ = cv2.getTextSize(_ts_str, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)
+        _h_f, _w_f = ann.shape[:2]
+        _tx = _w_f - _tw - 10
+        _ty = _h_f - 10
+        _ov = ann.copy()
+        cv2.rectangle(_ov, (_tx-4, _ty-_th-4), (_tx+_tw+4, _ty+4), (0,0,0), -1)
+        cv2.addWeighted(_ov, 0.5, ann, 0.5, 0, ann)
+        cv2.putText(ann, _ts_str, (_tx, _ty),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (160,160,160), 1, cv2.LINE_AA)
 
         # Draw info bar below frame
         bar = np.full((BAR_HEIGHT, W, 3), (18, 18, 18), np.uint8)
