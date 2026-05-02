@@ -411,20 +411,31 @@ def calculate(phases: dict) -> dict:
     # omega at start of decel = omega_max (wheel decelerates from max to 0)
     # beta_decel = omega_max / t_decel
     # Also verify with kinematics: beta_decel = 2*phi_decel / t_decel^2
-    beta_decel_kinematic = (2.0 * phi_decel) / (t_decel ** 2) if phi_decel > 0 else 0
-    beta_decel_dynamic   = om / t_decel if t_decel > 0 else 0
-    # Use average of both methods for robustness
-    beta_decel_abs = max(beta_decel_kinematic, beta_decel_dynamic)                      if (beta_decel_kinematic > 0 and beta_decel_dynamic > 0)                      else (beta_decel_kinematic or beta_decel_dynamic)
+    # Excel formula: alpha = 2*theta/t^2  (from theta = 0.5*alpha*t^2, start from rest)
+    beta_accel_kinematic  = (2.0 * phi_accel) / (t_accel ** 2) if phi_accel > 0 and t_accel > 0 else 0
+    beta_decel_kinematic = (2.0 * phi_decel) / (t_decel ** 2) if phi_decel > 0 and t_decel > 0 else 0
+    beta_decel_dynamic   = om / t_decel if t_decel > 0 and om > 0 else 0
+    # Use kinematic formula as primary (matches Excel: alpha = 2*theta/t^2)
+    beta_decel_abs = beta_decel_kinematic if beta_decel_kinematic > 0 else beta_decel_dynamic
 
     # Constant phase time
     t_const_calc = (phi_const / om) if (om > 0 and phi_const > 0) else t_const
 
-    # t_total = actual measured duration (from data, not phase estimates)
+    # t_total = actual measured duration from timestamps
     _ts_all = phases.get("timestamps", [])
     if len(_ts_all) >= 2:
-        t_total = float(_ts_all[-1] - _ts_all[0])
+        _t_candidate = float(_ts_all[-1] - _ts_all[0])
+        # Sanity check: must be between 0.1s and 300s
+        if 0.1 <= _t_candidate <= 300:
+            t_total = _t_candidate
+        else:
+            # fallback: use phase sum
+            t_total = t_accel + t_const_calc + t_decel
     else:
         t_total = t_accel + t_const_calc + t_decel
+    # Final sanity: t_total must be positive and reasonable
+    if t_total < 0.1 or t_total > 300:
+        t_total = max(t_accel, 1.0)  # at least 1 second
     phi_total  = phi_accel + phi_const + phi_decel
     # Apply direction sign: CW = negative
     phi_total_signed = phi_total * _dir_sign
