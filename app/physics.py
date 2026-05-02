@@ -419,9 +419,12 @@ def calculate(phases: dict) -> dict:
     # Constant phase time
     t_const_calc = (phi_const / om) if (om > 0 and phi_const > 0) else t_const
 
-    # t_total = time from first movement to stop (excludes waiting period)
-    # t_start (t_Lajtner) is the waiting time before movement
-    t_total    = t_accel + t_const_calc + t_decel
+    # t_total = actual measured duration (from data, not phase estimates)
+    _ts_all = phases.get("timestamps", [])
+    if len(_ts_all) >= 2:
+        t_total = float(_ts_all[-1] - _ts_all[0])
+    else:
+        t_total = t_accel + t_const_calc + t_decel
     phi_total  = phi_accel + phi_const + phi_decel
     # Apply direction sign: CW = negative
     phi_total_signed = phi_total * _dir_sign
@@ -733,12 +736,23 @@ def build_user_message(result: dict, medium: str,
 
     msgs = MESSAGES.get(lang, MESSAGES["en"])
 
+    def _sci(v):
+        """Format as scientific notation e.g. 3.4e-8"""
+        if v is None: return "n/a"
+        if v == 0: return "0"
+        import math as _m
+        a = abs(v)
+        if a == 0: return "0"
+        exp = int(_m.floor(_m.log10(a)))
+        man = v / (10**exp)
+        return f"{man:.3g}e{exp:+d}"
+
     out = {
         "moved":       moved,
         "phi_deg":     round(phi_deg, 2),
-        "F_max_si":    format_si(F_max,  "N"),
+        "F_max_si":    _sci(F_max),
         "t_lajtner_s": round(result.get("t_lajtner", 0), 3),
-        "a_lajtner":   format_si(result.get("a_lajtner"), "rad/s²"),
+        "a_lajtner":   _sci(result.get("a_lajtner")),
         "message":     msgs["rotated_free"] if moved else msgs["not_rotated"],
     }
 
@@ -746,7 +760,7 @@ def build_user_message(result: dict, medium: str,
     if version == "free":
         out["display"] = {
             "rotation_deg": f"{phi_deg:.2f} °",
-            "force_N":      format_si(F_max, "N"),
+            "force_N":      _sci(F_max),
         }
         return out
 
@@ -754,10 +768,10 @@ def build_user_message(result: dict, medium: str,
     planck_freq = case.get("planck_freq", 0)
     out["display"] = {
         "rotation_deg":   f"{phi_deg:.2f} °",
-        "force_N":        format_si(F_max,       "N"),
-        "power_W":        format_si(P_peak,       "W"),
-        "work_J":         format_si(W_total,      "J"),
-        "planck_freq_Hz": format_si(planck_freq,  "Hz"),
+        "force_N":        _sci(F_max),
+        "power_W":        _sci(P_peak),
+        "work_J":         _sci(W_total),
+        "planck_freq_Hz": _sci(planck_freq),
     }
 
     # ── Personal ranking (paid) ────────────────────────────────────────
