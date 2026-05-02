@@ -724,8 +724,8 @@ async def reset_request(request: Request):
     import smtplib
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
-    GMAIL_USER = os.environ.get("GMAIL_USER", "")   # your@gmail.com
-    GMAIL_PASS = os.environ.get("GMAIL_PASS", "")   # Gmail App Password (not account password)
+    GMAIL_USER = os.environ.get("GMAIL_USER", "azatkb22@gmail.com")   # your@gmail.com
+    GMAIL_PASS = os.environ.get("GMAIL_PASS", "hzcb ynnj zujv czmt")
     if GMAIL_USER and GMAIL_PASS:
         try:
             msg = MIMEMultipart("alternative")
