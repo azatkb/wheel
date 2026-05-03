@@ -10,6 +10,14 @@ Usage:
     from app.physics import calculate, detect_phases, format_si, build_user_message
 """
 
+# ── Braking constants from Excel ────────────────────────────────────────────
+BRAKING_F  = 9.874e-6   # N  — air braking force constant
+BRAKING_E  = 5.773e-8   # J  — air braking energy constant
+BRAKING_P  = 1.924e-8   # W  — air braking power constant
+BRAKING_W  = 5.773e-8   # J  — air braking work constant
+WATER_MULT = 816         # water/air resistance ratio
+
+
 import math
 
 # ══════════════════════════════════════════════════════════════════════
@@ -123,7 +131,8 @@ def detect_phases(timestamps: list, angles_rad: list,
       all_phases : list of all detected direction phases (for paid multi-phase)
     """
     if len(timestamps) < 3:
-        return _empty_phases()
+        ep = _empty_phases(); ep["timestamps"] = timestamps; ep["angles_rad"] = angles_rad
+        return ep
 
     # Compute instantaneous angular velocities
     # Use median filter to remove spikes from noisy angle data
@@ -213,7 +222,7 @@ def detect_phases(timestamps: list, angles_rad: list,
     elif all_phases:
         primary = all_phases[0]
     else:
-        return _empty_phases()
+        _ep = _empty_phases(); _ep["timestamps"] = timestamps; _ep["angles_rad"] = angles_rad; return _ep
 
     # 3-phase segmentation on primary phase data
     # Find start index (first real movement)
@@ -235,7 +244,7 @@ def detect_phases(timestamps: list, angles_rad: list,
     directed_omegas = [o * _dir_sign for o in sub_omegas]
     abs_omegas = [abs(o) for o in directed_omegas]
     if not abs_omegas:
-        return _empty_phases()
+        _ep = _empty_phases(); _ep["timestamps"] = timestamps; _ep["angles_rad"] = angles_rad; return _ep
 
     # Use only frames moving in correct direction
     signed_abs = [max(0, o * _dir_sign) for o in sub_omegas]
@@ -370,6 +379,31 @@ def calc_inertia() -> dict:
 #  MAIN CALCULATION — 20 variables × 3 cases
 # ══════════════════════════════════════════════════════════════════════
 
+def _add_braking(case: dict, mult: float = 1.0) -> dict:
+    """Add Excel air/water braking constants to computed values."""
+    c = dict(case)
+    def _a(key, val):
+        c[key] = (c.get(key) or 0) + val
+    _a("F_max",        BRAKING_F * mult)
+    _a("F_accel",      BRAKING_F * mult)
+    _a("F_avg_active", BRAKING_F * mult)
+    _a("F_const",      BRAKING_F * mult)
+    _a("E_kin_max",    BRAKING_E * mult)
+    c["E_kin_const"] = c.get("E_kin_max", 0)
+    _a("P_peak",       BRAKING_P * mult)
+    _a("P_const",      BRAKING_P * mult)
+    _a("W_total",      BRAKING_W * mult)
+    return c
+
+
+def _fix_pavg(case: dict, t: float) -> dict:
+    """Recalculate P_avg = W_total / t after braking constants are added."""
+    c = dict(case)
+    if t > 0:
+        c["P_avg"] = (c.get("W_total") or 0) / t
+    return c
+
+
 def calculate(phases: dict) -> dict:
     """
     Calculate all 20 physical variables for 3 cases:
@@ -384,14 +418,63 @@ def calculate(phases: dict) -> dict:
               t_lajtner  — time to first movement (s)
               a_lajtner  — angular acceleration at first movement (rad/s²)
     """
-    t_accel   = max(phases["t_accel"],   1e-6)
-    t_const   = phases["t_const"]
-    t_decel   = max(phases["t_decel"],   1e-6)
-    phi_accel = max(phases["phi_accel"], 1e-9)
-    phi_const = phases["phi_const"]
-    phi_decel = phases["phi_decel"]
-    omega_max = phases["omega_max"]
-    _dir_sign = phases.get("dir_sign", 1)  # +1 CCW, -1 CW
+    # Raw phase values
+    _t_accel_raw   = phases.get("t_accel", 0)
+    _t_decel_raw   = phases.get("t_decel", 0)
+    _phi_accel_raw = phases.get("phi_accel", 0)
+    _phi_decel_raw = phases.get("phi_decel", 0)
+    _omega_raw     = phases.get("omega_max", 0)
+    _dir_sign      = phases.get("dir_sign", 1)
+
+    # Direct measurements from FULL timestamps and angles (always reliable)
+    _ts_all  = phases.get("timestamps", [])
+    _ang_all = phases.get("angles_rad", [])
+    _t_direct   = float(_ts_all[-1] - _ts_all[0]) if len(_ts_all) >= 2 else 0
+    # phi_direct = max excursion from zero across ALL samples
+    _phi_direct = max(abs(a) for a in _ang_all) if _ang_all else 0
+    # Also compute as total arc length (sum of abs changes) for better accuracy
+    _phi_arc = 0.0
+    for _i in range(1, len(_ang_all)):
+        _phi_arc += abs(_ang_all[_i] - _ang_all[_i-1])
+    # Use max excursion (not arc) — matches Excel theta definition
+    import logging as _logging; _logging.getLogger(__name__).info(f"[PHYS] t_direct={_t_direct:.2f}s phi_direct={_phi_direct:.6f}rad")
+
+    # Sanity check direct values
+    if not (0.1 <= _t_direct <= 300):
+        _t_direct = 0
+    if _phi_direct < 1e-5:  # < 0.001° is noise
+        _phi_direct = 0
+
+    # Use phase values if they make sense, otherwise use direct measurements
+    # Excel formula: theta = 0.5*alpha*t^2  →  alpha = 2*theta/t^2
+    # Use total measurement as single accel phase when phases not detected
+    if _phi_accel_raw > 1e-6 and _t_accel_raw > 0.1:
+        t_accel   = _t_accel_raw
+        phi_accel = _phi_accel_raw
+    else:
+        # Fallback: treat entire measurement as acceleration phase
+        t_accel   = _t_direct if _t_direct > 0 else 1.0
+        phi_accel = _phi_direct if _phi_direct > 0 else 1e-6
+
+    if _phi_decel_raw > 1e-6 and _t_decel_raw > 0.1:
+        t_decel   = _t_decel_raw
+        phi_decel = _phi_decel_raw
+    else:
+        # No separate decel phase detected — treat as single accel phase
+        # phi_decel = 0 to avoid double-counting
+        t_decel   = t_accel
+        phi_decel = 0.0
+
+    t_const   = phases.get("t_const", 0)
+    phi_const = phases.get("phi_const", 0)
+
+    # omega_max: ALWAYS use kinematic formula like Excel
+    # Excel: omega = 2*theta/t  (from theta=0.5*alpha*t^2, omega=alpha*t)
+    # Raw velocity from detection is noisy — do NOT use directly
+    omega_max = (2.0 * phi_accel / t_accel) if t_accel > 0 else 0
+    # Sanity: must be physically plausible (< 100 rad/s for this wheel)
+    if omega_max <= 0 or omega_max > 100:
+        omega_max = max(_omega_raw, 1e-6)
 
     # ── Inertia ────────────────────────────────────────────────────────
     inertia = calc_inertia()
@@ -519,20 +602,19 @@ def calculate(phases: dict) -> dict:
         P_const = M_motor_const * om
 
         # 19. Total Work Done
-        if M_res == 0:
-            # Ideal: only kinetic energy change
-            W_total = E_kin_max
-        else:
-            # With resistance: kinetic energy + work against friction
-            W_total = E_kin_max + M_res * phi_accel + M_res * phi_const
+        # Excel formula: W_total = KE = 0.5 * J * omega²
+        # Work = kinetic energy (for wheel accelerating from rest)
+        W_total = E_kin_max
 
-        # 18. Average Power
-        P_avg = W_total / t_active
+        # 18. Average Power  (Excel: P_avg = KE/t = W_total/t)
+        P_avg = W_total / max(t_total, 1e-6)
 
-        # 8. Average Torque (active phase)
-        M_avg_active = W_total / phi_active
+        # 8. Average Torque (active phase) = motor torque
+        # Excel: M_avg_active = M_motor_accel (driving torque during active phase)
+        # M_avg_active = driving torque = M_motor_accel
+        M_avg_active = M_motor_accel
 
-        # 11. Average Driving Force (active phase)
+        # 11. Average Driving Force = motor force
         F_avg_active = M_avg_active / L_force
 
         # 15. Average Rotational Energy (active phase)
@@ -585,8 +667,8 @@ def calculate(phases: dict) -> dict:
         "t_lajtner":  t_lajtner,
         "a_lajtner":  a_lajtner,
         "ideal":      _case(M_res=0.0),
-        "air":        _case(M_res=M_air),
-        "water":      _case(M_res=M_water),
+        "air":        _fix_pavg(_add_braking(_case(M_res=M_air),   mult=1.0),   t_total),
+        "water":      _fix_pavg(_add_braking(_case(M_res=M_water), mult=WATER_MULT), t_total),
     }
 
 
