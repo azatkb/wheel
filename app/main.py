@@ -56,7 +56,7 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger(__name__)
 
 # ── App settings ───────────────────────────────────────────────────────────
-WATERMARK_TEXT       = "mindpw.com"
+WATERMARK_TEXT       = "© enyem.com"
 MAX_ANGLE_JUMP       = 30.0   # degrees — reject spoke-hop jumps
 DEFAULT_LANG         = "en"
 DEFAULT_VERSION      = "free"
@@ -111,10 +111,25 @@ def _run_physics(samples, medium, direction, user_email, job_id, version, lang):
     if not samples:
         return {}
     timestamps = [s["timestamp_sec"] for s in samples]
-    angles_rad = [math.radians(s["cumulative_deg"] or 0) for s in samples]
+    _cum_raw   = [s["cumulative_deg"] or 0 for s in samples]
+
+    # Filter cumulative by selected direction:
+    # CW = negative angles, CCW = positive angles
+    # If wheel moved in WRONG direction → set to 0 (no valid motion)
+    _dir = (direction or 'cw').lower().split('+')[0].strip()
+    if _dir == 'cw':
+        # CW: keep negative values, zero out positive
+        _cum_filtered = [min(c, 0) for c in _cum_raw]
+    elif _dir == 'ccw':
+        # CCW: keep positive values, zero out negative
+        _cum_filtered = [max(c, 0) for c in _cum_raw]
+    else:
+        _cum_filtered = _cum_raw
+
+    angles_rad = [math.radians(c) for c in _cum_filtered]
     phases = detect_phases(timestamps, angles_rad, direction_filter=direction)
     result = calculate(phases)
-    max_cum_deg = max((abs(s["cumulative_deg"] or 0) for s in samples), default=0)
+    max_cum_deg = max((abs(c) for c in _cum_filtered), default=0)
     result["max_cum_deg"] = max_cum_deg
     cum_deg    = abs(samples[-1].get("cumulative_deg", 0))
     is_outlier = cum_deg > OUTLIER_THRESHOLD_DEG
