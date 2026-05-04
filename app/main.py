@@ -935,28 +935,33 @@ def results(job_id: str): return read_samples(job_id)
 
 @app.get("/physics/{job_id}")
 def physics_results(job_id: str):
+    # 1. Try memory first (fast, available right after processing)
     info = jobs.get(job_id, {})
-    # Try memory first (fast)
     if info.get("physics") or info.get("message"):
         return {"message": info.get("message", {}),
                 "result":  info.get("physics",  {}),
                 "phases":  info.get("phases",   {}),
                 "physics_url": f"/physics/{job_id}"}
-    # Fallback: read from Supabase via _sb()
+    # 2. Always fallback to Supabase (persists across restarts)
     try:
         from app.database import _sb
         sb = _sb()
         if sb:
             resp = sb.table("physics_results").select(
-                "physics_json"
+                "physics_json, t_lajtner, a_lajtner"
             ).eq("job_id", job_id).limit(1).execute()
             if resp.data:
-                phys = json.loads(resp.data[0].get("physics_json") or "{}")
-                return {"message": {}, "result": phys,
+                row  = resp.data[0]
+                phys = json.loads(row.get("physics_json") or "{}")
+                msg  = {
+                    "t_lajtner_s": row.get("t_lajtner", 0),
+                    "a_lajtner":   row.get("a_lajtner", 0),
+                }
+                return {"message": msg, "result": phys,
                         "phases": {}, "physics_url": f"/physics/{job_id}"}
     except Exception as e:
-        log.warning(f"[PHYSICS] DB read: {e}")
-    raise HTTPException(404, "Physics not found")
+        log.warning(f"[PHYSICS] DB read failed: {e}")
+    raise HTTPException(404, "Physics not found — may need to reprocess")
 
 @app.get("/csv/{job_id}")
 def csv_download(job_id: str):
