@@ -182,7 +182,8 @@ def persist_samples(job_id: str, samples: list) -> None:
     try:
         with open(csv_path, "a", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=CSV_FIELDS,
-                               delimiter=CSV_SEPARATOR, extrasaction="ignore")
+                               delimiter=CSV_SEPARATOR, extrasaction="ignore",
+                               quoting=csv.QUOTE_NONNUMERIC)
             if not file_exists:
                 w.writeheader()
             w.writerows(samples)
