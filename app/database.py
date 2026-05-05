@@ -322,7 +322,8 @@ def get_master_data(limit: int = 1000) -> list:
         if sb is None: return []
         resp = (sb.table("physics_results")
                 .select("job_id,email,medium,cumulative_deg,w_total_air,w_total_water,"
-                        "f_max_air,omega_max,t_lajtner,a_lajtner,cw_deg,ccw_deg,"
+                        "f_max_air,omega_max,p_peak_air,p_avg_air,"
+                        "t_lajtner,a_lajtner,cw_deg,ccw_deg,"
                         "cw_ccw_deg,ccw_cw_deg,physics_json,created_at")
                 .order("created_at", desc=True)
                 .limit(limit)
@@ -442,6 +443,8 @@ def save_physics_result(job_id: str, email: str, medium: str,
             "w_total_water": float(result.get("water",{}).get("W_total", 0)),
             "f_max_air":     float(result.get("air",  {}).get("F_max",   0)),
             "omega_max":     float(result.get("kinematics",{}).get("omega_max", 0)),
+            "p_peak_air":    float(result.get("air",  {}).get("P_peak", 0)),
+            "p_avg_air":     float(result.get("air",  {}).get("P_avg",  0)),
             "t_lajtner":     float(result.get("t_lajtner", 0)),
             "a_lajtner":     float(result.get("a_lajtner", 0)),
             "cw_deg":        round(cw_total, 2),
