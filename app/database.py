@@ -387,19 +387,62 @@ def get_user_bar_data(email: str) -> dict:
 
 
 def export_to_master_csv(out_path: str) -> int:
-    """Export all physics_results to a master CSV for Excel import."""
-    import csv as csv_mod
+    """Export all physics_results joined with jobs to a master CSV."""
+    import csv as csv_mod, json as _json
     rows = get_master_data(limit=10000)
     if not rows: return 0
     try:
-        fieldnames = list(rows[0].keys())
+        sb = _sb()
+        # Get direction from wt_jobs
+        job_dirs = {}
+        if sb:
+            jobs_resp = sb.table("wt_jobs")                .select("id,direction,duration_sec")                .execute()
+            for j in (jobs_resp.data or []):
+                job_dirs[j["id"]] = {
+                    "direction": j.get("direction",""),
+                    "duration_sec": j.get("duration_sec",0),
+                }
+
+        # Build clean export rows
+        export_rows = []
+        for row in rows:
+            jinfo = job_dirs.get(row.get("job_id",""), {})
+            direction = jinfo.get("direction","")
+            duration  = jinfo.get("duration_sec",0)
+
+            # Parse physics_json for ideal values
+            phys = {}
+            try: phys = _json.loads(row.get("physics_json") or "{}")
+            except: pass
+            ideal = phys.get("ideal", {})
+
+            export_rows.append({
+                "job_id":        row.get("job_id",""),
+                "email":         row.get("email",""),
+                "created_at":    row.get("created_at",""),
+                "medium":        row.get("medium",""),
+                "direction":     direction,
+                "duration_s":    duration,
+                "rotation_deg":  round(row.get("cumulative_deg") or 0, 4),
+                "t_total_s":     round(ideal.get("t_total") or 0, 4),
+                "omega_max":     round(row.get("omega_max") or 0, 6),
+                "w_total_air_J": row.get("w_total_air",""),
+                "f_max_air_N":   row.get("f_max_air",""),
+                "p_peak_air_W":  row.get("p_peak_air",""),
+                "p_avg_air_W":   row.get("p_avg_air",""),
+                "w_total_water_J": row.get("w_total_water",""),
+            })
+
+        if not export_rows: return 0
+        fieldnames = list(export_rows[0].keys())
         with open(out_path, "w", newline="", encoding="utf-8-sig") as f:
-            writer = csv_mod.DictWriter(f, fieldnames=fieldnames, delimiter=";")
+            writer = csv_mod.DictWriter(f, fieldnames=fieldnames, delimiter=";",
+                                        quoting=csv_mod.QUOTE_NONNUMERIC)
             writer.writeheader()
-            for row in rows:
+            for row in export_rows:
                 writer.writerow(row)
-        log.info(f"[DB] Master CSV exported: {out_path} ({len(rows)} rows)")
-        return len(rows)
+        log.info(f"[DB] Master CSV exported: {out_path} ({len(export_rows)} rows)")
+        return len(export_rows)
     except Exception as e:
         log.warning(f"[DB] export_to_master_csv: {e}")
         return 0
@@ -438,11 +481,11 @@ def save_physics_result(job_id: str, email: str, medium: str,
             "job_id":        job_id,
             "email":         email,
             "medium":        medium,
-            "cumulative_deg": abs(float(csv_row.get("phi_total_rad_rad", 0)) * 180 / 3.14159),
+            "cumulative_deg": round(abs(float(result.get("ideal", {}).get("phi_total", 0)) * 180 / 3.14159265), 4),
             "w_total_air":   float(result.get("air",  {}).get("W_total", 0)),
             "w_total_water": float(result.get("water",{}).get("W_total", 0)),
             "f_max_air":     float(result.get("air",  {}).get("F_max",   0)),
-            "omega_max":     float(result.get("kinematics",{}).get("omega_max", 0)),
+            "omega_max":     float(result.get("ideal", {}).get("omega_max", 0) or result.get("kinematics",{}).get("omega_max", 0)),
             "p_peak_air":    float(result.get("air",  {}).get("P_peak", 0)),
             "p_avg_air":     float(result.get("air",  {}).get("P_avg",  0)),
             "t_lajtner":     float(result.get("t_lajtner", 0)),

@@ -56,7 +56,7 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger(__name__)
 
 # ── App settings ───────────────────────────────────────────────────────────
-WATERMARK_TEXT       = "© enyem.com"
+WATERMARK_TEXT       = "LaJTNeR.com"
 MAX_ANGLE_JUMP       = 30.0   # degrees — reject spoke-hop jumps
 DEFAULT_LANG         = "en"
 DEFAULT_VERSION      = "free"
@@ -131,6 +131,7 @@ def _run_physics(samples, medium, direction, user_email, job_id, version, lang):
     result = calculate(phases)
     max_cum_deg = max((abs(c) for c in _cum_filtered), default=0)
     result["max_cum_deg"] = max_cum_deg
+
     cum_deg    = abs(samples[-1].get("cumulative_deg", 0))
     is_outlier = cum_deg > OUTLIER_THRESHOLD_DEG
     history = []
@@ -208,10 +209,15 @@ def _run_physics(samples, medium, direction, user_email, job_id, version, lang):
         sample_interval_ms=SAMPLE_INTERVAL_MS, medium=medium,
         phases=phases, result=result,
     )
-    try:
-        save_physics_result(job_id, user_email, medium, result, csv_row)
-    except Exception as e:
-        log.warning(f"[PHYSICS] save failed: {e}")
+    for _attempt in range(3):
+        try:
+            save_physics_result(job_id, user_email, medium, result, csv_row)
+            log.info(f"[PHYSICS] Saved to DB: {job_id}")
+            break
+        except Exception as e:
+            log.warning(f"[PHYSICS] save attempt {_attempt+1} failed: {e}")
+            if _attempt == 2:
+                log.error(f"[PHYSICS] All save attempts failed for {job_id}")
     return {"phases":phases,"result":result,"message":msg_data,"csv_row":csv_row,"is_outlier":is_outlier}
 
 
@@ -421,11 +427,17 @@ def _process_video_seg(video_path, out_path, job_id="local",
         cv2.putText(bar,f"{rot_smooth:.1f} deg" if rot_smooth else "---",
                     (dcx-32,dcy+dr+18),cv2.FONT_HERSHEY_SIMPLEX,0.46,conf_c,1,cv2.LINE_AA)
         # Watermark
-        if watermark:
-            cv2.putText(ann,watermark,(8,H-8),cv2.FONT_HERSHEY_SIMPLEX,
-                        max(0.4,W/1280*0.7),(0,0,0),2,cv2.LINE_AA)
-            cv2.putText(ann,watermark,(8,H-8),cv2.FONT_HERSHEY_SIMPLEX,
-                        max(0.4,W/1280*0.7),(200,200,200),1,cv2.LINE_AA)
+        # Watermark - always shown
+        _wm = WATERMARK_TEXT
+        _wm_scale = max(0.45, W/1280*0.65)
+        _wm_thick = max(1, int(W/640))
+        (wm_w, wm_h), _ = cv2.getTextSize(_wm, cv2.FONT_HERSHEY_SIMPLEX, _wm_scale, _wm_thick)
+        _wx = W - wm_w - 10
+        _wy = H - 10
+        cv2.putText(ann, _wm, (_wx, _wy), cv2.FONT_HERSHEY_SIMPLEX,
+                    _wm_scale, (0,0,0), _wm_thick+1, cv2.LINE_AA)
+        cv2.putText(ann, _wm, (_wx, _wy), cv2.FONT_HERSHEY_SIMPLEX,
+                    _wm_scale, (220,220,220), _wm_thick, cv2.LINE_AA)
         # Write frame + bar
         if ann.shape[1] != W or ann.shape[0] != H:
             ann = cv2.resize(ann, (W, H))
@@ -1105,6 +1117,28 @@ def master_export_csv(token: str = ""):
         raise HTTPException(404, "No data")
     return FileResponse(str(out), media_type="text/csv",
                         filename="wheel_tracker_all_data.csv")
+
+@app.post("/admin/set-plan")
+def admin_set_plan(email: str, plan: str, admin: str = ""):
+    """Master: manually set user plan to free or paid."""
+    MASTER_EMAILS = ["azatkb22@gmail.com"]
+    if admin not in MASTER_EMAILS:
+        raise HTTPException(401, "Unauthorized")
+    if plan not in ("free", "paid"):
+        raise HTTPException(400, "plan must be 'free' or 'paid'")
+    try:
+        from app.database import _sb
+        sb = _sb()
+        if sb is None:
+            raise HTTPException(500, "DB unavailable")
+        sb.table("wt_users").update({"plan": plan}).eq("email", email).execute()
+        log.info(f"[ADMIN] set-plan: {email} → {plan}")
+        return {"ok": True, "email": email, "plan": plan}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
 
 @app.get("/master/users")
 def master_users(token: str = ""):
