@@ -238,12 +238,17 @@ def _process_video_seg(video_path, out_path, job_id="local",
     H     = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    fourcc  = cv2.VideoWriter_fourcc(*"mp4v")
+    # Try H.264 (avc1) first for Android/Chrome compatibility
+    fourcc  = cv2.VideoWriter_fourcc(*"avc1")
     out_vid = cv2.VideoWriter(str(out_path), fourcc, fps, (W, H + BAR_HEIGHT))
     if not out_vid.isOpened():
-        log.warning(f"[VIDEO] VideoWriter failed to open: {out_path}, trying avc1")
-        fourcc  = cv2.VideoWriter_fourcc(*"avc1")
+        log.warning("[VIDEO] avc1 failed, trying mp4v")
+        fourcc  = cv2.VideoWriter_fourcc(*"mp4v")
         out_vid = cv2.VideoWriter(str(out_path), fourcc, fps, (W, H + BAR_HEIGHT))
+    if not out_vid.isOpened():
+        log.warning("[VIDEO] mp4v failed, trying XVID")
+        fourcc  = cv2.VideoWriter_fourcc(*"XVID")
+        out_vid = cv2.VideoWriter(str(out_path.with_suffix(".avi")), fourcc, fps, (W, H + BAR_HEIGHT))
     log.info(f"[VIDEO] writer opened={out_vid.isOpened()} path={out_path} size={W}x{H}+{BAR_HEIGHT} fps={fps:.1f}")
 
     stab        = Stabilizer()
