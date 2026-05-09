@@ -364,17 +364,7 @@ def _process_video_seg(video_path, out_path, job_id="local",
         # Draw
         ann = frame_s.copy()
         draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cum, bbox, tip_colors=tip_colors, draw_mesh=DRAW_MESH_OVERLAY)
-        # Timestamp overlay bottom-right
-        _ts_str = f"{t_sec:.2f}s"
-        (_tw, _th), _ = cv2.getTextSize(_ts_str, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)
-        _h_f, _w_f = ann.shape[:2]
-        _tx = _w_f - _tw - 10
-        _ty = _h_f - 10
-        _ov = ann.copy()
-        cv2.rectangle(_ov, (_tx-4, _ty-_th-4), (_tx+_tw+4, _ty+4), (0,0,0), -1)
-        cv2.addWeighted(_ov, 0.5, ann, 0.5, 0, ann)
-        cv2.putText(ann, _ts_str, (_tx, _ty),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (160,160,160), 1, cv2.LINE_AA)
+
 
         # Draw info bar below frame
         bar = np.full((BAR_HEIGHT, W, 3), (18, 18, 18), np.uint8)
@@ -408,9 +398,12 @@ def _process_video_seg(video_path, out_path, job_id="local",
         fw = int(bw * conf_disp / 100)
         if fw > 0: cv2.rectangle(bar,(col2,76),(col2+fw,92),conf_c,-1)
         cv2.rectangle(bar,(col2,76),(col2+bw,92),(70,70,70),1)
-        # Source
+        # Source + Medium
         if hub is not None:
             cv2.putText(bar,"Hub: SEG",(col2,118),cv2.FONT_HERSHEY_SIMPLEX,0.40,WHITE,1)
+        med_str = (medium or "air").upper()
+        med_col = (200,180,100) if med_str == "WATER" else (180,180,180)
+        cv2.putText(bar, med_str, (col2, 148), cv2.FONT_HERSHEY_SIMPLEX, 0.55, med_col, 1, cv2.LINE_AA)
         # Dial
         dcx = col3 + (W-col3)//2; dcy = 100; dr = 68
         cv2.circle(bar,(dcx,dcy),dr,(45,45,45),-1)
@@ -427,13 +420,15 @@ def _process_video_seg(video_path, out_path, job_id="local",
         cv2.putText(bar,f"{rot_smooth:.1f} deg" if rot_smooth else "---",
                     (dcx-32,dcy+dr+18),cv2.FONT_HERSHEY_SIMPLEX,0.46,conf_c,1,cv2.LINE_AA)
         # Watermark
-        # Watermark - always shown
+
+
+        # Watermark - top right
         _wm = WATERMARK_TEXT
         _wm_scale = max(0.45, W/1280*0.65)
         _wm_thick = max(1, int(W/640))
         (wm_w, wm_h), _ = cv2.getTextSize(_wm, cv2.FONT_HERSHEY_SIMPLEX, _wm_scale, _wm_thick)
         _wx = W - wm_w - 10
-        _wy = H - 10
+        _wy = wm_h + 10
         cv2.putText(ann, _wm, (_wx, _wy), cv2.FONT_HERSHEY_SIMPLEX,
                     _wm_scale, (0,0,0), _wm_thick+1, cv2.LINE_AA)
         cv2.putText(ann, _wm, (_wx, _wy), cv2.FONT_HERSHEY_SIMPLEX,
@@ -476,6 +471,36 @@ def _process_video_seg(video_path, out_path, job_id="local",
 
     cap.release()
     out_vid.release()
+
+    # Re-encode to H.264 for Android/Chrome compatibility using imageio
+    try:
+        import imageio
+        import imageio.v3 as iio
+        _tmp = out_path.with_suffix(".tmp.mp4")
+        # Read all frames from OpenCV output
+        reader = imageio.get_reader(str(out_path))
+        _meta = reader.get_meta_data()
+        _fps_out = _meta.get('fps', fps)
+        writer = imageio.get_writer(
+            str(_tmp),
+            fps=_fps_out,
+            codec='libx264',
+            quality=7,
+            macro_block_size=16,
+            ffmpeg_params=['-movflags', '+faststart', '-pix_fmt', 'yuv420p']
+        )
+        for frame in reader:
+            writer.append_data(frame)
+        reader.close()
+        writer.close()
+        if _tmp.exists() and _tmp.stat().st_size > 1000:
+            _tmp.replace(out_path)
+            log.info(f"[VIDEO] Re-encoded to H.264 via imageio: {out_path}")
+        else:
+            if _tmp.exists(): _tmp.unlink()
+    except Exception as _e:
+        log.warning(f"[VIDEO] imageio re-encode failed: {_e}")
+
     # Sort by timestamp to fix out-of-order frames
     all_samples.sort(key=lambda s: s["timestamp_sec"])
     rem = len(all_samples) % 20
