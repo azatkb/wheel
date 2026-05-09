@@ -480,10 +480,11 @@ def _process_video_seg(video_path, out_path, job_id="local",
     # Re-encode to H.264 for Android/Chrome compatibility using imageio
     try:
         import imageio
-        import imageio.v3 as iio
-        _tmp = out_path.with_suffix(".tmp.mp4")
+        from pathlib import Path as _Path
+        _op = _Path(out_path)
+        _tmp = _op.with_suffix(".tmp.mp4")
         # Read all frames from OpenCV output
-        reader = imageio.get_reader(str(out_path))
+        reader = imageio.get_reader(str(_op))
         _meta = reader.get_meta_data()
         _fps_out = _meta.get('fps', fps)
         writer = imageio.get_writer(
@@ -499,8 +500,8 @@ def _process_video_seg(video_path, out_path, job_id="local",
         reader.close()
         writer.close()
         if _tmp.exists() and _tmp.stat().st_size > 1000:
-            _tmp.replace(out_path)
-            log.info(f"[VIDEO] Re-encoded to H.264 via imageio: {out_path}")
+            _tmp.replace(_op)
+            log.info(f"[VIDEO] Re-encoded to H.264 via imageio: {_op}")
         else:
             if _tmp.exists(): _tmp.unlink()
     except Exception as _e:
