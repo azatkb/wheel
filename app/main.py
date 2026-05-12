@@ -56,7 +56,7 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger(__name__)
 
 # ── App settings ───────────────────────────────────────────────────────────
-WATERMARK_TEXT       = "LaJTNeR.com"
+WATERMARK_TEXT       = "LAJTNER.com"
 MAX_ANGLE_JUMP       = 30.0   # degrees — reject spoke-hop jumps
 DEFAULT_LANG         = "en"
 DEFAULT_VERSION      = "free"
@@ -462,7 +462,7 @@ def _process_video_seg(video_path, out_path, job_id="local",
             pct = int(fi / total * 100) if total > 0 else 0
             progress_cb({
                 "frame": fi, "total": total, "pct": pct,
-                "t_sec": round(t_sec, 2), "vid_w": W, "vid_h": H,
+                "t_sec": round(t_sec, 2), "total_sec": round(total/fps, 2) if fps > 0 else 0, "vid_w": W, "vid_h": H,
                 "hub": [round(hub[0]), round(hub[1])] if hub else None,
                 "orange": [ora_blob[0], ora_blob[1], ora_blob[4]] if ora_blob else None,
                 "no_ground": hub is None,
@@ -475,7 +475,65 @@ def _process_video_seg(video_path, out_path, job_id="local",
         fi += 1
 
     cap.release()
-    out_vid.release()
+
+    # LR overlay added later after physics (see add_lr_overlay_to_video)
+    planck_freq_val = None  # placeholder
+
+    # Add Lajtner Resonance overlay on last 3 seconds of video
+    try:
+        if planck_freq_val and planck_freq_val > 0:
+            import math as _math
+            exp = int(_math.floor(_math.log10(abs(planck_freq_val))))
+            mant = planck_freq_val / (10 ** exp)
+            lr_str = f"Lajtner Resonance: {mant:.2f}L {exp:+d}R"
+            # Re-open video to add overlay on last frames
+            out_vid.release()
+            _tmp_lr = out_path + ".lr.mp4" if isinstance(out_path, str) else str(out_path) + ".lr.mp4"
+            cap2 = cv2.VideoCapture(str(out_path))
+            total_frames2 = int(cap2.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps2 = cap2.get(cv2.CAP_PROP_FPS) or fps
+            W2 = int(cap2.get(cv2.CAP_PROP_FRAME_WIDTH))
+            H2 = int(cap2.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            last_n = int(fps2 * 3)  # last 3 seconds
+            fourcc2 = cv2.VideoWriter_fourcc(*"mp4v")
+            out2 = cv2.VideoWriter(_tmp_lr, fourcc2, fps2, (W2, H2))
+            fi = 0
+            while True:
+                ret2, frm2 = cap2.read()
+                if not ret2: break
+                if fi >= total_frames2 - last_n:
+                    # Dark overlay background
+                    overlay = frm2.copy()
+                    cv2.rectangle(overlay, (0, H2//2 - 60), (W2, H2//2 + 60), (0,0,0), -1)
+                    cv2.addWeighted(overlay, 0.6, frm2, 0.4, 0, frm2)
+                    # LR text
+                    scale = max(0.7, W2/800)
+                    thick = max(2, int(W2/400))
+                    (tw, th), _ = cv2.getTextSize(lr_str, cv2.FONT_HERSHEY_SIMPLEX, scale, thick)
+                    tx = (W2 - tw) // 2
+                    ty = H2 // 2 + th // 2
+                    cv2.putText(frm2, lr_str, (tx, ty),
+                        cv2.FONT_HERSHEY_SIMPLEX, scale, (0,0,0), thick+2, cv2.LINE_AA)
+                    cv2.putText(frm2, lr_str, (tx, ty),
+                        cv2.FONT_HERSHEY_SIMPLEX, scale, (255,165,0), thick, cv2.LINE_AA)
+                    # subtitle
+                    sub = "based on Planck constant"
+                    (sw, sh), _ = cv2.getTextSize(sub, cv2.FONT_HERSHEY_SIMPLEX, scale*0.55, 1)
+                    cv2.putText(frm2, sub, ((W2-sw)//2, ty + th + 12),
+                        cv2.FONT_HERSHEY_SIMPLEX, scale*0.55, (200,200,200), 1, cv2.LINE_AA)
+                out2.write(frm2)
+                fi += 1
+            cap2.release()
+            out2.release()
+            import shutil as _sh2
+            _sh2.move(_tmp_lr, str(out_path))
+            log.info(f"[VIDEO] Lajtner Resonance overlay added: {lr_str}")
+    except Exception as _e:
+        log.warning(f"[VIDEO] LR overlay failed: {_e}")
+        try: out_vid.release()
+        except: pass
+    else:
+        out_vid.release()
 
     # Re-encode to H.264 for Android/Chrome compatibility using imageio
     try:
@@ -561,6 +619,13 @@ def _run_job(job_id, raw_path, direction, medium, hand_visible,
         )
         jobs[job_id]["status"] = "calculating"
         physics = _run_physics(samples or [], medium, direction, user_email, job_id, version, lang)
+        # Add Lajtner Resonance overlay to video after physics
+        try:
+            _planck = physics.get("result",{}).get("air",{}).get("planck_freq", 0) or                       physics.get("result",{}).get("ideal",{}).get("planck_freq", 0)
+            if _planck and _planck > 0:
+                add_lr_overlay(str(out), _planck)
+        except Exception as _e:
+            log.warning(f"[VIDEO] LR overlay call failed: {_e}")
         finish_job(job_id, len(samples) if samples else 0,
                    samples[-1]["timestamp_sec"] if samples else 0)
         jobs[job_id] = {
@@ -895,6 +960,48 @@ async def auth_login(request: Request):
     token = secrets.token_hex(32)
     return {"token": token, "email": email, "plan": user.get("plan", "free")}
 
+def add_lr_overlay(video_path: str, planck_freq: float):
+    """Add Lajtner Resonance text to last 3 seconds of video."""
+    import math as _math
+    try:
+        exp = int(_math.floor(_math.log10(abs(planck_freq))))
+        mant = planck_freq / (10 ** exp)
+        lr_str = f"Lajtner Resonance: {mant:.2f}L {exp:+d}R"
+        _tmp = video_path + ".lr.mp4"
+        cap = cv2.VideoCapture(video_path)
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps2 = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        last_n = int(fps2 * 3)
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        out = cv2.VideoWriter(_tmp, fourcc, fps2, (W, H))
+        fi = 0
+        while True:
+            ret, frm = cap.read()
+            if not ret: break
+            if fi >= total - last_n:
+                overlay = frm.copy()
+                cv2.rectangle(overlay, (0, H//2-65), (W, H//2+65), (0,0,0), -1)
+                cv2.addWeighted(overlay, 0.65, frm, 0.35, 0, frm)
+                scale = max(0.65, W/900)
+                thick = max(2, int(W/450))
+                (tw, th), _ = cv2.getTextSize(lr_str, cv2.FONT_HERSHEY_SIMPLEX, scale, thick)
+                tx, ty = (W-tw)//2, H//2 + th//2
+                cv2.putText(frm, lr_str, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, scale, (0,0,0), thick+2, cv2.LINE_AA)
+                cv2.putText(frm, lr_str, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, scale, (255,165,0), thick, cv2.LINE_AA)
+                sub = "based on Planck constant"
+                (sw, _), _ = cv2.getTextSize(sub, cv2.FONT_HERSHEY_SIMPLEX, scale*0.5, 1)
+                cv2.putText(frm, sub, ((W-sw)//2, ty+th+14), cv2.FONT_HERSHEY_SIMPLEX, scale*0.5, (200,200,200), 1, cv2.LINE_AA)
+            out.write(frm)
+            fi += 1
+        cap.release(); out.release()
+        import shutil as _sh; _sh.move(_tmp, video_path)
+        log.info(f"[VIDEO] LR overlay: {lr_str}")
+    except Exception as e:
+        log.warning(f"[VIDEO] LR overlay failed: {e}")
+
+
 @app.post("/upload")
 async def upload(
     file:         UploadFile = File(...),
@@ -996,10 +1103,23 @@ def physics_results(job_id: str):
             if resp.data:
                 row  = resp.data[0]
                 phys = json.loads(row.get("physics_json") or "{}")
-                msg  = {
-                    "t_lajtner_s": row.get("t_lajtner", 0),
-                    "a_lajtner":   row.get("a_lajtner", 0),
-                }
+                # Rebuild message from physics_json
+                from app.physics import build_user_message as build_message
+                try:
+                    # Get job info for email/direction/medium
+                    job_resp = sb.table("wt_jobs").select(
+                        "user_email,direction,medium,plan"
+                    ).eq("id", job_id).limit(1).execute()
+                    job_info = job_resp.data[0] if job_resp.data else {}
+                    msg = build_message(
+                        result=phys,
+                        medium=job_info.get("medium","air"),
+                        version=job_info.get("plan","free"),
+                        lang="en"
+                    )
+                except Exception as _me:
+                    log.warning(f"[PHYSICS] rebuild msg failed: {_me}")
+                    msg = {"moved": True}
                 return {"message": msg, "result": phys,
                         "phases": {}, "physics_url": f"/physics/{job_id}"}
     except Exception as e:
