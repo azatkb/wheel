@@ -851,9 +851,12 @@ def build_user_message(result: dict, medium: str,
 
     # ── Free version display ───────────────────────────────────────────
     if version == "free":
+        planck_freq_free = case.get("planck_freq", 0)
         out["display"] = {
-            "rotation_deg": f"{phi_deg:.2f} °",
-            "force_N":      _sci(F_max),
+            "rotation_deg":   f"{phi_deg:.2f} °",
+            "force_N":        _sci(F_max),
+            "planck_freq_Hz": f"{planck_freq_free:.2e}" if planck_freq_free else None,
+            "planck_freq_raw": planck_freq_free,
         }
         return out
 
