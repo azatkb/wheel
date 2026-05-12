@@ -758,7 +758,7 @@ MESSAGES = {
         # Group ranking (paid)
         "ranking_intro": "Let's see your ranking among people!",
         "above_group":   "Congrats, this is above average! ",
-        "at_group":      "Congrats, Your result is great, only a few will beat you! ",
+        "at_group":      "Awesome! You're in the elite few! ",
         "below_group":   "Congrats, You're not above average yet, but with practice you'll soon be! ",
     },
     "hu": {
