@@ -59,7 +59,7 @@ log = logging.getLogger(__name__)
 WATERMARK_TEXT       = "LAJTNER.com"
 MAX_ANGLE_JUMP       = 30.0   # degrees — reject spoke-hop jumps
 DEFAULT_LANG         = "en"
-DEFAULT_VERSION      = "free"
+DEFAULT_VERSION      = "basic"
 SAMPLE_INTERVAL_MS   = 1000
 OUTLIER_THRESHOLD_DEG= 3600
 DEFAULT_AVERAGES     = {
@@ -148,7 +148,7 @@ def _run_physics(samples, medium, direction, user_email, job_id, version, lang):
             "F_max_air":      sum(h.get("F_max_air",0)  for h in history)/len(history),
         }
     msg_data = build_user_message(result=result, medium=medium, version=version, lang=lang)
-    if version == "paid" and user_avg:
+    if version == "pro" and user_avg:
         val     = cum_deg
         avg_val = user_avg.get("cumulative_deg", val)
         pct     = (val - avg_val) / avg_val * 100 if avg_val else 0
@@ -165,7 +165,7 @@ def _run_physics(samples, medium, direction, user_email, job_id, version, lang):
         msg_data["rank_medal"]   = rank_medal
         msg_data["pct_vs_avg"]   = round(pct, 1)
     # ── Group ranking (shown to all users) ────────────────────────────────
-    if version == "paid":
+    if version == "pro":
         try:
             group_avg = get_group_averages()
             group_count = group_avg.get("count", 0)
@@ -702,14 +702,14 @@ async def stripe_check_session(session_id: str = "", email: str = ""):
         session = stripe.checkout.Session.retrieve(session_id)
         status = getattr(session, "payment_status", "")
         sub_status = getattr(session, "status", "")
-        if status == "paid" or sub_status == "complete":
+        if status == "pro" or sub_status == "complete":
             cust_email = getattr(session, "customer_email", "") or email
             if cust_email:
                 from app.database import _sb
                 sb = _sb()
-                sb.table("wt_users").update({"plan":"paid"}).eq("email", cust_email.lower()).execute()
+                sb.table("wt_users").update({"plan":"pro"}).eq("email", cust_email.lower()).execute()
                 log.info(f"[STRIPE] plan updated via check-session for {cust_email}")
-            return {"ok": True, "plan": "paid", "status": sub_status}
+            return {"ok": True, "plan": "pro", "status": sub_status}
         return {"ok": False, "status": sub_status}
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -772,7 +772,7 @@ async def stripe_webhook(request: Request):
             try:
                 from app.database import _sb
                 sb = _sb()
-                sb.table("wt_users").update({"plan": "paid"}).eq("email", email.lower()).execute()
+                sb.table("wt_users").update({"plan": "pro"}).eq("email", email.lower()).execute()
                 log.info(f"[STRIPE] upgraded {email} to paid")
             except Exception as e:
                 log.error(f"[STRIPE] db update failed: {e}")
@@ -789,7 +789,7 @@ async def stripe_webhook(request: Request):
             try:
                 from app.database import _sb
                 sb = _sb()
-                sb.table("wt_users").update({"plan": "free"}).eq("email", email.lower()).execute()
+                sb.table("wt_users").update({"plan": "basic"}).eq("email", email.lower()).execute()
                 log.info(f"[STRIPE] downgraded {email} to free")
             except Exception as e:
                 log.error(f"[STRIPE] db update failed: {e}")
@@ -816,7 +816,7 @@ async def stripe_cancel(request: Request):
         stripe.Subscription.cancel(subs.data[0].id)
         from app.database import _sb
         sb = _sb()
-        sb.table("wt_users").update({"plan": "free"}).eq("email", email).execute()
+        sb.table("wt_users").update({"plan": "basic"}).eq("email", email).execute()
         return {"ok": True, "message": "Subscription cancelled"}
     except HTTPException: raise
     except Exception as e:
@@ -921,7 +921,7 @@ async def auth_register(request: Request):
         sb.table("wt_users").insert({
             "email": email,
             "password_hash": _hash_pw(password),
-            "plan": "free",
+            "plan": "basic",
             "created_at": datetime.datetime.utcnow().isoformat(),
         }).execute()
         return {"ok": True}
@@ -932,8 +932,8 @@ async def auth_register(request: Request):
 async def auth_update_plan(request: Request):
     body = await request.json()
     email = (body.get("email") or "").strip().lower()
-    plan  = (body.get("plan") or "free").strip().lower()
-    if plan not in ("free", "paid"):
+    plan  = (body.get("plan") or "basic").strip().lower()
+    if plan not in ("basic", "pro"):
         raise HTTPException(400, "Invalid plan")
     if not email:
         raise HTTPException(400, "Email required")
@@ -958,7 +958,7 @@ async def auth_login(request: Request):
     if not user or user.get("password_hash") != _hash_pw(password):
         raise HTTPException(401, "Invalid email or password")
     token = secrets.token_hex(32)
-    return {"token": token, "email": email, "plan": user.get("plan", "free")}
+    return {"token": token, "email": email, "plan": user.get("plan", "basic")}
 
 def add_lr_overlay(video_path: str, planck_freq: float):
     """Add Lajtner Resonance text to last 3 seconds of video."""
@@ -1114,7 +1114,7 @@ def physics_results(job_id: str):
                     msg = build_message(
                         result=phys,
                         medium=job_info.get("medium","air"),
-                        version=job_info.get("plan","free"),
+                        version=job_info.get("plan","basic"),
                         lang="en"
                     )
                 except Exception as _me:
@@ -1249,17 +1249,19 @@ async def stream_ws(ws: WebSocket):
 MASTER_TOKEN = os.environ.get("MASTER_TOKEN", "wt_master_2026")
 
 @app.get("/master/all")
-def master_all(token: str = "", limit: int = 1000):
+def master_all(email: str = "", token: str = "", limit: int = 1000):
     """Master: read all physics results from all users."""
-    if token != MASTER_TOKEN:
+    MASTER_EMAILS = ["azatkb22@gmail.com", "lajtnert@gmail.com"]
+    if email not in MASTER_EMAILS and token != MASTER_TOKEN:
         raise HTTPException(401, "Unauthorized")
     rows = get_master_data(limit=limit)
     return {"count": len(rows), "rows": rows}
 
 @app.get("/master/export-csv")
-def master_export_csv(token: str = ""):
+def master_export_csv(email: str = "", token: str = ""):
     """Master: export all data to CSV for Excel."""
-    if token != MASTER_TOKEN:
+    MASTER_EMAILS = ["azatkb22@gmail.com", "lajtnert@gmail.com"]
+    if email not in MASTER_EMAILS and token != MASTER_TOKEN:
         raise HTTPException(401, "Unauthorized")
     from app.config import OUTPUTS_DIR
     out = OUTPUTS_DIR / "master_export.csv"
@@ -1275,8 +1277,8 @@ def admin_set_plan(email: str, plan: str, admin: str = ""):
     MASTER_EMAILS = ["azatkb22@gmail.com"]
     if admin not in MASTER_EMAILS:
         raise HTTPException(401, "Unauthorized")
-    if plan not in ("free", "paid"):
-        raise HTTPException(400, "plan must be 'free' or 'paid'")
+    if plan not in ("basic", "pro"):
+        raise HTTPException(400, "plan must be 'basic' or 'pro'")
     try:
         from app.database import _sb
         sb = _sb()
@@ -1292,9 +1294,10 @@ def admin_set_plan(email: str, plan: str, admin: str = ""):
 
 
 @app.get("/master/users")
-def master_users(token: str = ""):
+def master_users(email: str = "", token: str = ""):
     """Master: list all unique users with measurement counts."""
-    if token != MASTER_TOKEN:
+    MASTER_EMAILS = ["azatkb22@gmail.com", "lajtnert@gmail.com"]
+    if email not in MASTER_EMAILS and token != MASTER_TOKEN:
         raise HTTPException(401, "Unauthorized")
     rows = get_master_data(limit=10000)
     from collections import defaultdict
@@ -1310,7 +1313,7 @@ def bar_data(email: str, token: str = ""):
     return data
 
 @app.post("/admin/rerun-physics/{job_id}")
-async def rerun_physics(job_id: str, medium: str = "air", version: str = "free",
+async def rerun_physics(job_id: str, medium: str = "air", version: str = "basic",
                         lang: str = "en", direction: str = "auto", email: str = ""):
     """Re-run physics calculation for a job using saved samples."""
     samples = read_samples(job_id)
@@ -1323,6 +1326,722 @@ async def rerun_physics(job_id: str, medium: str = "air", version: str = "free",
         jobs[job_id]["phases"]  = physics.get("phases", {})
     return {"ok": True, "samples": len(samples),
             "message": physics.get("message", {}).get("message", "")}
+
+
+# ─────────────────────────────────────────────
+# FORUM endpoints
+# ─────────────────────────────────────────────
+
+@app.get("/forum/posts")
+def forum_get_posts(limit: int = 10, offset: int = 0, category: str = ""):
+    """Get forum posts with pagination and category filter."""
+    from app.database import _sb
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+    try:
+        q_count = sb.table("forum_posts").select("id", count="exact")
+        q_page  = sb.table("forum_posts").select("*")
+        if category and category != "all":
+            q_count = q_count.eq("category", category)
+            q_page  = q_page.eq("category", category)
+        total = (q_count.execute().count or 0)
+        resp  = q_page            .order("pinned", desc=True)            .order("created_at", desc=True)            .range(offset, offset + limit - 1)            .execute()
+        return {"posts": resp.data or [], "total": total, "count": len(resp.data or [])}
+    except Exception as e:
+        log.error(f"[FORUM] get_posts error: {e}")
+        raise HTTPException(500, f"DB error: {e}")
+
+
+@app.post("/forum/posts")
+async def forum_create_post(req: Request):
+    """Create a new forum post."""
+    body = await req.json()
+    from app.database import _sb
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+    user_email = body.get("user_email","").strip()
+    title = body.get("title","").strip()
+    text  = body.get("body","").strip()
+    if not user_email or not title or not text:
+        raise HTTPException(400, "user_email, title and body are required")
+    data = {
+        "user_email":   user_email,
+        "title":        title[:200],
+        "body":         text[:2000],
+        "job_id":       body.get("job_id"),
+        "lr_value":     body.get("lr_value"),
+        "rotation_deg": body.get("rotation_deg"),
+        "medium":       body.get("medium","air"),
+        "category":     body.get("category","general"),
+    }
+    resp = sb.table("forum_posts").insert(data).execute()
+    return {"ok": True, "post": resp.data[0] if resp.data else {}}
+
+
+@app.delete("/forum/posts/{post_id}")
+def forum_delete_post(post_id: str, email: str = ""):
+    """Delete a post (own post or master)."""
+    MASTER_EMAILS = ["azatkb22@gmail.com", "lajtnert@gmail.com"]
+    from app.database import _sb
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+    resp = sb.table("forum_posts").select("user_email").eq("id", post_id).execute()
+    if not resp.data: raise HTTPException(404, "Post not found")
+    if email != resp.data[0]["user_email"] and email not in MASTER_EMAILS:
+        raise HTTPException(403, "Forbidden")
+    sb.table("forum_posts").delete().eq("id", post_id).execute()
+    return {"ok": True}
+
+
+@app.get("/forum/posts/{post_id}/comments")
+def forum_get_comments(post_id: str):
+    """Get comments for a post."""
+    from app.database import _sb
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+    resp = sb.table("forum_comments")        .select("*")        .eq("post_id", post_id)        .order("created_at")        .execute()
+    return {"comments": resp.data or []}
+
+
+@app.post("/forum/posts/{post_id}/comments")
+async def forum_add_comment(post_id: str, req: Request):
+    """Add a comment to a post."""
+    body = await req.json()
+    from app.database import _sb
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+    user_email = body.get("user_email","").strip()
+    text = body.get("body","").strip()
+    if not user_email or not text:
+        raise HTTPException(400, "user_email and body required")
+    data = {
+        "post_id":    post_id,
+        "user_email": user_email,
+        "body":       text[:1000],
+    }
+    resp = sb.table("forum_comments").insert(data).execute()
+    # Notify post author
+    try:
+        post_resp = sb.table("forum_posts").select("user_email").eq("id", post_id).execute()
+        if post_resp.data:
+            post_author = post_resp.data[0]["user_email"]
+            if post_author != user_email:
+                notif_data = {
+                    "user_email": post_author,
+                    "from_email": user_email,
+                    "post_id": post_id,
+                    "comment_id": resp.data[0]["id"] if resp.data else None,
+                    "type": "comment",
+                }
+                sb.table("forum_notifications").insert(notif_data).execute()
+    except Exception as _ne:
+        log.warning(f"[FORUM] notification failed: {_ne}")
+    return {"ok": True, "comment": resp.data[0] if resp.data else {}}
+
+
+@app.post("/forum/like")
+async def forum_like(req: Request):
+    """Toggle like on post or comment."""
+    body = await req.json()
+    from app.database import _sb
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+    user_email  = body.get("user_email","")
+    target_id   = body.get("target_id","")
+    target_type = body.get("target_type","post")  # 'post' or 'comment'
+    tbl = "forum_posts" if target_type == "post" else "forum_comments"
+    # Check if already liked
+    existing = sb.table("forum_likes")        .select("id")        .eq("user_email", user_email)        .eq("target_id", target_id)        .execute()
+    if existing.data:
+        # Unlike
+        sb.table("forum_likes").delete().eq("id", existing.data[0]["id"]).execute()
+        cur_resp = sb.table(tbl).select("likes").eq("id", target_id).execute()
+        cur = (cur_resp.data[0]["likes"] or 0) if cur_resp.data else 0
+        sb.table(tbl).update({"likes": max(0, cur - 1)}).eq("id", target_id).execute()
+        return {"liked": False}
+    else:
+        # Like
+        sb.table("forum_likes").insert({
+            "user_email": user_email,
+            "target_id": target_id,
+            "target_type": target_type
+        }).execute()
+        cur_resp = sb.table(tbl).select("likes").eq("id", target_id).execute()
+        cur = (cur_resp.data[0]["likes"] or 0) if cur_resp.data else 0
+        sb.table(tbl).update({"likes": cur + 1}).eq("id", target_id).execute()
+        # Notify post/comment author
+        try:
+            author_resp = sb.table(tbl).select("user_email").eq("id", target_id).execute()
+            if author_resp.data:
+                author = author_resp.data[0]["user_email"]
+                if author != user_email:
+                    sb.table("forum_notifications").insert({
+                        "user_email": author,
+                        "from_email": user_email,
+                        "post_id": target_id if target_type == "post" else None,
+                        "type": "like",
+                    }).execute()
+        except Exception as _ne:
+            log.warning(f"[FORUM] like notification failed: {_ne}")
+        return {"liked": True}
+
+
+# ── Forum notifications ─────────────────────────────────────────────────
+
+@app.get("/forum/notifications")
+def forum_get_notifications(email: str = ""):
+    """Get unread notifications for a user."""
+    from app.database import _sb
+    sb = _sb()
+    if not sb or not email: raise HTTPException(400, "email required")
+    resp = sb.table("forum_notifications")        .select("*")        .eq("user_email", email)        .order("created_at", desc=True)        .limit(30)        .execute()
+    return {"notifications": resp.data or []}
+
+
+@app.post("/forum/notifications/seen")
+async def forum_mark_seen(req: Request):
+    """Mark all notifications as seen."""
+    from app.database import _sb
+    body = await req.json()
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+    email = body.get("email","")
+    sb.table("forum_notifications")        .update({"seen": True})        .eq("user_email", email)        .eq("seen", False)        .execute()
+    return {"ok": True}
+
+
+@app.delete("/forum/comments/{comment_id}")
+def forum_delete_comment(comment_id: str, email: str = ""):
+    """Delete a comment (own or master)."""
+    MASTER_EMAILS = ["azatkb22@gmail.com", "lajtnert@gmail.com"]
+    from app.database import _sb
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+    resp = sb.table("forum_comments").select("user_email").eq("id", comment_id).execute()
+    if not resp.data: raise HTTPException(404, "Comment not found")
+    if email != resp.data[0]["user_email"] and email not in MASTER_EMAILS:
+        raise HTTPException(403, "Forbidden")
+    sb.table("forum_comments").delete().eq("id", comment_id).execute()
+    return {"ok": True}
+
+
+@app.post("/forum/pin/{post_id}")
+def forum_pin_post(post_id: str, email: str = ""):
+    """Pin/unpin a post (master only)."""
+    MASTER_EMAILS = ["azatkb22@gmail.com", "lajtnert@gmail.com"]
+    if email not in MASTER_EMAILS:
+        raise HTTPException(403, "Master only")
+    from app.database import _sb
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+    resp = sb.table("forum_posts").select("pinned").eq("id", post_id).execute()
+    if not resp.data: raise HTTPException(404, "Not found")
+    new_val = not resp.data[0]["pinned"]
+    sb.table("forum_posts").update({"pinned": new_val}).eq("id", post_id).execute()
+    return {"ok": True, "pinned": new_val}
+
+
+
+# ═══════════════════════════════════════════════════════════════
+# STORE endpoints
+# ═══════════════════════════════════════════════════════════════
+
+MASTER_STORE = ["azatkb22@gmail.com", "lajtnert@gmail.com"]
+DHL_ORIGIN = {"country": "HU", "city": "Budapest", "postalCode": "1000"}
+
+def _is_master(email: str) -> bool:
+    return (email or "").lower() in [m.lower() for m in MASTER_STORE]
+
+
+# ── Products ─────────────────────────────────────────────────────
+
+@app.post("/store/upload-image")
+async def store_upload_image(
+    file: UploadFile = File(...),
+    admin_email: str = Form(default="")
+):
+    """Upload product image to server."""
+    if not _is_master(admin_email):
+        raise HTTPException(403, "Master only")
+    import shutil as _sh
+    from app.config import OUTPUTS_DIR
+    # Save to store/images/
+    img_dir = OUTPUTS_DIR / "store" / "images"
+    img_dir.mkdir(parents=True, exist_ok=True)
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in ('.jpg','.jpeg','.png','.webp','.gif'):
+        raise HTTPException(400, "Image must be jpg/png/webp/gif")
+    fname = f"{uuid.uuid4()}{suffix}"
+    fpath = img_dir / fname
+    with open(fpath, "wb") as f:
+        _sh.copyfileobj(file.file, f)
+    # Return public URL
+    url = f"/store/images/{fname}"
+    log.info(f"[STORE] Image uploaded: {fname}")
+    return {"ok": True, "url": url, "filename": fname}
+
+
+@app.get("/store/images/{filename}")
+def store_get_image(filename: str):
+    """Serve product image."""
+    from fastapi.responses import FileResponse
+    from app.config import OUTPUTS_DIR
+    fpath = OUTPUTS_DIR / "store" / "images" / filename
+    if not fpath.exists():
+        raise HTTPException(404, "Image not found")
+    return FileResponse(str(fpath))
+
+
+@app.post("/store/upload-file")
+async def store_upload_file(
+    file: UploadFile = File(...),
+    admin_email: str = Form(default=""),
+    file_type: str = Form(default="video")  # video | pdf
+):
+    """Upload digital product file (video or pdf)."""
+    if not _is_master(admin_email):
+        raise HTTPException(403, "Master only")
+    import shutil as _sh
+    from app.config import OUTPUTS_DIR
+    folder = "videos" if file_type == "video" else "pdfs"
+    file_dir = OUTPUTS_DIR / "store" / folder
+    file_dir.mkdir(parents=True, exist_ok=True)
+    suffix = Path(file.filename).suffix.lower()
+    fname = f"{uuid.uuid4()}{suffix}"
+    fpath = file_dir / fname
+    with open(fpath, "wb") as f:
+        _sh.copyfileobj(file.file, f)
+    url = f"/store/files/{folder}/{fname}"
+    log.info(f"[STORE] File uploaded: {fname}")
+    return {"ok": True, "url": url, "filename": fname}
+
+
+@app.get("/store/files/{folder}/{filename}")
+def store_get_file(folder: str, filename: str, email: str = "", order_id: str = ""):
+    """Serve digital product file (only for paid orders)."""
+    from fastapi.responses import FileResponse
+    from app.database import _sb
+    import json as _json
+    from app.config import OUTPUTS_DIR
+    # Verify purchase
+    if not _is_master(email):
+        sb = _sb()
+        if sb and order_id:
+            resp = sb.table("store_orders").select("user_email,status,items")                .eq("id", order_id).execute()
+            if not resp.data or resp.data[0]["user_email"] != email:
+                raise HTTPException(403, "Forbidden")
+            if resp.data[0]["status"] not in ("paid","fulfilled"):
+                raise HTTPException(403, "Order not paid")
+        elif not order_id:
+            raise HTTPException(403, "order_id required")
+    fpath = OUTPUTS_DIR / "store" / folder / filename
+    if not fpath.exists():
+        raise HTTPException(404, "File not found")
+    return FileResponse(str(fpath))
+
+
+@app.get("/store/products")
+def store_get_products(include_inactive: bool = False, admin_email: str = ""):
+    from app.database import _sb
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+    q = sb.table("store_products").select("*")
+    if not include_inactive or not _is_master(admin_email):
+        q = q.eq("active", True)
+    resp = q.order("created_at").execute()
+    return {"products": resp.data or []}
+
+
+@app.post("/store/products")
+async def store_add_product(req: Request):
+    from app.database import _sb
+    body = await req.json()
+    if not _is_master(body.get("admin_email","")):
+        raise HTTPException(403, "Master only")
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+    data = {
+        "name":         body["name"],
+        "description":  body.get("description",""),
+        "type":         body["type"],
+        "price_usd":    float(body["price_usd"]),
+        "price_annual": body.get("price_annual"),
+        "file_url":     body.get("file_url"),
+        "image_url":    body.get("image_url"),
+        "stock":        body.get("stock"),
+        "active":       body.get("active", True),
+        "metadata":     body.get("metadata", {}),
+    }
+    resp = sb.table("store_products").insert(data).execute()
+    return {"ok": True, "product": resp.data[0] if resp.data else {}}
+
+
+@app.put("/store/products/{pid}")
+async def store_update_product(pid: str, req: Request):
+    from app.database import _sb
+    body = await req.json()
+    if not _is_master(body.get("admin_email","")):
+        raise HTTPException(403, "Master only")
+    sb = _sb()
+    allowed = ["name","description","price_usd","price_annual","file_url",
+               "image_url","stock","active","metadata","type"]
+    data = {k: body[k] for k in allowed if k in body}
+    sb.table("store_products").update(data).eq("id", pid).execute()
+    return {"ok": True}
+
+
+@app.delete("/store/products/{pid}")
+def store_delete_product(pid: str, admin_email: str = ""):
+    from app.database import _sb
+    if not _is_master(admin_email): raise HTTPException(403, "Master only")
+    sb = _sb()
+    sb.table("store_products").update({"active": False}).eq("id", pid).execute()
+    return {"ok": True}
+
+
+# ── Coupons ──────────────────────────────────────────────────────
+
+@app.post("/store/coupons")
+async def store_create_coupon(req: Request):
+    from app.database import _sb
+    body = await req.json()
+    if not _is_master(body.get("admin_email","")):
+        raise HTTPException(403, "Master only")
+    sb = _sb()
+    data = {
+        "code":        body["code"].upper().strip(),
+        "type":        body["type"],        # percent|fixed|free
+        "value":       float(body.get("value", 0)),
+        "global":      body.get("global", False),
+        "user_email":  body.get("user_email"),
+        "max_uses":    body.get("max_uses"),
+        "valid_until": body.get("valid_until"),
+        "active":      True,
+        "product_ids": body.get("product_ids"),
+    }
+    try:
+        resp = sb.table("store_coupons").insert(data).execute()
+        return {"ok": True, "coupon": resp.data[0] if resp.data else {}}
+    except Exception as e:
+        raise HTTPException(400, f"Coupon error: {e}")
+
+
+@app.get("/store/coupons")
+def store_list_coupons(admin_email: str = ""):
+    from app.database import _sb
+    if not _is_master(admin_email): raise HTTPException(403, "Master only")
+    sb = _sb()
+    resp = sb.table("store_coupons").select("*").order("created_at", desc=True).execute()
+    return {"coupons": resp.data or []}
+
+
+@app.post("/store/validate-coupon")
+async def store_validate_coupon(req: Request):
+    from app.database import _sb
+    import datetime as _dt
+    body = await req.json()
+    code = body.get("code","").upper().strip()
+    user_email = body.get("user_email","")
+    sb = _sb()
+    resp = sb.table("store_coupons").select("*").eq("code", code).eq("active", True).execute()
+    if not resp.data: raise HTTPException(404, "Coupon not found")
+    c = resp.data[0]
+    # Check user restriction
+    if not c["global"] and c.get("user_email") and c["user_email"] != user_email:
+        raise HTTPException(403, "This coupon is not valid for your account")
+    # Check expiry
+    if c.get("valid_until"):
+        exp = _dt.datetime.fromisoformat(c["valid_until"].replace("Z","+00:00"))
+        if exp < _dt.datetime.now(_dt.timezone.utc):
+            raise HTTPException(400, "Coupon has expired")
+    # Check max uses
+    if c.get("max_uses") and (c.get("used_count",0) or 0) >= c["max_uses"]:
+        raise HTTPException(400, "Coupon usage limit reached")
+    return {"ok": True, "coupon": c}
+
+
+# ── Shipping (DHL estimate) ──────────────────────────────────────
+
+@app.get("/store/shipping-estimate")
+def store_shipping_estimate(country: str = "", postal_code: str = "", weight_kg: float = 0.3):
+    """Estimate DHL shipping cost."""
+    import os
+    dhl_key = os.environ.get("DHL_API_KEY","")
+    if not dhl_key:
+        # Fallback flat rates if no DHL key
+        rates = {
+            "HU": 5.0, "DE": 8.0, "AT": 8.0, "SK": 8.0,
+            "US": 25.0, "GB": 20.0, "FR": 15.0, "IT": 15.0,
+        }
+        cost = rates.get(country.upper(), 30.0)
+        if weight_kg > 1.0: cost += (weight_kg - 1.0) * 8
+        return {"cost_usd": round(cost, 2), "source": "flat_rate",
+                "note": "Exact price calculated at order confirmation"}
+    # DHL API integration
+    try:
+        import httpx as _hx
+        headers = {"DHL-API-Key": dhl_key, "Content-Type": "application/json"}
+        payload = {
+            "plannedShippingDateAndTime": "2026-01-01T12:00:00GMT+01:00",
+            "unitOfMeasurement": "metric",
+            "isCustomsDeclarable": True,
+            "monetaryAmount": [{"typeCode":"declaredValue","value":50,"currency":"USD"}],
+            "requestedPackages": [{"weight": weight_kg, "dimensions":{"length":15,"width":15,"height":5}}],
+            "accounts": [{"typeCode":"shipper","number": os.environ.get("DHL_ACCOUNT_NUMBER","")}],
+            "customerDetails": {
+                "shipperDetails": {"postalCode": DHL_ORIGIN["postalCode"],
+                                   "cityName": DHL_ORIGIN["city"],
+                                   "countryCode": DHL_ORIGIN["country"]},
+                "receiverDetails": {"postalCode": postal_code,
+                                    "cityName": "", "countryCode": country.upper()}
+            }
+        }
+        r = _hx.post("https://api.dhl.com/rates", json=payload, headers=headers, timeout=8)
+        if r.status_code == 200:
+            products = r.json().get("products",[])
+            if products:
+                price = products[0].get("totalPrice",[{}])[0].get("price", 0)
+                return {"cost_usd": round(float(price), 2), "source": "dhl"}
+    except Exception as _e:
+        log.warning(f"[DHL] estimate failed: {_e}")
+    return {"cost_usd": 30.0, "source": "fallback"}
+
+
+# ── Checkout ─────────────────────────────────────────────────────
+
+@app.post("/store/checkout")
+async def store_checkout(req: Request):
+    """Create Stripe checkout session for store items."""
+    from app.database import _sb
+    import stripe as _stripe, json as _json, os as _os
+    body = await req.json()
+    user_email    = body.get("user_email","")
+    items         = body.get("items", [])          # [{product_id, qty, billing:'monthly'|'annual'}]
+    coupon_code   = body.get("coupon_code","")
+    shipping_info = body.get("shipping", {})        # {name, addr, city, country, zip}
+    shipping_cost = float(body.get("shipping_cost", 0))
+
+    if not items: raise HTTPException(400, "No items")
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+
+    # Load products
+    product_ids = [i["product_id"] for i in items]
+    prods_resp = sb.table("store_products").select("*").in_("id", product_ids).execute()
+    prods = {p["id"]: p for p in (prods_resp.data or [])}
+
+    # Calculate total
+    subtotal = 0.0
+    line_items_data = []
+    order_items = []
+    for item in items:
+        p = prods.get(item["product_id"])
+        if not p: continue
+        billing = item.get("billing","monthly")
+        price = p["price_annual"] if billing == "annual" and p.get("price_annual") else p["price_usd"]
+        qty = int(item.get("qty", 1))
+        subtotal += price * qty
+        order_items.append({"product_id": p["id"], "name": p["name"],
+                            "qty": qty, "price": price, "type": p["type"],
+                            "billing": billing, "file_url": p.get("file_url")})
+
+    # Apply coupon
+    discount = 0.0
+    if coupon_code:
+        try:
+            c_resp = sb.table("store_coupons").select("*")                .eq("code", coupon_code.upper()).eq("active", True).execute()
+            if c_resp.data:
+                c = c_resp.data[0]
+                if c["type"] == "percent":
+                    discount = round(subtotal * c["value"] / 100, 2)
+                elif c["type"] == "fixed":
+                    discount = min(c["value"], subtotal)
+                elif c["type"] == "free":
+                    discount = subtotal
+                # Increment usage
+                sb.table("store_coupons").update({"used_count": (c.get("used_count") or 0) + 1})                    .eq("id", c["id"]).execute()
+        except Exception as _ce:
+            log.warning(f"[STORE] coupon apply failed: {_ce}")
+
+    total = max(0.0, subtotal - discount + shipping_cost)
+
+    # Create order record
+    order_resp = sb.table("store_orders").insert({
+        "user_email":   user_email,
+        "status":       "pending",
+        "total_usd":    round(total, 2),
+        "discount_usd": round(discount, 2),
+        "coupon_code":  coupon_code or None,
+        "items":        _json.dumps(order_items),
+        "shipping_name":    shipping_info.get("name"),
+        "shipping_addr":    shipping_info.get("addr"),
+        "shipping_city":    shipping_info.get("city"),
+        "shipping_country": shipping_info.get("country"),
+        "shipping_zip":     shipping_info.get("zip"),
+        "shipping_cost":    shipping_cost,
+    }).execute()
+    order_id = order_resp.data[0]["id"] if order_resp.data else "unknown"
+
+    # If total is 0 (100% coupon), fulfill immediately
+    if total <= 0:
+        _fulfill_order(sb, order_id, order_items, user_email)
+        return {"ok": True, "free": True, "order_id": order_id}
+
+    # Create Stripe session
+    _stripe.api_key = _os.environ.get("STRIPE_SECRET_KEY","")
+    FRONTEND_URL = "https://mindpw.com/kinetic"
+    session = _stripe.checkout.Session.create(
+        payment_method_types=["card"],
+        customer_email=user_email,
+        line_items=[{
+            "price_data": {
+                "currency": "usd",
+                "product_data": {"name": f"LAJTNER Store Order #{order_id[:8]}"},
+                "unit_amount": int(total * 100),
+            },
+            "quantity": 1,
+        }],
+        mode="payment",
+        success_url=f"{FRONTEND_URL}/store?success=1&order={order_id}",
+        cancel_url=f"{FRONTEND_URL}/store?cancel=1",
+        metadata={"order_id": order_id, "user_email": user_email},
+    )
+    # Save stripe session
+    sb.table("store_orders").update({"stripe_session": session.id})        .eq("id", order_id).execute()
+    return {"ok": True, "checkout_url": session.url, "order_id": order_id}
+
+
+def _fulfill_order(sb, order_id: str, items: list, user_email: str):
+    """Fulfill order: activate subscriptions, grant digital files."""
+    import datetime as _dt, json as _json
+    try:
+        for item in items:
+            itype = item.get("type","")
+            billing = item.get("billing","monthly")
+            # Subscription activation
+            if itype in ("subscription_pro", "subscription_absolute"):
+                plan = "pro" if itype == "subscription_pro" else "absolute"
+                months = 12 if billing == "annual" else 1
+                expires = _dt.datetime.utcnow() + _dt.timedelta(days=30*months)
+                sb.table("wt_users").update({
+                    "plan": plan,
+                }).eq("email", user_email).execute()
+                sb.table("store_orders").update({
+                    "subscription_granted": True,
+                    "subscription_expires": expires.isoformat(),
+                }).eq("id", order_id).execute()
+            # Bundle grants
+            product_id = item.get("product_id")
+            if product_id:
+                bundle_resp = sb.table("store_bundle_grants")                    .select("*").eq("product_id", product_id).execute()
+                if bundle_resp.data:
+                    grants = bundle_resp.data[0].get("grants", [])
+                    if isinstance(grants, str):
+                        grants = _json.loads(grants)
+                    for g in grants:
+                        if g.get("type") == "subscription_pro":
+                            months = g.get("months", 1)
+                            expires = _dt.datetime.utcnow() + _dt.timedelta(days=30*months)
+                            sb.table("wt_users").update({"plan": "pro"}).eq("email", user_email).execute()
+        # Mark fulfilled
+        sb.table("store_orders").update({"status": "fulfilled"})            .eq("id", order_id).execute()
+        log.info(f"[STORE] Order {order_id} fulfilled for {user_email}")
+    except Exception as e:
+        log.error(f"[STORE] fulfill error: {e}")
+
+
+# ── Stripe webhook for store ─────────────────────────────────────
+
+@app.post("/stripe/store-webhook")
+async def stripe_store_webhook(req: Request):
+    import stripe as _stripe, os as _os, json as _json
+    from app.database import _sb
+    payload = await req.body()
+    sig = req.headers.get("stripe-signature","")
+    webhook_secret = _os.environ.get("STRIPE_STORE_WEBHOOK_SECRET",
+                     _os.environ.get("STRIPE_WEBHOOK_SECRET",""))
+    try:
+        event = _stripe.Webhook.construct_event(payload, sig, webhook_secret)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        order_id   = session.get("metadata",{}).get("order_id","")
+        user_email = session.get("metadata",{}).get("user_email","") or session.get("customer_email","")
+        sb = _sb()
+        if sb and order_id:
+            order_resp = sb.table("store_orders").select("items")                .eq("id", order_id).execute()
+            if order_resp.data:
+                items = _json.loads(order_resp.data[0].get("items","[]"))
+                sb.table("store_orders").update({
+                    "status": "paid",
+                    "stripe_payment": session.get("payment_intent","")
+                }).eq("id", order_id).execute()
+                _fulfill_order(sb, order_id, items, user_email)
+    return {"ok": True}
+
+
+# ── Orders ───────────────────────────────────────────────────────
+
+@app.get("/store/orders")
+def store_list_orders(admin_email: str = "", limit: int = 100):
+    from app.database import _sb
+    if not _is_master(admin_email): raise HTTPException(403, "Master only")
+    sb = _sb()
+    resp = sb.table("store_orders").select("*")        .order("created_at", desc=True).limit(limit).execute()
+    return {"orders": resp.data or []}
+
+
+@app.get("/store/orders/my")
+def store_my_orders(email: str = ""):
+    from app.database import _sb
+    if not email: raise HTTPException(400, "email required")
+    sb = _sb()
+    resp = sb.table("store_orders").select("*")        .eq("user_email", email).order("created_at", desc=True).execute()
+    return {"orders": resp.data or []}
+
+
+@app.get("/store/download/{order_id}")
+def store_download(order_id: str, email: str = "", product_id: str = ""):
+    """Generate download link for digital product."""
+    from app.database import _sb
+    import json as _json
+    sb = _sb()
+    resp = sb.table("store_orders").select("*")        .eq("id", order_id).eq("status", "fulfilled").execute()
+    if not resp.data: raise HTTPException(404, "Order not found or not fulfilled")
+    order = resp.data[0]
+    if order["user_email"] != email and not _is_master(email):
+        raise HTTPException(403, "Forbidden")
+    items = _json.loads(order.get("items","[]"))
+    for item in items:
+        if (not product_id or item.get("product_id") == product_id) and item.get("file_url"):
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(item["file_url"])
+    raise HTTPException(404, "No downloadable file in this order")
+
+
+# ── Bundles ──────────────────────────────────────────────────────
+
+@app.post("/store/bundles")
+async def store_set_bundle(req: Request):
+    from app.database import _sb
+    import json as _json
+    body = await req.json()
+    if not _is_master(body.get("admin_email","")): raise HTTPException(403, "Master only")
+    sb = _sb()
+    data = {
+        "product_id": body["product_id"],
+        "grants":     _json.dumps(body.get("grants",[])),
+    }
+    # Upsert
+    existing = sb.table("store_bundle_grants")        .select("id").eq("product_id", body["product_id"]).execute()
+    if existing.data:
+        sb.table("store_bundle_grants").update(data)            .eq("product_id", body["product_id"]).execute()
+    else:
+        sb.table("store_bundle_grants").insert(data).execute()
+    return {"ok": True}
+
 
 @app.get("/health")
 def health():

@@ -789,7 +789,7 @@ MESSAGES = {
 
 
 def build_user_message(result: dict, medium: str,
-                       version: str = "free",
+                       version: str = "basic",
                        lang: str = "en",
                        user_avg: dict = None,
                        group_avg: dict = None) -> dict:
@@ -799,7 +799,7 @@ def build_user_message(result: dict, medium: str,
     Parameters:
       result    : from calculate()
       medium    : "air" | "water" | "ideal"
-      version   : "free" | "paid"
+      version   : "basic" | "pro"
       lang      : "en" | "hu" | "de"
       user_avg  : dict of user's personal averages (paid, optional)
       group_avg : dict of group averages (paid, optional)
@@ -850,7 +850,7 @@ def build_user_message(result: dict, medium: str,
     }
 
     # ── Free version display ───────────────────────────────────────────
-    if version == "free":
+    if version == "basic":
         planck_freq_free = case.get("planck_freq", 0)
         out["display"] = {
             "rotation_deg":   f"{phi_deg:.2f} °",
@@ -866,7 +866,7 @@ def build_user_message(result: dict, medium: str,
         "rotation_deg":   f"{phi_deg:.2f} °",
         "force_N":        _sci(F_max),
         "power_W":        _sci(P_peak),
-        "work_J":         _sci(W_total),
+        "energy_J":         _sci(W_total),
         "planck_freq_Hz": f"{planck_freq:.2e}".replace('e+', 'e+').replace('e-0', 'e-').replace('e+0', 'e+'),
         "planck_freq_raw": planck_freq,
     }
@@ -940,7 +940,7 @@ if __name__ == "__main__":
             print(f"  {var:25s} = {format_sci(c[var], unit):20s}  {format_si(c[var], unit)}")
         print()
 
-    msg = build_user_message(result, "air", version="paid", lang="en",
+    msg = build_user_message(result, "air", version="pro", lang="en",
                              user_avg={"cumulative_deg": 40.0},
                              group_avg={"cumulative_deg": 35.0})
     print("Message:", msg["message"])
