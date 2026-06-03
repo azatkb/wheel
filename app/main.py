@@ -1332,6 +1332,43 @@ async def rerun_physics(job_id: str, medium: str = "air", version: str = "basic"
 # FORUM endpoints
 # ─────────────────────────────────────────────
 
+@app.get("/forum/leaderboard")
+def forum_leaderboard(type: str = "lr", limit: int = 20):
+    """Anonymous leaderboard by Lajtner Resonance or velocity."""
+    from app.database import _sb
+    import json as _json, math as _math
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+    try:
+        resp = sb.table("physics_results")            .select("w_total_air,omega_max,cumulative_deg,created_at")            .execute()
+        rows = resp.data or []
+        entries = []
+        for i, row in enumerate(rows):
+            if type == "lr":
+                energy = row.get("w_total_air") or 0
+                if energy <= 0: continue
+                freq = energy / 6.626e-34
+                exp = int(_math.floor(_math.log10(abs(freq))))
+                mant = freq / (10 ** exp)
+                val = f"{mant:.2f}L{exp:+d}R"
+                sort_key = freq
+            else:  # velocity
+                omega = row.get("omega_max") or 0
+                if omega <= 0: continue
+                deg_s = omega * 180 / _math.pi
+                val = f"{deg_s:.3f} °/s"
+                sort_key = deg_s
+            entries.append({"sort_key": sort_key, "value": val})
+        entries.sort(key=lambda x: x["sort_key"], reverse=True)
+        # Return top N with anonymous rank_id
+        result = [{"rank_id": i+1, "value": e["value"]}
+                  for i, e in enumerate(entries[:limit])]
+        return {"entries": result}
+    except Exception as e:
+        log.error(f"[FORUM] leaderboard error: {e}")
+        raise HTTPException(500, str(e))
+
+
 @app.get("/forum/posts")
 def forum_get_posts(limit: int = 10, offset: int = 0, category: str = ""):
     """Get forum posts with pagination and category filter."""
@@ -1919,8 +1956,8 @@ def _fulfill_order(sb, order_id: str, items: list, user_email: str):
             itype = item.get("type","")
             billing = item.get("billing","monthly")
             # Subscription activation
-            if itype in ("subscription_pro", "subscription_absolute"):
-                plan = "pro" if itype == "subscription_pro" else "absolute"
+            if itype in ("subscription_pro", "subscription_ultimate"):
+                plan = "pro" if itype == "subscription_pro" else "ultimate"
                 months = 12 if billing == "annual" else 1
                 expires = _dt.datetime.utcnow() + _dt.timedelta(days=30*months)
                 sb.table("wt_users").update({
