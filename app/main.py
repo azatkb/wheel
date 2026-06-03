@@ -1337,6 +1337,113 @@ async def rerun_physics(job_id: str, medium: str = "air", version: str = "basic"
 
 
 # ─────────────────────────────────────────────
+# STATISTICS — Odds Ratio (pure math, no scipy)
+# ─────────────────────────────────────────────
+
+def _odds_ratio(A, B, C, D):
+    """Odds Ratio + 95% CI + Chi-square p-value using scipy.stats (as specified)."""
+    import numpy as np
+    import scipy.stats as stats
+    data = np.array([[int(A), int(B)], [int(C), int(D)]], dtype=int)
+    # Odds Ratio + 95% CI
+    res_or = stats.contingency.odds_ratio(data)
+    odds_ratio = float(res_or.statistic)
+    ci_lower, ci_upper = res_or.confidence_interval(confidence_level=0.95)
+    # Chi-square (pure formula, Yates correction off)
+    chi2_stat, p_value, dof, expected = stats.chi2_contingency(data, correction=False)
+    N = A + B + C + D
+    return {
+        "N": int(N), "A": int(A), "B": int(B), "C": int(C), "D": int(D),
+        "odds_ratio": round(odds_ratio, 4),
+        "ci_lower": round(float(ci_lower), 4),
+        "ci_upper": round(float(ci_upper), 4),
+        "chi2": round(float(chi2_stat), 4),
+        "p_value": round(float(p_value), 5),
+        "significant": bool(p_value < 0.05),
+    }
+
+
+@app.post("/stats/odds-ratio")
+async def stats_odds_ratio(req: Request):
+    """
+    Compute Odds Ratio from a 2x2 table.
+    Body: {A, B, C, D}  (raw counts)
+       or: {group1_label, group2_label} for nice formatting
+    """
+    body = await req.json()
+    try:
+        A = float(body.get("A", 0))
+        B = float(body.get("B", 0))
+        C = float(body.get("C", 0))
+        D = float(body.get("D", 0))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "A, B, C, D must be numbers")
+    if A < 0 or B < 0 or C < 0 or D < 0:
+        raise HTTPException(400, "Counts must be non-negative")
+    result = _odds_ratio(A, B, C, D)
+    # Build a plain-English summary line (the "troll-proof" footnote)
+    g1 = body.get("group1_label", "Group 1")
+    g2 = body.get("group2_label", "Group 2")
+    OR = result["odds_ratio"]
+    if OR >= 1:
+        result["summary"] = f"{g1} have {OR:.2f}x higher odds of high result than {g2}"
+    else:
+        result["summary"] = f"{g1} have {OR:.2f}x the odds ({1/OR:.2f}x lower) vs {g2}"
+    result["footnote"] = f"(OR = {OR}; 95% CI: {result['ci_lower']}-{result['ci_upper']}; p {'<' if result['p_value']<0.05 else '='} {max(result['p_value'],0.001):.3f})"
+    return result
+
+
+@app.get("/stats/odds-ratio-auto")
+def stats_odds_ratio_auto(admin_email: str = "", threshold: float = 0, metric: str = "lr"):
+    """
+    Auto-build 2x2 from physics_results split by median LR.
+    Splits all measurements into High/Low by threshold (or median),
+    grouped by paid vs free users as the binary trait (demo).
+    """
+    from app.database import _sb
+    import math as _m, statistics as _stats
+    if not _is_master(admin_email):
+        raise HTTPException(403, "Master only")
+    sb = _sb()
+    resp = sb.table("physics_results").select("email,w_total_air,omega_max").execute()
+    rows = resp.data or []
+    if len(rows) < 4:
+        raise HTTPException(400, "Need at least 4 measurements")
+
+    # Compute metric value per row
+    def metric_val(r):
+        if metric == "lr":
+            e = r.get("w_total_air") or 0
+            return e / 6.626e-34 if e > 0 else 0
+        else:
+            return (r.get("omega_max") or 0) * 180 / _m.pi
+
+    vals = [metric_val(r) for r in rows]
+    med = threshold if threshold > 0 else _stats.median([v for v in vals if v > 0])
+
+    # Binary trait: paid vs free (placeholder until real traits collected)
+    paid_emails = set()
+    users_resp = sb.table("wt_users").select("email,plan").execute()
+    for u in (users_resp.data or []):
+        if u.get("plan") in ("pro", "ultimate"):
+            paid_emails.add(u["email"])
+
+    A = B = C = D = 0
+    for r, v in zip(rows, vals):
+        is_paid = r.get("email") in paid_emails
+        is_high = v >= med
+        if is_paid and is_high:   A += 1
+        elif is_paid:             B += 1
+        elif is_high:             C += 1
+        else:                     D += 1
+
+    result = _odds_ratio(A, B, C, D)
+    result["threshold_used"] = round(med, 2)
+    result["metric"] = metric
+    return result
+
+
+# ─────────────────────────────────────────────
 # reCAPTCHA verification
 # ─────────────────────────────────────────────
 
