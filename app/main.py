@@ -427,17 +427,19 @@ def _process_video_seg(video_path, out_path, job_id="local",
         # Watermark
 
 
-        # Watermark - top right
+        # Watermark - top right corner of video frame
         _wm = WATERMARK_TEXT
-        _wm_scale = max(0.45, W/1280*0.65)
-        _wm_thick = max(1, int(W/640))
+        _wm_scale = max(0.6, W / 1000.0)
+        _wm_thick = max(2, int(W / 500))
         (wm_w, wm_h), _ = cv2.getTextSize(_wm, cv2.FONT_HERSHEY_SIMPLEX, _wm_scale, _wm_thick)
-        _wx = W - wm_w - 10
-        _wy = wm_h + 10
+        _wx = ann.shape[1] - wm_w - 12
+        _wy = wm_h + 12
+        # Shadow
+        cv2.putText(ann, _wm, (_wx + 2, _wy + 2), cv2.FONT_HERSHEY_SIMPLEX,
+                    _wm_scale, (0, 0, 0), _wm_thick + 2, cv2.LINE_AA)
+        # White text
         cv2.putText(ann, _wm, (_wx, _wy), cv2.FONT_HERSHEY_SIMPLEX,
-                    _wm_scale, (0,0,0), _wm_thick+1, cv2.LINE_AA)
-        cv2.putText(ann, _wm, (_wx, _wy), cv2.FONT_HERSHEY_SIMPLEX,
-                    _wm_scale, (220,220,220), _wm_thick, cv2.LINE_AA)
+                    _wm_scale, (255, 255, 255), _wm_thick, cv2.LINE_AA)
         # Write frame + bar
         if ann.shape[1] != W or ann.shape[0] != H:
             ann = cv2.resize(ann, (W, H))
@@ -911,8 +913,11 @@ async def auth_register(request: Request):
     body = await request.json()
     email = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
+    recaptcha_token = body.get("recaptcha_token") or ""
     if not email or not password:
         raise HTTPException(400, "Email and password required")
+    if not await _verify_recaptcha(recaptcha_token):
+        raise HTTPException(400, "reCAPTCHA verification failed. Please try again.")
     if _get_user(email):
         raise HTTPException(409, "Email already registered")
     try:
@@ -954,6 +959,9 @@ async def auth_login(request: Request):
     body = await request.json()
     email = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
+    recaptcha_token = body.get("recaptcha_token") or ""
+    if not await _verify_recaptcha(recaptcha_token):
+        raise HTTPException(400, "reCAPTCHA verification failed. Please try again.")
     user = _get_user(email)
     if not user or user.get("password_hash") != _hash_pw(password):
         raise HTTPException(401, "Invalid email or password")
@@ -1326,6 +1334,33 @@ async def rerun_physics(job_id: str, medium: str = "air", version: str = "basic"
         jobs[job_id]["phases"]  = physics.get("phases", {})
     return {"ok": True, "samples": len(samples),
             "message": physics.get("message", {}).get("message", "")}
+
+
+# ─────────────────────────────────────────────
+# reCAPTCHA verification
+# ─────────────────────────────────────────────
+
+async def _verify_recaptcha(token: str) -> bool:
+    """Verify Google reCAPTCHA v2 token."""
+    import os as _os, httpx as _hx
+    secret = _os.environ.get("RECAPTCHA_SECRET_KEY", "")
+    if not secret:
+        log.warning("[RECAPTCHA] No secret key set — skipping verification")
+        return True  # Skip if not configured
+    # Test key always passes
+    if secret == "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe":
+        return True
+    try:
+        r = await _hx.AsyncClient().post(
+            "https://www.google.com/recaptcha/api/siteverify",
+            data={"secret": secret, "response": token},
+            timeout=5
+        )
+        result = r.json()
+        return result.get("success", False)
+    except Exception as e:
+        log.warning(f"[RECAPTCHA] verify failed: {e}")
+        return False
 
 
 # ─────────────────────────────────────────────
