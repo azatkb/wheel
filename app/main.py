@@ -1499,6 +1499,65 @@ async def stats_odds_ratio(req: Request):
     return result
 
 
+@app.get("/stats/factor-analysis")
+def stats_factor_analysis(factor: str = "q1_illness", admin_email: str = ""):
+    """
+    Odds Ratio for one focus factor vs power (high/low by average power).
+    factor: one of q1_illness ... q8_emotional
+    Joins focus_questionnaire with physics_results by email.
+    """
+    from app.database import _sb, get_group_averages
+    import numpy as np, scipy.stats as stats
+    if not _is_master(admin_email):
+        raise HTTPException(403, "Master only")
+    if factor not in Q_FIELDS:
+        raise HTTPException(400, f"factor must be one of {Q_FIELDS}")
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+
+    # Average power of all users
+    grp = get_group_averages()
+    avg_power = grp.get("P_peak_air", 0) or 0
+
+    # Per-user latest power
+    pr = sb.table("physics_results").select("email,p_peak_air").execute()
+    power_by_email = {}
+    for r in (pr.data or []):
+        e = r.get("email"); p = r.get("p_peak_air")
+        if e and p is not None:
+            power_by_email[e] = float(p)   # latest wins
+
+    if avg_power <= 0 and power_by_email:
+        avg_power = sum(power_by_email.values()) / len(power_by_email)
+
+    # Questionnaire answers
+    q = sb.table("focus_questionnaire").select(f"user_email,{factor}").execute()
+
+    # Build 2x2: rows = answer (1=opt1 / 2=opt2), cols = high/low power
+    A=B=C=D=0
+    for r in (q.data or []):
+        email = r.get("user_email")
+        ans = r.get(factor, 0)
+        if not ans or email not in power_by_email:
+            continue
+        is_high = power_by_email[email] >= avg_power
+        is_opt1 = (ans == 1)
+        if is_opt1 and is_high:   A+=1
+        elif is_opt1:             B+=1
+        elif is_high:             C+=1
+        else:                     D+=1
+
+    total = A+B+C+D
+    if total < 4:
+        return {"factor": factor, "n": total,
+                "error": "Not enough paired data (need 4+ users with both power and answer)"}
+
+    result = _odds_ratio(A, B, C, D)
+    result["factor"] = factor
+    result["avg_power"] = round(avg_power, 6)
+    return result
+
+
 @app.get("/stats/odds-ratio-auto")
 def stats_odds_ratio_auto(admin_email: str = "", threshold: float = 0, metric: str = "lr"):
     """

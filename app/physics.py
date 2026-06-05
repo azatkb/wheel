@@ -267,7 +267,7 @@ def detect_phases(timestamps: list, angles_rad: list,
     def _phi(sl):
         if sl.start >= len(sub_angles): return 0.0
         stop = min(sl.stop-1, len(sub_angles)-1)
-        # Use absolute value for magnitude; direction is tracked separately
+        # Use ultimate value for magnitude; direction is tracked separately
         return abs(sub_angles[stop] - sub_angles[sl.start])
 
     def _sign():
@@ -816,7 +816,13 @@ def build_user_message(result: dict, medium: str,
       group_message: group rank message (paid)
       group_medal  : "gold"|"silver"|"bronze" (paid)
     """
-    case    = result.get(medium) or result.get("air", {})
+    # Ultimate 1.0 uses the IDEAL case (no braking force) — client spec:
+    # "in Ultimate use simple calculations without braking force,
+    #  the differences are greater, gives a better solution"
+    if version == "ultimate":
+        case = result.get("ideal") or result.get(medium) or result.get("air", {})
+    else:
+        case = result.get(medium) or result.get("air", {})
     W_total = case.get("W_total", 0)
     F_max   = case.get("F_max",   0)
     P_peak  = case.get("P_peak",  0)
