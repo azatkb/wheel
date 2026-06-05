@@ -195,6 +195,29 @@ def _run_physics(samples, medium, direction, user_email, job_id, version, lang):
                     }.get(lang, "Keep going! 🥉")
                     msg_data["group_medal"] = "bronze"
                 msg_data["pct_vs_group_avg"] = round(g_pct, 1)
+
+                # ── Power comparison: weak / strong vs average power of all users ──
+                # (client spec: below avg power = weak, at/above = strong)
+                try:
+                    avg_power = group_avg.get("P_peak_air", 0) or 0
+                    my_power  = result.get("P_peak", 0) or result.get("p_peak_air", 0) or 0
+                    if avg_power > 0 and my_power > 0:
+                        msg_data["avg_power_W"]   = avg_power
+                        msg_data["my_power_W"]    = my_power
+                        if my_power < avg_power:
+                            msg_data["power_class"]   = "low"
+                            msg_data["power_verdict"] = {
+                                "en": "Your power is below average — you are weaker.",
+                                "hu": "Az erőd átlag alatti — gyengébb vagy.",
+                            }.get(lang, "Your power is below average.")
+                        else:
+                            msg_data["power_class"]   = "high"
+                            msg_data["power_verdict"] = {
+                                "en": "Your power is at or above average — you are strong!",
+                                "hu": "Az erőd átlagos vagy a feletti — erős vagy!",
+                            }.get(lang, "Your power is at or above average — strong!")
+                except Exception as _pe:
+                    log.warning(f"[PHYSICS] power class: {_pe}")
         except Exception as e:
             log.warning(f"[PHYSICS] group ranking: {e}")
 
@@ -1029,6 +1052,9 @@ async def upload(
     with open(raw_path,"wb") as f:
         shutil.copyfileobj(file.file, f)
     info = get_video_info(raw_path)
+    # Master always gets Pro features regardless of plan
+    if _is_master(user_email):
+        version = "pro"
     create_job(job_id, user_email, "upload", direction, medium, hand_visible, info_level)
     jobs[job_id] = {"status":"queued","progress":{"pct":0},
                     "user_email": user_email,
@@ -1173,11 +1199,15 @@ async def stream_ws(ws: WebSocket):
     email   = params.get("email",   "")
     job_id  = str(uuid.uuid4())
 
+    _req_version = params.get("version", DEFAULT_VERSION)
+    # Master always gets Pro features regardless of plan
+    if _is_master(email):
+        _req_version = "pro"
     _sp = {
         "direction": params.get("direction", DEFAULT_DIRECTION),
         "medium":    params.get("medium",    DEFAULT_MEDIUM),
         "email":     email,
-        "version":   params.get("version",   DEFAULT_VERSION),
+        "version":   _req_version,
         "lang":      params.get("lang",       DEFAULT_LANG),
     }
     create_job(job_id, email, "stream", _sp["direction"], _sp["medium"], False, "basic")
@@ -1334,6 +1364,82 @@ async def rerun_physics(job_id: str, medium: str = "air", version: str = "basic"
         jobs[job_id]["phases"]  = physics.get("phases", {})
     return {"ok": True, "samples": len(samples),
             "message": physics.get("message", {}).get("message", "")}
+
+
+# ─────────────────────────────────────────────
+# QUESTIONNAIRE — 8 Primary Factors of Mental Focus
+# ─────────────────────────────────────────────
+
+Q_FIELDS = ["q1_illness","q2_loneliness","q3_sleep","q4_homeostasis",
+            "q5_stimulants","q6_digital","q7_breathing","q8_emotional"]
+
+@app.post("/questionnaire")
+async def questionnaire_save(req: Request):
+    """Save a questionnaire response. Unanswered = 0."""
+    from app.database import _sb
+    body = await req.json()
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+    email = (body.get("user_email") or "").strip().lower()
+    if not email: raise HTTPException(400, "email required")
+    data = {"user_email": email, "is_measurement": bool(body.get("is_measurement", True))}
+    answered = 0
+    for f in Q_FIELDS:
+        v = int(body.get(f, 0) or 0)
+        data[f] = v
+        if v > 0: answered += 1
+    data["answered_count"] = answered
+    if body.get("job_id"): data["job_id"] = body["job_id"]
+    try:
+        resp = sb.table("focus_questionnaire").insert(data).execute()
+        return {"ok": True, "id": resp.data[0]["id"] if resp.data else None}
+    except Exception as e:
+        log.error(f"[QUESTIONNAIRE] save error: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.get("/questionnaire/my")
+def questionnaire_my(email: str = ""):
+    """Get a user's own questionnaire responses."""
+    from app.database import _sb
+    if not email: raise HTTPException(400, "email required")
+    sb = _sb()
+    resp = sb.table("focus_questionnaire").select("*")        .eq("user_email", email).order("created_at", desc=True).execute()
+    return {"responses": resp.data or []}
+
+
+@app.get("/questionnaire/all")
+def questionnaire_all(admin_email: str = "", limit: int = 1000):
+    """All questionnaire responses (master only)."""
+    from app.database import _sb
+    if not _is_master(admin_email): raise HTTPException(403, "Master only")
+    sb = _sb()
+    resp = sb.table("focus_questionnaire").select("*")        .order("created_at", desc=True).limit(limit).execute()
+    return {"responses": resp.data or [], "count": len(resp.data or [])}
+
+
+@app.get("/questionnaire/export-csv")
+def questionnaire_export_csv(admin_email: str = ""):
+    """Export all questionnaire data as CSV (master only)."""
+    from app.database import _sb
+    from fastapi.responses import PlainTextResponse
+    if not _is_master(admin_email): raise HTTPException(403, "Master only")
+    sb = _sb()
+    resp = sb.table("focus_questionnaire").select("*")        .order("created_at").execute()
+    rows = resp.data or []
+    header = ["id","user_email","created_at","is_measurement","answered_count"] + Q_FIELDS + ["job_id"]
+    lines = [",".join(header)]
+    for r in rows:
+        line = [
+            str(r.get("id","")), r.get("user_email",""), r.get("created_at",""),
+            "measurement" if r.get("is_measurement") else "non-measurement",
+            str(r.get("answered_count",0)),
+        ] + [str(r.get(f,0)) for f in Q_FIELDS] + [str(r.get("job_id",""))]
+        lines.append(",".join(line))
+    csv_text = "\n".join(lines)
+    return PlainTextResponse(csv_text, headers={
+        "Content-Disposition": "attachment; filename=focus_questionnaire.csv"
+    })
 
 
 # ─────────────────────────────────────────────

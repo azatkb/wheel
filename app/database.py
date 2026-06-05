@@ -271,7 +271,7 @@ def get_group_averages() -> dict:
         if not sb:
             return {}
         resp = (sb.table("physics_results")
-                .select("cumulative_deg,w_total_air,f_max_air,omega_max")
+                .select("cumulative_deg,w_total_air,f_max_air,omega_max,p_peak_air,p_avg_air")
                 .limit(1000)
                 .execute())
         if not resp.data:
@@ -285,6 +285,8 @@ def get_group_averages() -> dict:
             "W_total_air":    avg("w_total_air"),
             "F_max_air":      avg("f_max_air"),
             "omega_max":      avg("omega_max"),
+            "P_peak_air":     avg("p_peak_air"),
+            "P_avg_air":      avg("p_avg_air"),
             "count":          len(rows),
         }
     except Exception as e:
@@ -386,6 +388,17 @@ def get_user_bar_data(email: str) -> dict:
         return {}
 
 
+def _calc_lr(energy_J):
+    """Format Lajtner Resonance: 1.50L+24R"""
+    import math as _m
+    if not energy_J or energy_J == 0: return "0"
+    h = 6.626e-34
+    freq = energy_J / h
+    exp = int(_m.floor(_m.log10(abs(freq))))
+    mant = freq / (10 ** exp)
+    return f"{mant:.2f}L{exp:+d}R"
+
+
 def export_to_master_csv(out_path: str) -> int:
     """Export all physics_results joined with jobs to a master CSV."""
     import csv as csv_mod, json as _json
@@ -423,14 +436,15 @@ def export_to_master_csv(out_path: str) -> int:
                 "medium":        row.get("medium",""),
                 "direction":     direction,
                 "duration_s":    duration,
-                "rotation_deg":  round(row.get("cumulative_deg") or 0, 4),
-                "t_total_s":     round(ideal.get("t_total") or 0, 4),
-                "omega_max":     round(row.get("omega_max") or 0, 6),
-                "w_total_air_J": row.get("w_total_air",""),
-                "f_max_air_N":   row.get("f_max_air",""),
-                "p_peak_air_W":  row.get("p_peak_air",""),
-                "p_avg_air_W":   row.get("p_avg_air",""),
-                "w_total_water_J": row.get("w_total_water",""),
+                "rotation_deg":    round(row.get("cumulative_deg") or 0, 3),
+                "t_total_s":       round(ideal.get("t_total") or 0, 3),
+                "omega_max":       round(row.get("omega_max") or 0, 3),
+                "energy_air_J":    row.get("w_total_air",""),
+                "f_max_air_N":     row.get("f_max_air",""),
+                "p_peak_air_W":    row.get("p_peak_air",""),
+                "p_avg_air_W":     row.get("p_avg_air",""),
+                "energy_water_J":  row.get("w_total_water",""),
+                "lajtner_resonance": _calc_lr(row.get("w_total_air") or 0),
             })
 
         if not export_rows: return 0
