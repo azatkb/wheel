@@ -393,6 +393,19 @@ def _process_video_seg(video_path, out_path, job_id="local",
         ann = frame_s.copy()
         draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cum, bbox, tip_colors=tip_colors, draw_mesh=DRAW_MESH_OVERLAY)
 
+        # Big timestamp burned on the video frame itself (Pro download)
+        _t_txt   = f"{t_sec:.1f}s"
+        _t_scale = max(1.1, W / 650.0)
+        _t_thick = max(2, int(W / 450))
+        (_tw, _th), _ = cv2.getTextSize(_t_txt, cv2.FONT_HERSHEY_SIMPLEX, _t_scale, _t_thick)
+        _tx = 16
+        _ty = H - 18                       # bottom-left, clear of angle box + watermark
+        _ov = ann.copy()
+        cv2.rectangle(_ov, (_tx - 10, _ty - _th - 12), (_tx + _tw + 12, _ty + 12), (0, 0, 0), -1)
+        cv2.addWeighted(_ov, 0.5, ann, 0.5, 0, ann)
+        cv2.putText(ann, _t_txt, (_tx, _ty), cv2.FONT_HERSHEY_SIMPLEX, _t_scale, (0, 0, 0),       _t_thick + 3, cv2.LINE_AA)  # outline
+        cv2.putText(ann, _t_txt, (_tx, _ty), cv2.FONT_HERSHEY_SIMPLEX, _t_scale, (255, 255, 255), _t_thick,     cv2.LINE_AA)  # fill
+
 
         # Draw info bar below frame
         bar = np.full((BAR_HEIGHT, W, 3), (18, 18, 18), np.uint8)
@@ -407,8 +420,8 @@ def _process_video_seg(video_path, out_path, job_id="local",
         t_s    = f"{t_sec:.2f} s"
         col1, col2, col3 = 14, W//3, 2*W//3
         # Time
-        cv2.putText(bar,"TIME",(col1,22),cv2.FONT_HERSHEY_SIMPLEX,0.38,GRAY,1)
-        cv2.putText(bar,t_s,(col1,50),cv2.FONT_HERSHEY_SIMPLEX,0.85,WHITE,2,cv2.LINE_AA)
+        cv2.putText(bar,"TIME",(col1,22),cv2.FONT_HERSHEY_SIMPLEX,0.42,GRAY,1)
+        cv2.putText(bar,t_s,(col1,54),cv2.FONT_HERSHEY_SIMPLEX,1.15,WHITE,3,cv2.LINE_AA)
         # Rotation
         cv2.putText(bar,"ROTATION",(col1,78),cv2.FONT_HERSHEY_SIMPLEX,0.38,GRAY,1)
         cv2.putText(bar,rot_s,(col1,108),cv2.FONT_HERSHEY_SIMPLEX,0.95,YELLOW,2,cv2.LINE_AA)
