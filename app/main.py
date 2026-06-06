@@ -261,13 +261,12 @@ def _process_video_seg(video_path, out_path, job_id="local",
     H     = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Try H.264 (avc1) first for Android/Chrome compatibility
-    fourcc  = cv2.VideoWriter_fourcc(*"avc1")
+    # OpenCV writes mp4v (reliably encodes real frames). imageio re-encodes to
+    # H.264 afterwards for browser playback. NOTE: avc1 in OpenCV often reports
+    # isOpened()=True but writes BLACK frames (no openh264 in the build) — that
+    # was the cause of the black downloaded video, so we don't use avc1 here.
+    fourcc  = cv2.VideoWriter_fourcc(*"mp4v")
     out_vid = cv2.VideoWriter(str(out_path), fourcc, fps, (W, H + BAR_HEIGHT))
-    if not out_vid.isOpened():
-        log.warning("[VIDEO] avc1 failed, trying mp4v")
-        fourcc  = cv2.VideoWriter_fourcc(*"mp4v")
-        out_vid = cv2.VideoWriter(str(out_path), fourcc, fps, (W, H + BAR_HEIGHT))
     if not out_vid.isOpened():
         log.warning("[VIDEO] mp4v failed, trying XVID")
         fourcc  = cv2.VideoWriter_fourcc(*"XVID")
@@ -1619,12 +1618,21 @@ def stats_factor_analysis(factor: str = "q1_illness", admin_email: str = ""):
     """
     from app.database import _sb, get_group_averages
     import numpy as np, scipy.stats as stats
-    if not _is_master(admin_email):
-        raise HTTPException(403, "Master only")
-    if factor not in Q_FIELDS:
-        raise HTTPException(400, f"factor must be one of {Q_FIELDS}")
     sb = _sb()
     if not sb: raise HTTPException(500, "DB unavailable")
+    # Access: master OR Ultimate-plan user. Returns aggregates only (no emails),
+    # so it is safe to expose to Ultimate subscribers.
+    if not _is_master(admin_email):
+        allowed = False
+        try:
+            rr = sb.table("wt_users").select("plan").eq("email", (admin_email or "").lower()).limit(1).execute()
+            allowed = bool(rr.data) and rr.data[0].get("plan") == "ultimate"
+        except Exception:
+            allowed = False
+        if not allowed:
+            raise HTTPException(403, "Ultimate plan required")
+    if factor not in Q_FIELDS:
+        raise HTTPException(400, f"factor must be one of {Q_FIELDS}")
 
     # Average power of all users
     grp = get_group_averages()
