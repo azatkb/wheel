@@ -737,16 +737,22 @@ async def stripe_check_session(session_id: str = "", email: str = ""):
         import stripe
         stripe.api_key = STRIPE_SECRET_KEY
         session = stripe.checkout.Session.retrieve(session_id)
-        status = getattr(session, "payment_status", "")
-        sub_status = getattr(session, "status", "")
-        if status == "pro" or sub_status == "complete":
+        pay_status = getattr(session, "payment_status", "")   # 'paid' | 'unpaid' | ...
+        sub_status = getattr(session, "status", "")           # 'complete' | 'open' | ...
+        # plan we stored in metadata at checkout creation
+        meta = getattr(session, "metadata", {}) or {}
+        plan = (meta.get("plan") if isinstance(meta, dict)
+                else getattr(meta, "plan", "")) or "pro"
+        if plan not in ("pro", "ultimate"):
+            plan = "pro"
+        if pay_status == "paid" or sub_status == "complete":
             cust_email = getattr(session, "customer_email", "") or email
             if cust_email:
                 from app.database import _sb
                 sb = _sb()
-                sb.table("wt_users").update({"plan":"pro"}).eq("email", cust_email.lower()).execute()
-                log.info(f"[STRIPE] plan updated via check-session for {cust_email}")
-            return {"ok": True, "plan": "pro", "status": sub_status}
+                sb.table("wt_users").update({"plan": plan}).eq("email", cust_email.lower()).execute()
+                log.info(f"[STRIPE] plan={plan} via check-session for {cust_email}")
+            return {"ok": True, "plan": plan, "status": sub_status}
         return {"ok": False, "status": sub_status}
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -805,11 +811,21 @@ async def stripe_webhook(request: Request):
                     email = getattr(cust, "email", "") or ""
             except Exception:
                 pass
+        # plan from checkout metadata (pro | ultimate); default pro
+        plan = "pro"
+        try:
+            meta = getattr(obj, "metadata", {})
+            p = (meta.get("plan") if isinstance(meta, dict)
+                 else getattr(meta, "plan", "")) or ""
+            if p in ("pro", "ultimate"):
+                plan = p
+        except Exception:
+            pass
         if email:
             try:
                 from app.database import _sb
                 sb = _sb()
-                sb.table("wt_users").update({"plan": "pro"}).eq("email", email.lower()).execute()
+                sb.table("wt_users").update({"plan": plan}).eq("email", email.lower()).execute()
                 log.info(f"[STRIPE] upgraded {email} to paid")
             except Exception as e:
                 log.error(f"[STRIPE] db update failed: {e}")
