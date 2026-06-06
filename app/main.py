@@ -1674,6 +1674,8 @@ def stats_factor_analysis(factor: str = "q1_illness", admin_email: str = ""):
     result = _odds_ratio(A, B, C, D)
     result["factor"] = factor
     result["avg_power"] = round(avg_power, 6)
+    result["cells"] = {"A": A, "B": B, "C": C, "D": D}   # opt1/opt2 × high/low power
+    result["n"] = total
     return result
 
 
