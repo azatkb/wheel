@@ -486,24 +486,30 @@ def save_physics_result(job_id: str, email: str, medium: str,
             return
  
         case = result.get("air", {})  # default to air case
+        # null-safe float: returns default for None / bad values
+        def _f(v, d=0.0):
+            try:
+                return float(v) if v is not None else d
+            except (TypeError, ValueError):
+                return d
         # Direction summation: 4 columns (absolute values, deg)
         # cw_deg, ccw_deg, cw_ccw_deg (cw+ccw sum), ccw_cw_deg (ccw+cw sum)
         all_phases = result.get("all_phases", [])
-        cw_total  = sum(abs(p.get("phi_total_deg", 0)) for p in all_phases if p.get("direction") == "CW")
-        ccw_total = sum(abs(p.get("phi_total_deg", 0)) for p in all_phases if p.get("direction") == "CCW")
+        cw_total  = sum(abs(_f(p.get("phi_total_deg"))) for p in all_phases if p.get("direction") == "CW")
+        ccw_total = sum(abs(_f(p.get("phi_total_deg"))) for p in all_phases if p.get("direction") == "CCW")
         record = {
             "job_id":        job_id,
             "email":         email,
             "medium":        medium,
-            "cumulative_deg": round(abs(float(result.get("ideal", {}).get("phi_total", 0)) * 180 / 3.14159265), 4),
-            "w_total_air":   float(result.get("air",  {}).get("W_total", 0)),
-            "w_total_water": float(result.get("water",{}).get("W_total", 0)),
-            "f_max_air":     float(result.get("air",  {}).get("F_max",   0)),
-            "omega_max":     float(result.get("ideal", {}).get("omega_max", 0) or result.get("kinematics",{}).get("omega_max", 0)),
-            "p_peak_air":    float(result.get("air",  {}).get("P_peak", 0)),
-            "p_avg_air":     float(result.get("air",  {}).get("P_avg",  0)),
-            "t_lajtner":     float(result.get("t_lajtner", 0)),
-            "a_lajtner":     float(result.get("a_lajtner", 0)),
+            "cumulative_deg": round(abs(_f(result.get("ideal", {}).get("phi_total")) * 180 / 3.14159265), 4),
+            "w_total_air":   _f(result.get("air",  {}).get("W_total")),
+            "w_total_water": _f(result.get("water",{}).get("W_total")),
+            "f_max_air":     _f(result.get("air",  {}).get("F_max")),
+            "omega_max":     _f(result.get("ideal", {}).get("omega_max")) or _f(result.get("kinematics",{}).get("omega_max")),
+            "p_peak_air":    _f(result.get("air",  {}).get("P_peak")),
+            "p_avg_air":     _f(result.get("air",  {}).get("P_avg")),
+            "t_lajtner":     _f(result.get("t_lajtner")),
+            "a_lajtner":     _f(result.get("a_lajtner")),
             "cw_deg":        round(cw_total, 2),
             "ccw_deg":       round(ccw_total, 2),
             "cw_ccw_deg":    round(cw_total + ccw_total, 2),
