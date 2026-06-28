@@ -28,7 +28,7 @@ const NAV_ALL = [
   { to: '/forum',        icon: '💬', label: 'Forum' },
   { to: '/store',        icon: '🛒', label: 'Store' },
   { to: '/focus',        icon: '🧠', label: 'Focus Test' },
-  { to: 'https://lajtner.com', icon: '✉', label: 'Contact', external: true },
+  { to: 'https://lajtnerresonance.com', icon: '✉', label: 'Contact', external: true },
   { to: '/store-admin',   icon: '🏪', label: 'Store Admin', masterOnly: true },
   { to: '/statistics',    icon: '📊', label: 'Statistics', masterOnly: true, ultimateOk: true },
   { to: '/focus-db',      icon: '🗄', label: 'Focus DB', masterOnly: true },
@@ -135,13 +135,13 @@ function Shell() {
         </nav>
 
         <div className="sidebar-footer">
-          <a href="https://lajtner.com" target="_blank" rel="noopener noreferrer"
+          <a href="https://lajtnerresonance.com" target="_blank" rel="noopener noreferrer"
             style={{display:'block',textAlign:'center',fontSize:'.72rem',
               color:'var(--dim)',padding:'.3rem .75rem',textDecoration:'none',
               transition:'color .15s'}}
             onMouseEnter={e=>e.target.style.color='var(--green)'}
             onMouseLeave={e=>e.target.style.color='var(--dim)'}>
-            🌐 lajtner.com
+            🌐 lajtnerresonance.com
           </a>
           <div style={{padding:'.2rem .75rem .5rem',display:'flex',justifyContent:'flex-start'}}>
             <button className="theme-btn" onClick={toggleTheme}

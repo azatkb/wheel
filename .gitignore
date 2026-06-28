@@ -4,7 +4,9 @@
 __pycache__/
 *.py[cod]
 *$py.class
-/inputs
-/outputs
+*/inputs
+*/outputs
 *.pyc
 */node_modules
+/dist
+*.env

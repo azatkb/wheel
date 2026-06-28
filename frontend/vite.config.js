@@ -14,7 +14,7 @@ const WS_TARGET = isProd
 
 
 export default defineConfig({
-  base: isProd ? '/' : '/',
+  base: isProd ? '/kinetic' : '/',
   plugins: [react()],
   server: {
     proxy: {

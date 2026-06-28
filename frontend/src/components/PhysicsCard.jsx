@@ -159,15 +159,52 @@ const sciNote = (v) => {
 import { API } from '../config'
 
 const VAR_NAMES = {
-  'J': 'Inertia_total',
+  J:                'Inertia_total',
+  alpha:            'Angular Acceleration (α)',
+  phi_total:        'Angular Displacement (θ)',
+  omega_max:        'Final Angular Velocity (ω)',
+  omega_avg:        'Average Angular Velocity',
+  M_res:            'Braking Torque (τ_f)',
+  M_motor_accel:    'Driving Torque (τ_d)',
+  M_motor_const:    'Constant Motion Torque',
+  M_avg_active:     'Average Torque (active)',
+  F_accel:          'Driving Force (F)',
+  F_const:          'Constant Motion Force',
+  F_avg_active:     'Average Driving Force',
+  F_max:            'Maximum Driving Force',
+  E_kin_max:        'Rotational Energy (peak)',
+  E_kin_const:      'Final Rotational Energy',
+  E_kin_avg_active: 'Average Rotational Energy',
+  P_peak:           'Inst. Power (peak)',
+  P_const:          'Constant Motion Power',
+  P_avg:            'Average Power',
+  W_total:          'Total Rotational Work (W)',
+  L_ang:            'Angular Momentum (L)',
+  t_total:          'Time (t)',
 }
 
 const VARS = [
-  ['t_total','s'],['phi_total','rad'],['omega_max','rad/s'],['J','kgm2'],
-  ['M_res','Nm'],['M_motor_accel','Nm'],['M_motor_const','Nm'],['M_avg_active','Nm'],
-  ['F_const','N'],['F_accel','N'],['F_avg_active','N'],['F_max','N'],
-  ['E_kin_max','J'],['E_kin_const','J'],['E_kin_avg_active','J'],
-  ['P_peak','W'],['P_const','W'],['P_avg','W'],['W_total','J'],['L_ang','kgm2/s'],
+  ['J','kg·m²'],
+  ['alpha','rad/s²'],
+  ['phi_total','rad'],
+  ['omega_max','rad/s'],
+  ['omega_avg','rad/s'],
+  ['M_res','Nm'],
+  ['M_motor_accel','Nm'],
+  ['M_motor_const','Nm'],
+  ['M_avg_active','Nm'],
+  ['F_accel','N'],
+  ['F_const','N'],
+  ['F_avg_active','N'],
+  ['F_max','N'],
+  ['E_kin_max','J'],
+  ['E_kin_const','J'],
+  ['E_kin_avg_active','J'],
+  ['P_peak','W'],
+  ['P_const','W'],
+  ['P_avg','W'],
+  ['W_total','J'],
+  ['L_ang','kg·m²/s'],
 ]
 
 const LABELS = {
@@ -344,7 +381,7 @@ export default function PhysicsCard({ msg, result, jobId, isPaid, showTable = tr
           <button className="btn btn-secondary btn-sm"
             style={{marginTop:'.6rem'}}
             onClick={() => setShowPhysTable(v => !v)}>
-            {showPhysTable ? 'Hide table' : 'Show 20 variables'}
+            {showPhysTable ? 'Hide table' : 'Show all variables'}
           </button>
           {showPhysTable && (
             <div className="phys-tbl-wrap">

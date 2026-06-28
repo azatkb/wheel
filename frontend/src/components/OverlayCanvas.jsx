@@ -98,10 +98,17 @@ export default function OverlayCanvas({ data, vidW, vidH }) {
     }
 
     // Watermark - center
-    const wmText = 'LAJTNER.com'
-    const wmSize = Math.max(22, Math.round(dw / 14))
+    const wmText = 'lajtnerresonance.com'
+    let wmSize = Math.max(16, Math.round(dw / 14))
     ctx.save()
     ctx.font = `bold ${wmSize}px monospace`
+    // shrink font so the (longer) domain fits within 90% of the width
+    const wmMaxW = dw * 0.9
+    const wmW = ctx.measureText(wmText).width
+    if (wmW > wmMaxW) {
+      wmSize = Math.max(10, Math.floor(wmSize * wmMaxW / wmW))
+      ctx.font = `bold ${wmSize}px monospace`
+    }
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillStyle = 'rgba(0,0,0,0.5)'

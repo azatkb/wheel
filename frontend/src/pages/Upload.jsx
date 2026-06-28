@@ -40,6 +40,7 @@ export default function Upload() {
   const [vidW, setVidW] = useState(0)
   const [vidH, setVidH] = useState(0)
   const [totalSec, setTotalSec] = useState(0)
+  const [maxVel, setMaxVel] = useState(0)
   const statusTimer = useRef(null)
   const sseRef = useRef(null)
   const vidRef = useRef(null)
@@ -86,7 +87,7 @@ export default function Upload() {
     if (vidRef.current) { vidRef.current.pause(); vidRef.current.src = '' }
     setState('idle'); setProgress(0); setLabel('Ready'); setLog('')
     setJid(null); setSseData(null); setSamples([]); setPhysics(null)
-    setVidW(0); setVidH(0); setTotalSec(0); setBarData(null)
+    setVidW(0); setVidH(0); setTotalSec(0); setBarData(null); setMaxVel(0)
   }
 
   const go = () => {
@@ -173,6 +174,7 @@ export default function Upload() {
           vidRef.current.currentTime = d.t_sec
         }
         setSseData(d)
+        if (d.angular_vel_dps != null) setMaxVel(m => Math.max(m, Math.abs(+d.angular_vel_dps)))
         const pct = d.pct || 0
         setProgress(40 + Math.round(pct * .6))
         setLabel('Detecting... ' + pct + '%')
@@ -319,7 +321,7 @@ export default function Upload() {
                 </div>
               )}
               {/* Replay button - appears after processing done */}
-              {samples.length > 0 && status === 'done' && (
+              {samples.length > 0 && state === 'done' && (
                 <div style={{display:'flex',gap:'.5rem',marginTop:'.5rem',alignItems:'center'}}>
                   {!replaying ? (
                     <button onClick={startReplay} className="btn btn-secondary btn-sm">
@@ -343,7 +345,7 @@ export default function Upload() {
               {[
                 [sseData?.rotation_deg != null ? sseData.rotation_deg.toFixed(1)+'°' : '---', 'Current spoke', ''],
                 [sseData ? (Math.abs(sseData.cumulative_deg).toFixed(1)+'° total') : '—', 'Rot: chosen', 'amber'],
-                [sseData?.angular_vel_dps != null ? fmtSI(sseData.angular_vel_dps, '°/s') : '0.0 °/s', 'Velocity °/s', 'blue'],
+                [maxVel > 0 ? maxVel.toFixed(1)+' °/s' : '0.0 °/s', 'Max velocity', 'blue'],
                 [(sseData?.confidence_pct || 0) + '%', 'Significance', 'yellow'],
               ].map(([v, l, cls]) => (
                 <div key={l} className="live-box">

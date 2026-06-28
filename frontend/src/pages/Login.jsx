@@ -122,11 +122,10 @@ export default function Login() {
           width:15,height:15,cursor:'pointer'}} />
       <label htmlFor="consent" style={{fontSize:'.76rem',color:'var(--muted)',
         lineHeight:1.5,cursor:'pointer'}}>
-        Using this app, you agree to our{' '}
+        I accept the{' '}
         <a href="https://lajtner.com/terms-privacy.html"
           target="_blank" rel="noopener noreferrer"
-          style={{color:'var(--green)'}}>Terms &amp; Privacy</a>
-        {' '}and acknowledge that we store certain data.
+          style={{color:'var(--green)'}}>Terms &amp; Privacy</a>.
       </label>
     </div>
   )

@@ -1,5 +1,8 @@
 import { useDeviceAuth } from '../hooks/useDeviceAuth'
 
+// Set to true to require an NFC tap. false = gate disabled (open access).
+const DEVICE_GATE_ENABLED = false
+
 /**
  * Wrap the measurement UI:
  *   <DeviceGate><Upload .../></DeviceGate>
@@ -10,6 +13,7 @@ import { useDeviceAuth } from '../hooks/useDeviceAuth'
  * open it, and you'll be redirected back here authorized.
  */
 export default function DeviceGate({ children }) {
+  if (!DEVICE_GATE_ENABLED) return children
   const { deviceAuthorized, checking } = useDeviceAuth()
 
   if (checking) {

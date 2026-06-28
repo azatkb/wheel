@@ -404,6 +404,22 @@ def _fix_pavg(case: dict, t: float) -> dict:
     return c
 
 
+def _scale_resistance(case: dict, factor: float) -> dict:
+    """Excel air/water model — scale FORCE, ENERGY, POWER and WORK relative to
+    the ideal (frictionless) case:
+        air   = 2   * ideal
+        water = 816 * air   ( = 2 * 816 = 1632 * ideal )
+    Torque, inertia, angular velocity and angular momentum are NOT scaled
+    (they stay equal to the ideal case, exactly like the Excel sheet)."""
+    c = dict(case)
+    for k in list(c.keys()):
+        if k[:2] in ("F_", "E_", "P_", "W_"):          # forces, energies, powers, work
+            c[k] = (c.get(k) or 0) * factor
+    # work changed → Lajtner (Planck) frequency must follow
+    c["planck_freq"] = (c["W_total"] / PLANCK) if c.get("W_total", 0) > 0 else 0.0
+    return c
+
+
 def calculate(phases: dict) -> dict:
     """
     Calculate all 20 physical variables for 3 cases:
@@ -628,6 +644,10 @@ def calculate(phases: dict) -> dict:
         # Planck hypothetical frequency (paid version)
         planck_freq = W_total / PLANCK if W_total > 0 else 0.0
 
+        # Angular acceleration (Excel: alpha = 2*theta/t^2) and average angular velocity
+        alpha     = beta_accel
+        omega_avg = (phi_total / t_total) if t_total > 0 else 0.0
+
         return {
             "t_total":          t_total,           # 1
             "phi_total":        phi_total,          # 2
@@ -649,9 +669,15 @@ def calculate(phases: dict) -> dict:
             "P_avg":            P_avg,              # 18
             "W_total":          W_total,            # 19
             "L_ang":            L_ang,              # 20
+            "alpha":            alpha,              # angular acceleration (rad/s²)
+            "omega_avg":        omega_avg,          # average angular velocity (rad/s)
             "planck_freq":      planck_freq,
         }
 
+    # ── 3 cases (Excel model) ──────────────────────────────────────────
+    # ideal = frictionless base; air = 2× ideal; water = 816× air.
+    # Only force / energy / power / work scale — see _scale_resistance().
+    _ideal = _case(M_res=0.0)
     return {
         "inertia":    inertia,
         "kinematics": {
@@ -666,9 +692,9 @@ def calculate(phases: dict) -> dict:
         "resistance": {"M_air": M_air, "M_water": M_water},
         "t_lajtner":  t_lajtner,
         "a_lajtner":  a_lajtner,
-        "ideal":      _case(M_res=0.0),
-        "air":        _fix_pavg(_add_braking(_case(M_res=M_air),   mult=1.0),   t_total),
-        "water":      _fix_pavg(_add_braking(_case(M_res=M_water), mult=WATER_MULT), t_total),
+        "ideal":      _ideal,
+        "air":        _scale_resistance(_ideal, 2.0),
+        "water":      _scale_resistance(_ideal, 2.0 * WATER_MULT),
     }
 
 
