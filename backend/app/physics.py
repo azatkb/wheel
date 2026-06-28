@@ -28,9 +28,9 @@ PI = 3.1415926535
 
 # Geometry — all radii are correct; other values are examples
 # Change num_spokes to 6, 8, 10 etc. — recalculates everything
-R_spoke  = 0.031   # (m) spoke length
+R_spoke  = 0.032   # (m) spoke length  (Excel L = 32 mm)
 r_hub    = 0.004   # (m) hub radius
-L_force  = R_spoke + r_hub  # = 0.035 m — radius where external force acts
+L_force  = R_spoke + r_hub  # = 0.036 m — radius where external force acts (Excel r_hub + L)
 
 # Mass — examples, change freely
 m_hub      = 1.36e-4   # (kg) hub mass
@@ -546,6 +546,15 @@ def calculate(phases: dict) -> dict:
             phi_total = _peak  # use peak (max excursion)
     t_active   = max(t_accel + t_const_calc, 1e-6)
     phi_active = max(phi_accel + phi_const,  1e-9)
+
+    # ── Excel model: uniform acceleration from REST over the WHOLE measurement ──
+    # Excel Step 4:  alpha = 2*theta / t^2      (theta = total displacement, t = total time)
+    # Excel Step 7:  omega = alpha * t = 2*theta / t
+    # This overrides the phase-based peak omega so every derived value
+    # (torque, force, energy, power, work, momentum) matches the Excel sheet.
+    if t_total > 0 and phi_total > 0:
+        beta_accel = (2.0 * phi_total) / (t_total ** 2)
+        om         = beta_accel * t_total
 
     # ── Resistance torques ─────────────────────────────────────────────
     # Both air and water: M_res = J * beta_decel (from real deceleration measurement)
