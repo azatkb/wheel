@@ -266,13 +266,27 @@ export default function PhysicsCard({ msg, result, jobId, isPaid, showTable = tr
             </div>
           ) : null
         })()}
+        {/* Angular acceleration (α) — Excel Step 4, shown to all users */}
+        {(() => {
+          const c = result?.ideal || result?.air || result?.water || {}
+          const a = c.alpha
+          if (a == null || a === 0) return null
+          const exp = Math.floor(Math.log10(Math.abs(a)))
+          const man = (a / Math.pow(10, exp)).toFixed(2)
+          return (
+            <div className="phys-val-box">
+              <div className="pv">{man} × 10<sup>{exp}</sup> <span style={{fontSize:'.5em',opacity:.8}}>rad/s²</span></div>
+              <div className="pl">Angular accel. (α)</div>
+            </div>
+          )
+        })()}
         {/* PRO only: Power (use any available case) */}
         {isPaid && (() => {
-          const c = result?.air || result?.ideal || result?.water || {}
-          return c.P_peak != null ? (
+          const c = result?.[medium] || result?.air || result?.ideal || result?.water || {}
+          return c.P_avg != null ? (
             <div className="phys-val-box" style={{borderColor:'rgba(0,255,136,.3)'}}>
-              <div className="pv" style={{color:'var(--green)'}}>{fmtPower(c.P_peak)}</div>
-              <div className="pl">Power (peak)</div>
+              <div className="pv" style={{color:'var(--green)'}}>{fmtPower(c.P_avg)}</div>
+              <div className="pl">Avg Power</div>
             </div>
           ) : null
         })()}

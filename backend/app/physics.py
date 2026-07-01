@@ -11,11 +11,11 @@ Usage:
 """
 
 # ── Braking constants from Excel ────────────────────────────────────────────
-BRAKING_F  = 9.874e-6   # N  — air braking force constant
-BRAKING_E  = 5.773e-8   # J  — air braking energy constant
-BRAKING_P  = 1.924e-8   # W  — air braking power constant
-BRAKING_W  = 5.773e-8   # J  — air braking work constant
-WATER_MULT = 816         # water/air resistance ratio
+BRAKING_F  = 1.739e-05  # N  — force  breaking value added in AIR (averaged measurements)
+BRAKING_E  = 1.312e-07  # J  — energy breaking value added in AIR
+BRAKING_P  = 3.878e-07  # W  — power  breaking value added in AIR
+BRAKING_W  = 1.042e-07  # J  — work   breaking value added in AIR
+WATER_MULT = 816         # water = ideal + (air breaking value) * 816
 
 
 import math
@@ -404,17 +404,20 @@ def _fix_pavg(case: dict, t: float) -> dict:
     return c
 
 
-def _scale_resistance(case: dict, factor: float) -> dict:
-    """Excel air/water model — scale FORCE, ENERGY, POWER and WORK relative to
-    the ideal (frictionless) case:
-        air   = 2   * ideal
-        water = 816 * air   ( = 2 * 816 = 1632 * ideal )
-    Torque, inertia, angular velocity and angular momentum are NOT scaled
-    (they stay equal to the ideal case, exactly like the Excel sheet)."""
+def _add_resistance(case: dict, factor: float) -> dict:
+    """Excel additive model — ADD a fixed breaking value to the ideal case:
+        air   = ideal + C
+        water = ideal + C * 816
+    The ideal (measured) force/energy/power/work stay the base; a constant
+    breaking value is added on top (F,P,E,W each have their own constant).
+    Torque, inertia, angular velocity and angular momentum are unchanged
+    (they stay equal to the ideal case)."""
     c = dict(case)
     for k in list(c.keys()):
-        if k[:2] in ("F_", "E_", "P_", "W_"):          # forces, energies, powers, work
-            c[k] = (c.get(k) or 0) * factor
+        if   k[:2] == "F_":         c[k] = (c.get(k) or 0) + BRAKING_F * factor
+        elif k[:2] == "E_":         c[k] = (c.get(k) or 0) + BRAKING_E * factor
+        elif k[:2] == "P_":         c[k] = (c.get(k) or 0) + BRAKING_P * factor
+        elif k == "W_total":        c[k] = (c.get(k) or 0) + BRAKING_W * factor
     # work changed → Lajtner (Planck) frequency must follow
     c["planck_freq"] = (c["W_total"] / PLANCK) if c.get("W_total", 0) > 0 else 0.0
     return c
@@ -685,7 +688,8 @@ def calculate(phases: dict) -> dict:
 
     # ── 3 cases (Excel model) ──────────────────────────────────────────
     # ideal = frictionless base; air = 2× ideal; water = 816× air.
-    # Only force / energy / power / work scale — see _scale_resistance().
+    # ideal = frictionless base; air = ideal + C; water = ideal + C*816.
+    # Only force / energy / power / work get the breaking value — see _add_resistance().
     _ideal = _case(M_res=0.0)
     return {
         "inertia":    inertia,
@@ -702,8 +706,8 @@ def calculate(phases: dict) -> dict:
         "t_lajtner":  t_lajtner,
         "a_lajtner":  a_lajtner,
         "ideal":      _ideal,
-        "air":        _scale_resistance(_ideal, 2.0),
-        "water":      _scale_resistance(_ideal, 2.0 * WATER_MULT),
+        "air":        _add_resistance(_ideal, 1.0),
+        "water":      _add_resistance(_ideal, WATER_MULT),
     }
 
 

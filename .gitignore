@@ -8,5 +8,6 @@ __pycache__/
 */outputs
 *.pyc
 */node_modules
-/dist
+*/dist
 *.env
+*.zip

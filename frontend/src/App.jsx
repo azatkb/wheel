@@ -68,6 +68,32 @@ function Shell() {
 
   return (
     <div className="app-shell">
+      {/* Make the menu scroll when items don't fit (large fonts / short screens).
+          The logo + footer stay pinned; only the nav list scrolls. */}
+      <style>{`
+        .sidebar {
+          display: flex !important;
+          flex-direction: column !important;
+          max-height: 100vh;
+          max-height: 100dvh;
+        }
+        .sidebar-logo, .sidebar-footer { flex-shrink: 0 !important; }
+        .nav-section {
+          flex: 1 1 auto !important;
+          min-height: 0 !important;
+          overflow-y: auto !important;
+          overscroll-behavior: contain;
+          scrollbar-width: thin;
+          scrollbar-color: rgba(0,255,136,.35) transparent;
+        }
+        .nav-section::-webkit-scrollbar { width: 7px; }
+        .nav-section::-webkit-scrollbar-track { background: transparent; }
+        .nav-section::-webkit-scrollbar-thumb {
+          background: rgba(0,255,136,.35);
+          border-radius: 4px;
+        }
+        .nav-section::-webkit-scrollbar-thumb:hover { background: rgba(0,255,136,.6); }
+      `}</style>
       {/* Mobile top bar */}
       <header className="mobile-topbar">
         <span className="mobile-logo" style={{display:'flex',alignItems:'center',gap:'.5rem'}}>

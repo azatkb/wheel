@@ -13,7 +13,7 @@ function isMaster(email) {
 
 const PHYS_ROWS = [
   { key: 'J',               label: 'Inertia_total (J)',               unit: 'kg·m²'   },
-  { key: 'beta_accel',      label: 'Angular Acceleration (α)',        unit: 'rad/s²'  },
+ { key: 'alpha',  label: 'Angular Acceleration (α)',  unit: 'rad/s²' },
   { key: 'phi_total',       label: 'Angular Displacement (θ)',        unit: 'rad'     },
   { key: 'omega_max',       label: 'Final Angular Velocity (ω)',      unit: 'rad/s'   },
   { key: 'omega_avg',       label: 'Average Angular Velocity',        unit: 'rad/s'   },
