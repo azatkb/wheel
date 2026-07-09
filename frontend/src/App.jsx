@@ -8,6 +8,7 @@ import Stream from './pages/Stream'
 import History from './pages/History'
 import Master from './pages/Master'
 import Analytics from './pages/Analytics'
+import ResonanceList from './pages/ResonanceList'
 import DbViewer from './pages/DbViewer'
 import FPE from './pages/FPE'
 import Forum from './pages/Forum'
@@ -28,6 +29,7 @@ const NAV_ALL = [
   { to: '/forum',        icon: '💬', label: 'Forum' },
   { to: '/store',        icon: '🛒', label: 'Store' },
   { to: '/focus',        icon: '🧠', label: 'Focus Test' },
+  { to: '/resonances',   icon: '📈', label: 'Resonances' },
   { to: 'https://lajtnerresonance.com', icon: '✉', label: 'Contact', external: true },
   { to: '/store-admin',   icon: '🏪', label: 'Store Admin', masterOnly: true },
   { to: '/statistics',    icon: '📊', label: 'Statistics', masterOnly: true, ultimateOk: true },
@@ -205,6 +207,7 @@ function Shell() {
           <Route path="/history"      element={<History />} />
           <Route path="/subscription" element={<Subscription />} />
           <Route path="/analytics"    element={<Analytics />} />
+          <Route path="/resonances"   element={<ResonanceList />} />
           <Route path="/master"       element={master ? <Master /> : <Navigate to="/upload" replace />} />
           <Route path="/fpe"          element={master ? <FPE /> : <Navigate to="/upload" replace />} />
           <Route path="/forum"        element={<Forum />} />

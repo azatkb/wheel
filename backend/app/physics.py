@@ -601,6 +601,30 @@ def calculate(phases: dict) -> dict:
     # But if t_start was detected late, t_accel may be too small
     # Use: if t_start > 0, the real motion time is correct from phase segmentation
 
+    # ── Lajtner Time / Acceleration / Jerk ─────────────────────────────
+    # Lajtner Time = time from standstill until the wheel has turned the first
+    #   1° in the desired direction.  Unit: s.  (Pro + Ultimate)
+    # Lajtner Acceleration = 1° / (Lajtner Time)^3          → degree/s^3
+    # Lajtner Jerk         = (rim arc for 1°) / (Time)^3     → m/s^3   (Ultimate)
+    LAJT_DEG  = 1.0
+    _lt_thr   = math.radians(LAJT_DEG)          # 1° in radians
+    _lt_ang   = phases.get("angles_rad", [])
+    _lt_ts    = phases.get("timestamps", [])
+    lajtner_time = None
+    if _lt_ts and _lt_ang and len(_lt_ts) == len(_lt_ang):
+        # anchor at motion start (t_lajtner); measure until 1° more is travelled
+        _i0   = next((i for i, t in enumerate(_lt_ts) if t >= t_lajtner), 0)
+        _ang0 = abs(_lt_ang[_i0])
+        for _i in range(_i0, len(_lt_ts)):
+            if abs(_lt_ang[_i]) - _ang0 >= _lt_thr:
+                lajtner_time = _lt_ts[_i] - _lt_ts[_i0]
+                break
+    if lajtner_time is not None and lajtner_time <= 0:
+        lajtner_time = None
+    lajtner_accel_deg = (LAJT_DEG / lajtner_time**3) if lajtner_time else None   # degree/s^3
+    _rim_arc_1deg     = L_force * _lt_thr                                        # metres at rim for 1°
+    lajtner_jerk_m    = (_rim_arc_1deg / lajtner_time**3) if lajtner_time else None  # m/s^3
+
     # ── Per-case calculation ───────────────────────────────────────────
     def _case(M_res: float) -> dict:
         """Calculate all 20 variables for one resistance case."""
@@ -705,6 +729,9 @@ def calculate(phases: dict) -> dict:
         "resistance": {"M_air": M_air, "M_water": M_water},
         "t_lajtner":  t_lajtner,
         "a_lajtner":  a_lajtner,
+        "lajtner_time":      lajtner_time,       # s        (Pro + Ultimate)
+        "lajtner_accel_deg": lajtner_accel_deg,  # degree/s^3 (Ultimate)
+        "lajtner_jerk_m":    lajtner_jerk_m,     # m/s^3    (Ultimate)
         "ideal":      _ideal,
         "air":        _add_resistance(_ideal, 1.0),
         "water":      _add_resistance(_ideal, WATER_MULT),
@@ -915,6 +942,17 @@ def build_user_message(result: dict, medium: str,
         "planck_freq_Hz": f"{planck_freq:.2e}".replace('e+', 'e+').replace('e-0', 'e-').replace('e+0', 'e+'),
         "planck_freq_raw": planck_freq,
     }
+
+    # Lajtner Time — Pro + Ultimate.  Lajtner Acceleration / Jerk — Ultimate only.
+    _lt = result.get("lajtner_time")
+    if _lt:
+        out["display"]["lajtner_time_s"] = round(_lt, 3)      # seconds
+    if version == "ultimate":
+        if result.get("lajtner_accel_deg") is not None:
+            out["display"]["lajtner_accel_deg"] = result["lajtner_accel_deg"]   # degree/s^3
+        if result.get("lajtner_jerk_m") is not None:
+            out["display"]["lajtner_jerk_m"]    = result["lajtner_jerk_m"]      # m/s^3
+    out["display"]["medium"] = medium   # so UI can print "measured in air/water"
 
     # ── Personal ranking (paid) ────────────────────────────────────────
     if user_avg:

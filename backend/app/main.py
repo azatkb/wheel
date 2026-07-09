@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 import cv2
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, Form, WebSocket, WebSocketDisconnect, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import (
@@ -50,14 +50,13 @@ from app.database import (
     get_master_data, get_user_bar_data, export_to_master_csv,
 )
 from app.stabilizer import Stabilizer
-from app.ntag_routes import router as ntag_router
 
 logging.basicConfig(level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")
 log = logging.getLogger(__name__)
 
 # ── App settings ───────────────────────────────────────────────────────────
-WATERMARK_TEXT       = "LAJTNER.com"
+WATERMARK_TEXT       = "lajtnerresonance.com"
 MAX_ANGLE_JUMP       = 30.0   # degrees — reject spoke-hop jumps
 DEFAULT_LANG         = "en"
 DEFAULT_VERSION      = "basic"
@@ -77,8 +76,6 @@ app.add_middleware(
     allow_origins=["*"], allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"], expose_headers=["*"],
 )
-
-app.include_router(ntag_router)
 
 executor = ThreadPoolExecutor(max_workers=2)
 jobs: dict = {}
@@ -264,12 +261,13 @@ def _process_video_seg(video_path, out_path, job_id="local",
     H     = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # OpenCV writes mp4v (reliably encodes real frames). imageio re-encodes to
-    # H.264 afterwards for browser playback. NOTE: avc1 in OpenCV often reports
-    # isOpened()=True but writes BLACK frames (no openh264 in the build) — that
-    # was the cause of the black downloaded video, so we don't use avc1 here.
-    fourcc  = cv2.VideoWriter_fourcc(*"mp4v")
+    # Try H.264 (avc1) first for Android/Chrome compatibility
+    fourcc  = cv2.VideoWriter_fourcc(*"avc1")
     out_vid = cv2.VideoWriter(str(out_path), fourcc, fps, (W, H + BAR_HEIGHT))
+    if not out_vid.isOpened():
+        log.warning("[VIDEO] avc1 failed, trying mp4v")
+        fourcc  = cv2.VideoWriter_fourcc(*"mp4v")
+        out_vid = cv2.VideoWriter(str(out_path), fourcc, fps, (W, H + BAR_HEIGHT))
     if not out_vid.isOpened():
         log.warning("[VIDEO] mp4v failed, trying XVID")
         fourcc  = cv2.VideoWriter_fourcc(*"XVID")
@@ -395,19 +393,6 @@ def _process_video_seg(video_path, out_path, job_id="local",
         ann = frame_s.copy()
         draw_seg_overlay(ann, mask, hub, contour, tips, ora_blob, rot_smooth, rot_cum, bbox, tip_colors=tip_colors, draw_mesh=DRAW_MESH_OVERLAY)
 
-        # Big timestamp burned on the video frame itself (Pro download)
-        _t_txt   = f"{t_sec:.1f}s"
-        _t_scale = max(1.1, W / 650.0)
-        _t_thick = max(2, int(W / 450))
-        (_tw, _th), _ = cv2.getTextSize(_t_txt, cv2.FONT_HERSHEY_SIMPLEX, _t_scale, _t_thick)
-        _tx = 16
-        _ty = H - 18                       # bottom-left, clear of angle box + watermark
-        _ov = ann.copy()
-        cv2.rectangle(_ov, (_tx - 10, _ty - _th - 12), (_tx + _tw + 12, _ty + 12), (0, 0, 0), -1)
-        cv2.addWeighted(_ov, 0.5, ann, 0.5, 0, ann)
-        cv2.putText(ann, _t_txt, (_tx, _ty), cv2.FONT_HERSHEY_SIMPLEX, _t_scale, (0, 0, 0),       _t_thick + 3, cv2.LINE_AA)  # outline
-        cv2.putText(ann, _t_txt, (_tx, _ty), cv2.FONT_HERSHEY_SIMPLEX, _t_scale, (255, 255, 255), _t_thick,     cv2.LINE_AA)  # fill
-
 
         # Draw info bar below frame
         bar = np.full((BAR_HEIGHT, W, 3), (18, 18, 18), np.uint8)
@@ -422,8 +407,8 @@ def _process_video_seg(video_path, out_path, job_id="local",
         t_s    = f"{t_sec:.2f} s"
         col1, col2, col3 = 14, W//3, 2*W//3
         # Time
-        cv2.putText(bar,"TIME",(col1,22),cv2.FONT_HERSHEY_SIMPLEX,0.42,GRAY,1)
-        cv2.putText(bar,t_s,(col1,54),cv2.FONT_HERSHEY_SIMPLEX,1.15,WHITE,3,cv2.LINE_AA)
+        cv2.putText(bar,"TIME",(col1,22),cv2.FONT_HERSHEY_SIMPLEX,0.38,GRAY,1)
+        cv2.putText(bar,t_s,(col1,50),cv2.FONT_HERSHEY_SIMPLEX,0.85,WHITE,2,cv2.LINE_AA)
         # Rotation
         cv2.putText(bar,"ROTATION",(col1,78),cv2.FONT_HERSHEY_SIMPLEX,0.38,GRAY,1)
         cv2.putText(bar,rot_s,(col1,108),cv2.FONT_HERSHEY_SIMPLEX,0.95,YELLOW,2,cv2.LINE_AA)
@@ -703,10 +688,7 @@ def _get_user(email: str):
 # ── Stripe payment integration ─────────────────────────────────────────────
 STRIPE_SECRET_KEY     = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-STRIPE_PRICE_ID                  = os.environ.get("STRIPE_PRICE_ID", "")                   # Pro monthly
-STRIPE_PRICE_ID_ANNUAL           = os.environ.get("STRIPE_PRICE_ID_ANNUAL", "")            # Pro annual
-STRIPE_PRICE_ID_ULTIMATE         = os.environ.get("STRIPE_PRICE_ID_ULTIMATE", "")          # Ultimate monthly
-STRIPE_PRICE_ID_ULTIMATE_ANNUAL  = os.environ.get("STRIPE_PRICE_ID_ULTIMATE_ANNUAL", "")   # Ultimate annual
+STRIPE_PRICE_ID       = os.environ.get("STRIPE_PRICE_ID", "")  # monthly Pro price
 
 @app.post("/stripe/create-checkout")
 async def stripe_create_checkout(request: Request):
@@ -717,15 +699,6 @@ async def stripe_create_checkout(request: Request):
     email = (body.get("email") or "").strip().lower()
     if not email:
         raise HTTPException(400, "Email required")
-    plan = (body.get("plan") or "pro").strip().lower()
-    billing = (body.get("billing") or "month").strip().lower()
-    annual = billing in ("year", "annual", "yearly")
-    if plan == "ultimate":
-        price_id = STRIPE_PRICE_ID_ULTIMATE_ANNUAL if annual else STRIPE_PRICE_ID_ULTIMATE
-    else:
-        price_id = STRIPE_PRICE_ID_ANNUAL if annual else STRIPE_PRICE_ID
-    if not price_id:
-        raise HTTPException(503, f"No Stripe price configured for plan '{plan}' ({billing})")
     try:
         import stripe
         stripe.api_key = STRIPE_SECRET_KEY
@@ -733,10 +706,10 @@ async def stripe_create_checkout(request: Request):
             payment_method_types=["card"],
             mode="subscription",
             customer_email=email,
-            line_items=[{"price": price_id, "quantity": 1}],
+            line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
             success_url=body.get("success_url", "https://enyem.com/subscription?success=1"),
             cancel_url=body.get("cancel_url",  "https://enyem.com/subscription?cancelled=1"),
-            metadata={"user_email": email, "plan": plan, "billing": billing},
+            metadata={"user_email": email},
         )
         return {"url": session.url, "session_id": session.id}
     except Exception as e:
@@ -752,22 +725,16 @@ async def stripe_check_session(session_id: str = "", email: str = ""):
         import stripe
         stripe.api_key = STRIPE_SECRET_KEY
         session = stripe.checkout.Session.retrieve(session_id)
-        pay_status = getattr(session, "payment_status", "")   # 'paid' | 'unpaid' | ...
-        sub_status = getattr(session, "status", "")           # 'complete' | 'open' | ...
-        # plan we stored in metadata at checkout creation
-        meta = getattr(session, "metadata", {}) or {}
-        plan = (meta.get("plan") if isinstance(meta, dict)
-                else getattr(meta, "plan", "")) or "pro"
-        if plan not in ("pro", "ultimate"):
-            plan = "pro"
-        if pay_status == "paid" or sub_status == "complete":
+        status = getattr(session, "payment_status", "")
+        sub_status = getattr(session, "status", "")
+        if status == "pro" or sub_status == "complete":
             cust_email = getattr(session, "customer_email", "") or email
             if cust_email:
                 from app.database import _sb
                 sb = _sb()
-                sb.table("wt_users").update({"plan": plan}).eq("email", cust_email.lower()).execute()
-                log.info(f"[STRIPE] plan={plan} via check-session for {cust_email}")
-            return {"ok": True, "plan": plan, "status": sub_status}
+                sb.table("wt_users").update({"plan":"pro"}).eq("email", cust_email.lower()).execute()
+                log.info(f"[STRIPE] plan updated via check-session for {cust_email}")
+            return {"ok": True, "plan": "pro", "status": sub_status}
         return {"ok": False, "status": sub_status}
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -826,21 +793,11 @@ async def stripe_webhook(request: Request):
                     email = getattr(cust, "email", "") or ""
             except Exception:
                 pass
-        # plan from checkout metadata (pro | ultimate); default pro
-        plan = "pro"
-        try:
-            meta = getattr(obj, "metadata", {})
-            p = (meta.get("plan") if isinstance(meta, dict)
-                 else getattr(meta, "plan", "")) or ""
-            if p in ("pro", "ultimate"):
-                plan = p
-        except Exception:
-            pass
         if email:
             try:
                 from app.database import _sb
                 sb = _sb()
-                sb.table("wt_users").update({"plan": plan}).eq("email", email.lower()).execute()
+                sb.table("wt_users").update({"plan": "pro"}).eq("email", email.lower()).execute()
                 log.info(f"[STRIPE] upgraded {email} to paid")
             except Exception as e:
                 log.error(f"[STRIPE] db update failed: {e}")
@@ -1234,6 +1191,31 @@ def api_jobs(email: str = "", limit: int = 200, token: str = ""):
             row["message"] = mem["message"]
     return {"jobs": rows}
 
+@app.get("/api/resonance-list")
+def api_resonance_list(limit: int = 2000):
+    """Public: all Lajtner Resonance values (numeric, sorted min -> max) for comparison.
+    Air-basis (uniform scale for everyone). No emails — privacy safe."""
+    from app.database import _sb
+    sb = _sb()
+    if not sb:
+        raise HTTPException(500, "DB unavailable")
+    try:
+        resp = sb.table("physics_results").select("w_total_air").execute()
+    except Exception as e:
+        log.warning(f"[RESONANCE] list read failed: {e}")
+        raise HTTPException(500, "DB read failed")
+    vals = []
+    for r in (resp.data or []):
+        e = r.get("w_total_air") or 0
+        if e and e > 0:
+            vals.append(e / 6.626e-34)          # Lajtner Resonance = Work / Planck
+    vals.sort()                                  # min -> max
+    if limit:
+        vals = vals[:limit]
+    n = len(vals)
+    stats = {"min": vals[0], "max": vals[-1], "avg": sum(vals) / n, "count": n} if n else {}
+    return {"values": vals, "stats": stats}
+
 # ── WebSocket stream ───────────────────────────────────────────────────────
 @app.websocket("/stream")
 async def stream_ws(ws: WebSocket):
@@ -1386,76 +1368,6 @@ def master_users(email: str = "", token: str = ""):
     for r in rows:
         users[r.get("email","?")] += 1
     return {"users": [{"email": e, "count": c} for e,c in sorted(users.items())]}
-
-# ── Generic DB viewer / export (master only) ───────────────────────────────
-ALLOWED_TABLES = [
-    "wt_jobs", "wt_samples", "physics_results", "wt_users",
-    "forum_posts", "forum_comments", "forum_likes", "forum_notifications",
-    "store_products", "store_orders", "store_coupons", "store_bundle_grants",
-    "focus_questionnaire",
-]
-
-def _master_auth(email: str, token: str):
-    if email not in ("azatkb22@gmail.com", "lajtnert@gmail.com") and token != MASTER_TOKEN:
-        raise HTTPException(401, "Unauthorized")
-
-@app.get("/master/tables")
-def master_tables(email: str = "", token: str = ""):
-    """List all viewable tables."""
-    _master_auth(email, token)
-    return {"tables": ALLOWED_TABLES}
-
-@app.get("/master/table")
-def master_table(name: str = "", email: str = "", token: str = "", limit: int = 5000):
-    """Read all rows of any allow-listed table."""
-    _master_auth(email, token)
-    if name not in ALLOWED_TABLES:
-        raise HTTPException(400, f"Unknown table '{name}'")
-    from app.database import _sb
-    sb = _sb()
-    if sb is None:
-        raise HTTPException(500, "DB unavailable")
-    resp = sb.table(name).select("*").limit(limit).execute()
-    rows = resp.data or []
-    return {"table": name, "count": len(rows), "rows": rows}
-
-def _sql_val(v):
-    if v is None:               return "NULL"
-    if isinstance(v, bool):     return "TRUE" if v else "FALSE"
-    if isinstance(v, (int, float)): return str(v)
-    if isinstance(v, (dict, list)):
-        return "'" + json.dumps(v).replace("'", "''") + "'"
-    return "'" + str(v).replace("'", "''") + "'"
-
-@app.get("/master/export-sql")
-def master_export_sql(name: str = "", email: str = "", token: str = "", limit: int = 100000):
-    """Export DB as SQL INSERT statements. name='' → whole DB, else single table."""
-    _master_auth(email, token)
-    from app.database import _sb
-    sb = _sb()
-    if sb is None:
-        raise HTTPException(500, "DB unavailable")
-    tables = [name] if name in ALLOWED_TABLES else ALLOWED_TABLES
-    lines = [
-        "-- WheelTracker / LAJTNER.com database export",
-        f"-- generated {datetime.datetime.utcnow().isoformat()}Z",
-        f"-- tables: {', '.join(tables)}",
-    ]
-    for t in tables:
-        try:
-            rows = (sb.table(t).select("*").limit(limit).execute()).data or []
-        except Exception as e:
-            lines.append(f"\n-- {t}: skipped ({e})")
-            continue
-        lines.append(f"\n-- ── {t}  ({len(rows)} rows) ──")
-        for row in rows:
-            cols = list(row.keys())
-            vals = [_sql_val(row[c]) for c in cols]
-            lines.append(f"INSERT INTO {t} ({', '.join(cols)}) VALUES ({', '.join(vals)});")
-    content = "\n".join(lines) + "\n"
-    fname = f"wt_db{('_' + name) if name in ALLOWED_TABLES else '_full'}.sql"
-    return Response(content, media_type="application/sql",
-                    headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 @app.get("/bar-data/{email}")
 def bar_data(email: str, token: str = ""):
@@ -1621,21 +1533,12 @@ def stats_factor_analysis(factor: str = "q1_illness", admin_email: str = ""):
     """
     from app.database import _sb, get_group_averages
     import numpy as np, scipy.stats as stats
-    sb = _sb()
-    if not sb: raise HTTPException(500, "DB unavailable")
-    # Access: master OR Ultimate-plan user. Returns aggregates only (no emails),
-    # so it is safe to expose to Ultimate subscribers.
     if not _is_master(admin_email):
-        allowed = False
-        try:
-            rr = sb.table("wt_users").select("plan").eq("email", (admin_email or "").lower()).limit(1).execute()
-            allowed = bool(rr.data) and rr.data[0].get("plan") == "ultimate"
-        except Exception:
-            allowed = False
-        if not allowed:
-            raise HTTPException(403, "Ultimate plan required")
+        raise HTTPException(403, "Master only")
     if factor not in Q_FIELDS:
         raise HTTPException(400, f"factor must be one of {Q_FIELDS}")
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
 
     # Average power of all users
     grp = get_group_averages()
@@ -1677,8 +1580,6 @@ def stats_factor_analysis(factor: str = "q1_illness", admin_email: str = ""):
     result = _odds_ratio(A, B, C, D)
     result["factor"] = factor
     result["avg_power"] = round(avg_power, 6)
-    result["cells"] = {"A": A, "B": B, "C": C, "D": D}   # opt1/opt2 × high/low power
-    result["n"] = total
     return result
 
 
@@ -1737,7 +1638,6 @@ def stats_odds_ratio_auto(admin_email: str = "", threshold: float = 0, metric: s
 # ─────────────────────────────────────────────
 
 async def _verify_recaptcha(token: str) -> bool:
-    return True
     """Verify Google reCAPTCHA v2 token."""
     import os as _os, httpx as _hx
     secret = _os.environ.get("RECAPTCHA_SECRET_KEY", "")
