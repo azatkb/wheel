@@ -125,7 +125,7 @@ export default function Login() {
         I accept the{' '}
         <a href="https://lajtner.com/terms-privacy.html"
           target="_blank" rel="noopener noreferrer"
-          style={{color:'var(--green)'}}>Terms &amp; Privacy</a>.
+          style={{color:'var(--green)'}}>Terms of Use and Privacy Policy</a>.
       </label>
     </div>
   )

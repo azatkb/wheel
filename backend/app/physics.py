@@ -601,29 +601,49 @@ def calculate(phases: dict) -> dict:
     # But if t_start was detected late, t_accel may be too small
     # Use: if t_start > 0, the real motion time is correct from phase segmentation
 
-    # ── Lajtner Time / Acceleration / Jerk ─────────────────────────────
-    # Lajtner Time = time from standstill until the wheel has turned the first
-    #   1° in the desired direction.  Unit: s.  (Pro + Ultimate)
-    # Lajtner Acceleration = 1° / (Lajtner Time)^3          → degree/s^3
-    # Lajtner Jerk         = (rim arc for 1°) / (Time)^3     → m/s^3   (Ultimate)
-    LAJT_DEG  = 1.0
-    _lt_thr   = math.radians(LAJT_DEG)          # 1° in radians
-    _lt_ang   = phases.get("angles_rad", [])
-    _lt_ts    = phases.get("timestamps", [])
+    # ── Lajtner Time / Lajtner Jerk ────────────────────────────────────
+    # Lajtner Time = time from the START of the recording (ALL standstill time
+    #   included) until the wheel first turns 1° in the desired direction.
+    #   Unit: s.  (all plans)
+    # Lajtner Jerk = angle / (moving time)^3, over the first ~2° of actual
+    #   motion (the "moving time of those 1-2 degrees").
+    #   Units: rad/s^3 (master) and degree/s^3 (user).  (Pro + Ultimate)
+    _lt_ts  = phases.get("timestamps", [])
+    _lt_ang = phases.get("angles_rad", [])
+    # progress in the desired direction, in degrees (angles_rad is already
+    # direction-filtered upstream: wrong-direction motion is zeroed out)
+    _prog = [abs(math.degrees(a)) for a in _lt_ang] if _lt_ang else []
+    _pmax = max(_prog) if _prog else 0.0
+
+    # --- Lajtner Time: from t=0 until first sustained 1° in the desired direction
     lajtner_time = None
-    if _lt_ts and _lt_ang and len(_lt_ts) == len(_lt_ang):
-        # anchor at motion start (t_lajtner); measure until 1° more is travelled
-        _i0   = next((i for i, t in enumerate(_lt_ts) if t >= t_lajtner), 0)
-        _ang0 = abs(_lt_ang[_i0])
-        for _i in range(_i0, len(_lt_ts)):
-            if abs(_lt_ang[_i]) - _ang0 >= _lt_thr:
-                lajtner_time = _lt_ts[_i] - _lt_ts[_i0]
+    if _lt_ts and _prog and len(_lt_ts) == len(_prog):
+        for _i in range(len(_lt_ts)):
+            if _prog[_i] >= 1.0 and max(_prog[_i:]) >= 2.0:   # real motion, not a wobble blip
+                lajtner_time = _lt_ts[_i] - _lt_ts[0]
                 break
-    if lajtner_time is not None and lajtner_time <= 0:
+    if lajtner_time is not None and lajtner_time < 0:
         lajtner_time = None
-    lajtner_accel_deg = (LAJT_DEG / lajtner_time**3) if lajtner_time else None   # degree/s^3
-    _rim_arc_1deg     = L_force * _lt_thr                                        # metres at rim for 1°
-    lajtner_jerk_m    = (_rim_arc_1deg / lajtner_time**3) if lajtner_time else None  # m/s^3
+
+    # --- Lajtner Jerk: moving time of the first ~2° of motion
+    lajtner_jerk_deg = None    # degree/s^3  (user)
+    lajtner_jerk_rad = None    # rad/s^3     (master / me)
+    if _lt_ts and _prog and _pmax >= 1.0:
+        _target = min(2.0, _pmax)                              # 2° (or whatever was reached, >=1°)
+        _i2 = next((i for i in range(len(_prog))
+                    if _prog[i] >= _target and max(_prog[i:]) >= _target * 0.99), None)
+        if _i2 is not None:
+            # motion start = last essentially-still sample just before the climb
+            _i0 = 0
+            for _j in range(_i2, -1, -1):
+                if _prog[_j] <= 0.2:
+                    _i0 = _j
+                    break
+            _t_move   = _lt_ts[_i2] - _lt_ts[_i0]
+            _theta_dg = _prog[_i2] - _prog[_i0]
+            if _t_move > 0 and _theta_dg > 0:
+                lajtner_jerk_deg = _theta_dg / (_t_move ** 3)               # degree/s^3
+                lajtner_jerk_rad = math.radians(_theta_dg) / (_t_move ** 3) # rad/s^3
 
     # ── Per-case calculation ───────────────────────────────────────────
     def _case(M_res: float) -> dict:
@@ -729,9 +749,9 @@ def calculate(phases: dict) -> dict:
         "resistance": {"M_air": M_air, "M_water": M_water},
         "t_lajtner":  t_lajtner,
         "a_lajtner":  a_lajtner,
-        "lajtner_time":      lajtner_time,       # s        (Pro + Ultimate)
-        "lajtner_accel_deg": lajtner_accel_deg,  # degree/s^3 (Ultimate)
-        "lajtner_jerk_m":    lajtner_jerk_m,     # m/s^3    (Ultimate)
+        "lajtner_time":      lajtner_time,       # s          (all plans)
+        "lajtner_jerk_deg":  lajtner_jerk_deg,   # degree/s^3 (Pro + Ultimate, user-facing)
+        "lajtner_jerk_rad":  lajtner_jerk_rad,   # rad/s^3    (Pro + Ultimate, master)
         "ideal":      _ideal,
         "air":        _add_resistance(_ideal, 1.0),
         "water":      _add_resistance(_ideal, WATER_MULT),
@@ -929,7 +949,12 @@ def build_user_message(result: dict, medium: str,
             "force_N":        _sci(F_max),
             "planck_freq_Hz": f"{planck_freq_free:.2e}" if planck_freq_free else None,
             "planck_freq_raw": planck_freq_free,
+            "medium":         medium,
         }
+        # Lajtner Time is shown on ALL plans
+        _lt_free = result.get("lajtner_time")
+        if _lt_free:
+            out["display"]["lajtner_time_s"] = round(_lt_free, 3)
         return out
 
     # ── Paid version — full display ────────────────────────────────────
@@ -943,15 +968,15 @@ def build_user_message(result: dict, medium: str,
         "planck_freq_raw": planck_freq,
     }
 
-    # Lajtner Time — Pro + Ultimate.  Lajtner Acceleration / Jerk — Ultimate only.
+    # Lajtner Time — all plans.  Lajtner Jerk — Pro + Ultimate.
     _lt = result.get("lajtner_time")
     if _lt:
         out["display"]["lajtner_time_s"] = round(_lt, 3)      # seconds
-    if version == "ultimate":
-        if result.get("lajtner_accel_deg") is not None:
-            out["display"]["lajtner_accel_deg"] = result["lajtner_accel_deg"]   # degree/s^3
-        if result.get("lajtner_jerk_m") is not None:
-            out["display"]["lajtner_jerk_m"]    = result["lajtner_jerk_m"]      # m/s^3
+    if version in ("pro", "ultimate"):
+        if result.get("lajtner_jerk_deg") is not None:
+            out["display"]["lajtner_jerk_deg"] = result["lajtner_jerk_deg"]   # degree/s^3 (user)
+        if result.get("lajtner_jerk_rad") is not None:
+            out["display"]["lajtner_jerk_rad"] = result["lajtner_jerk_rad"]   # rad/s^3 (master)
     out["display"]["medium"] = medium   # so UI can print "measured in air/water"
 
     # ── Personal ranking (paid) ────────────────────────────────────────

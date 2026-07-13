@@ -332,6 +332,9 @@ export default function Subscription() {
         <strong style={{color:'var(--text)'}}>Secure payment</strong> via{' '}
         <span style={{color:'var(--blue)',fontWeight:600}}>Stripe</span>.
         Your card is never stored on our servers. Subscriptions renew monthly and can be cancelled anytime.
+        <br /><br />
+        By subscribing, you authorize Lajtner Code Pl to charge you according to the terms until you cancel your subscription.
+        <br /><br />
         Questions? <a href="mailto:info@enyem.com" style={{color:'var(--green)'}}>info@enyem.com</a>
       </div>
     </div>

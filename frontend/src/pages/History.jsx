@@ -66,6 +66,11 @@ export default function History() {
           <div key={j.id} className={`track-item ${expanded === j.id ? 'expanded' : ''}`}>
             <div className="track-header" onClick={() => toggle(j.id)}>
               <span className={`track-dot dot-${j.status || 'queued'}`} />
+              <span style={{color:'var(--amber)',fontWeight:700,marginRight:'.75rem',
+                whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:220}}
+                title={j.nickname || ''}>
+                {j.nickname || 'Untitled'}
+              </span>
               <span className="track-date">
                 {j.created_at ? new Date(j.created_at).toLocaleString() : '—'}
               </span>
@@ -206,11 +211,12 @@ function TrackDetail({ id, job, data }) {
           return (
             <button className="btn btn-secondary btn-sm"
               onClick={() => {
+                const nn = job?.nickname || 'My measurement'
                 sessionStorage.setItem('forum_share', JSON.stringify({
-                  job_id: id, lr_value: lr,
+                  job_id: id, lr_value: lr, nickname: nn,
                   rotation_deg: maxC, medium: job?.medium || 'air',
-                  title: `My result: ${lr}`,
-                  body: `Rotation: ${maxC.toFixed(1)}° · Medium: ${(job?.medium||'air').toUpperCase()} · Lajtner Resonance: ${lr}`
+                  title: `${nn} — ${lr}`,
+                  body: `Video: ${nn}\nRotation: ${maxC.toFixed(1)}° · Medium: ${(job?.medium||'air').toUpperCase()} · Lajtner Resonance: ${lr}`
                 }))
                 window.location.href = '/forum'
               }}>💬 Share</button>

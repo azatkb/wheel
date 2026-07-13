@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../hooks/useAuth.jsx'
 import { API } from '../config'
+import { maskEmail } from '../utils/maskEmail'
 
 const MASTER_EMAILS = ['azatkb22@gmail.com', 'lajtnert@gmail.com']
 const isMaster = e => MASTER_EMAILS.includes(e?.toLowerCase())
@@ -68,11 +69,7 @@ function Leaderboard({ user }) {
   const getVel = (r) => (r.cumulative_deg && r.t_lajtner > 0)
     ? (r.cumulative_deg / r.t_lajtner).toFixed(3) : '—'
 
-  const anonymize = (email) => {
-    const parts = email.split('@')
-    const name = parts[0]
-    return name.slice(0,2) + '***@' + parts[1]
-  }
+  const anonymize = (email) => maskEmail(email)  // unified masking l…t@g…m
 
   const sorted = [...rows].sort((a,b) =>
     sortBy === 'lr' ? getLR(b.w_total_air) - getLR(a.w_total_air)
@@ -123,7 +120,7 @@ function Leaderboard({ user }) {
                 <td style={{padding:'.3rem .5rem',
                   color: isMe ? 'var(--green)' : 'var(--text)',
                   fontWeight: isMe ? 700 : 400}}>
-                  {anonymize(r.email)}
+                  {maskEmail(r.email)}
                   {isMe && <span style={{fontSize:'.68rem',color:'var(--green)',marginLeft:'.4rem'}}>← you</span>}
                 </td>
                 <td style={{padding:'.3rem .5rem',textAlign:'right',
@@ -212,7 +209,7 @@ function PostPage({ post, user, onBack, onRefresh }) {
               {post.title}
             </h2>
             <div style={{fontSize:'.75rem',color:'var(--muted)'}}>
-              {post.user_email.split('@')[0]} · {timeAgo(post.created_at)}
+              {maskEmail(post.user_email)} · {timeAgo(post.created_at)}
             </div>
           </div>
         </div>
@@ -289,7 +286,7 @@ function PostPage({ post, user, onBack, onRefresh }) {
             <Avatar email={c.user_email} />
             <div style={{flex:1}}>
               <div style={{fontSize:'.72rem',color:'var(--muted)',marginBottom:'.2rem'}}>
-                {c.user_email.split('@')[0]} · {timeAgo(c.created_at)}
+                {maskEmail(c.user_email)} · {timeAgo(c.created_at)}
                 {(master || c.user_email === user.email) && (
                   <button onClick={() => deleteComment(c.id)} style={{
                     marginLeft:'.75rem',background:'none',border:'none',
@@ -374,6 +371,9 @@ function NewPostModal({ user, onClose, onCreated, shareData }) {
           }}>
             <span style={{color:'var(--muted)'}}>Sharing: </span>
             <span style={{color:'var(--amber)',fontWeight:700}}>{shareData.lr_value}</span>
+            {shareData.nickname && (
+              <span style={{color:'var(--text)',marginLeft:'.5rem'}}>· {shareData.nickname}</span>
+            )}
             {shareData.rotation_deg > 0 && (
               <span style={{color:'var(--dim)',marginLeft:'.5rem'}}>
                 · ↻ {shareData.rotation_deg?.toFixed(1)}° · {(shareData.medium||'air').toUpperCase()}
@@ -452,7 +452,7 @@ function PostCard({ post, onOpen }) {
             alignItems:'center',flexWrap:'wrap',gap:'.4rem',marginBottom:'.3rem'}}>
             <span style={{fontSize:'.75rem',color:'var(--muted)'}}>
               <span style={{color:'var(--text)',fontWeight:500}}>
-                {post.user_email.split('@')[0]}
+                {maskEmail(post.user_email)}
               </span>
               <span style={{marginLeft:'.5rem'}}>{timeAgo(post.created_at)}</span>
             </span>
@@ -656,7 +656,7 @@ export default function Forum() {
                   fontSize:'.8rem',cursor:'pointer'
                 }} onClick={() => setShowNotifs(false)}>
                   <span style={{color:'var(--text)',fontWeight:500}}>
-                    {n.from_email?.split('@')[0]}
+                    {maskEmail(n.from_email)}
                   </span>
                   <span style={{color:'var(--muted)',marginLeft:'.4rem'}}>
                     {n.type === 'comment' ? 'commented on your post' : 'liked your post'}

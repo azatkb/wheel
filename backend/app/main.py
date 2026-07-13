@@ -1033,6 +1033,42 @@ def add_lr_overlay(video_path: str, planck_freq: float):
         log.warning(f"[VIDEO] LR overlay failed: {e}")
 
 
+def _set_job_nickname(job_id: str, nickname: str) -> str:
+    """Save a user-facing nickname for a job (auto-generate one if empty).
+    Videos are never sent back to the user — this nickname is how they find
+    and share the measurement from their own page / the forum."""
+    nn = (nickname or "").strip()[:80]
+    if not nn:
+        ts = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        nn = f"Measurement {ts}"
+    try:
+        from app.database import _sb
+        sb = _sb()
+        if sb:
+            sb.table("wt_jobs").update({"nickname": nn}).eq("id", job_id).execute()
+    except Exception as e:
+        log.warning(f"[JOB] nickname save failed: {e}")
+    return nn
+
+
+def _mask_email(email: str) -> str:
+    """Mask an email for public display on the forum, e.g.
+    lajtnert@gmail.com -> l...t@g...m  (never show the full address)."""
+    try:
+        email = (email or "").strip()
+        if "@" not in email:
+            return "user"
+        local, domain = email.split("@", 1)
+        def _m(s):
+            s = s or ""
+            if len(s) <= 2:
+                return (s[:1] or "") + "…"
+            return s[0] + "…" + s[-1]
+        return f"{_m(local)}@{_m(domain)}"
+    except Exception:
+        return "user"
+
+
 @app.post("/upload")
 async def upload(
     file:         UploadFile = File(...),
@@ -1043,6 +1079,7 @@ async def upload(
     info_level:   str  = Form(default=DEFAULT_INFO_LEVEL),
     version:      str  = Form(default=DEFAULT_VERSION),
     lang:         str  = Form(default=DEFAULT_LANG),
+    nickname:     str  = Form(default=""),
 ):
     suffix = Path(file.filename).suffix.lower()
     if suffix not in (".mp4",".avi",".mov",".mkv",".webm"):
@@ -1056,14 +1093,16 @@ async def upload(
     if _is_master(user_email):
         version = "pro"
     create_job(job_id, user_email, "upload", direction, medium, hand_visible, info_level)
+    _nn = _set_job_nickname(job_id, nickname)
     jobs[job_id] = {"status":"queued","progress":{"pct":0},
                     "user_email": user_email,
                     "source_type": "upload",
+                    "nickname": _nn,
                     "created_at": datetime.datetime.utcnow().isoformat()}
     asyncio.get_event_loop().run_in_executor(
         executor, _run_job, job_id, raw_path,
         direction, medium, hand_visible, info_level, user_email, version, lang)
-    return {"job_id":job_id,"status":"queued",
+    return {"job_id":job_id,"status":"queued","nickname":_nn,
             "status_url":f"/status/{job_id}","video_info":info}
 
 @app.get("/status/{job_id}")
@@ -1216,6 +1255,54 @@ def api_resonance_list(limit: int = 2000):
     stats = {"min": vals[0], "max": vals[-1], "avg": sum(vals) / n, "count": n} if n else {}
     return {"values": vals, "stats": stats}
 
+
+@app.get("/api/lajtner-averages")
+def api_lajtner_averages(email: str = ""):
+    """Average Lajtner Time and Lajtner Jerk for one user and for ALL users.
+    Time: lower is better.  Jerk: higher is better.
+    (Frontend shows the user's own average on Pro+Ultimate, all-users on Ultimate.)"""
+    from app.database import _sb
+    sb = _sb()
+    if not sb:
+        raise HTTPException(500, "DB unavailable")
+    try:
+        resp = sb.table("physics_results").select("email, physics_json").execute()
+    except Exception as e:
+        log.warning(f"[LAJTNER-AVG] read failed: {e}")
+        raise HTTPException(500, "DB read failed")
+
+    def _avg(vals):
+        vals = [v for v in vals if isinstance(v, (int, float)) and v > 0]
+        return ((sum(vals) / len(vals)) if vals else None), len(vals)
+
+    em = (email or "").strip().lower()
+    all_t, all_j, my_t, my_j = [], [], [], []
+    for r in (resp.data or []):
+        try:
+            p = json.loads(r.get("physics_json") or "{}")
+        except Exception:
+            continue
+        t = p.get("lajtner_time")
+        j = p.get("lajtner_jerk_deg")
+        if t:
+            all_t.append(t)
+        if j:
+            all_j.append(j)
+        if em and (r.get("email") or "").strip().lower() == em:
+            if t:
+                my_t.append(t)
+            if j:
+                my_j.append(j)
+
+    at, atc = _avg(all_t)
+    aj, ajc = _avg(all_j)
+    mt, mtc = _avg(my_t)
+    mj, mjc = _avg(my_j)
+    return {
+        "user": {"avg_time_s": mt, "avg_jerk_deg": mj, "count": max(mtc, mjc)},
+        "all":  {"avg_time_s": at, "avg_jerk_deg": aj, "count": max(atc, ajc)},
+    }
+
 # ── WebSocket stream ───────────────────────────────────────────────────────
 @app.websocket("/stream")
 async def stream_ws(ws: WebSocket):
@@ -1236,8 +1323,10 @@ async def stream_ws(ws: WebSocket):
         "lang":      params.get("lang",       DEFAULT_LANG),
     }
     create_job(job_id, email, "stream", _sp["direction"], _sp["medium"], False, "basic")
+    _nn = _set_job_nickname(job_id, params.get("nickname", ""))
     jobs[job_id] = {"status":"streaming", "user_email": email,
                     "source_type": "stream",
+                    "nickname": _nn,
                     "created_at": datetime.datetime.utcnow().isoformat(),
                     "progress": {"pct":0}}
     log.info(f"[WS] {ws.client}  job={job_id}")

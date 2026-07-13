@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx'
+import TawkWidget from './components/TawkWidget'
 import Login from './pages/Login'
 import Subscription from './pages/Subscription'
 import Upload from './pages/Upload'
@@ -227,6 +228,7 @@ function Shell() {
 export default function App() {
   return (
     <AuthProvider>
+      <TawkWidget />
       <Routes>
         <Route path="/login" element={<LoginGuard />} />
         <Route path="/*"    element={<Shell />} />

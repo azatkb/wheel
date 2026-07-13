@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { fSI } from '../hooks/useChart'
+import LajtnerStats from './LajtnerStats'
 
 // SI prefix formatters
 const fmtOmega = (v) => {
@@ -316,27 +317,29 @@ export default function PhysicsCard({ msg, result, jobId, isPaid, showTable = tr
             </div>
           )
         })()}
-        {/* Lajtner Time (Pro + Ultimate) — gated by build_user_message */}
+        {/* Lajtner Time — all plans (gated by build_user_message) */}
         {msg?.display?.lajtner_time_s != null && (
           <div className="phys-val-box" style={{borderColor:'rgba(255,136,0,.3)'}}>
             <div className="pv" style={{color:'var(--amber)'}}>{(+msg.display.lajtner_time_s).toFixed(3)} s</div>
             <div className="pl">Lajtner Time{msg?.display?.medium ? ` · in ${msg.display.medium}` : ''}</div>
           </div>
         )}
-        {/* Lajtner Jerk (Ultimate only) */}
-        {msg?.display?.lajtner_jerk_m != null && (() => {
-          const j = +msg.display.lajtner_jerk_m
+        {/* Lajtner Jerk — Pro + Ultimate, shown to user in degrees/s³ */}
+        {msg?.display?.lajtner_jerk_deg != null && (() => {
+          const j = +msg.display.lajtner_jerk_deg
           if (!isFinite(j) || j === 0) return null
           const exp = Math.floor(Math.log10(Math.abs(j)))
           const man = (j / Math.pow(10, exp)).toFixed(2)
           return (
             <div className="phys-val-box" style={{borderColor:'rgba(255,136,0,.3)'}}>
-              <div className="pv" style={{color:'var(--amber)'}}>{man} × 10<sup>{exp}</sup> <span style={{fontSize:'.5em',opacity:.8}}>m/s³</span></div>
+              <div className="pv" style={{color:'var(--amber)'}}>{man} × 10<sup>{exp}</sup> <span style={{fontSize:'.5em',opacity:.8}}>°/s³</span></div>
               <div className="pl">Lajtner Jerk{msg?.display?.medium ? ` · in ${msg.display.medium}` : ''}</div>
             </div>
           )
         })()}
       </div>
+
+      <LajtnerStats />
 
       {isPaid && msg?.display?.energy_J != null && (() => {
         const eV = parseFloat(msg.display.energy_J) / 1.602176634e-19

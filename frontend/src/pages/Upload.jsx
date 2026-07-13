@@ -25,6 +25,7 @@ export default function Upload() {
   const browserLang = (navigator.language || 'en').slice(0,2).toLowerCase()
   const [file, setFile] = useState(null)
   const [hand, setHand] = useState('')
+  const [nickname, setNickname] = useState('')
   const [medium, setMedium] = useState('')
   const [dragging, setDragging] = useState(false)
   const [direction, setDirection] = useState('')
@@ -102,6 +103,7 @@ export default function Upload() {
     fd.append('medium', medium)
     fd.append('lang', (navigator.language||'en').slice(0,2).toLowerCase())
     fd.append('direction', direction)
+    fd.append('nickname', nickname)
 
     const xhr = new XMLHttpRequest()
     xhr.upload.addEventListener('progress', e => {
@@ -288,6 +290,14 @@ export default function Upload() {
             <label className="form-label">Email</label>
             <input className="form-input" value={user?.email || ''} readOnly
               style={{padding:'.45rem .65rem',opacity:.6}} />
+          </div>
+          <div style={{flex:2,minWidth:200}}>
+            <label className="form-label">Video nickname (optional)</label>
+            <input className="form-input" value={nickname}
+              onChange={e => setNickname(e.target.value)}
+              maxLength={80}
+              placeholder="e.g. Morning focus try #1"
+              style={{padding:'.45rem .65rem'}} />
           </div>
         </div>
 
