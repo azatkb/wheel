@@ -1580,6 +1580,29 @@ def master_users(email: str = "", token: str = ""):
         users[r.get("email","?")] += 1
     return {"users": [{"email": e, "count": c} for e,c in sorted(users.items())]}
 
+@app.get("/master/table")
+def master_table(name: str = "", token: str = "", email: str = "", limit: int = 1000):
+    """Master: read raw rows from any table by name (for the DB viewer)."""
+    MASTER_EMAILS = ["azatkb22@gmail.com", "lajtnert@gmail.com"]
+    if email not in MASTER_EMAILS and token != MASTER_TOKEN:
+        raise HTTPException(401, "Unauthorized")
+    import re as _re
+    if not _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name or ''):
+        raise HTTPException(400, "Invalid table name")
+    try:
+        from app.database import _sb
+        sb = _sb()
+        if sb is None:
+            raise HTTPException(500, "DB unavailable")
+        resp = sb.table(name).select("*").limit(max(1, min(limit, 10000))).execute()
+        rows = resp.data or []
+        return {"name": name, "count": len(rows), "rows": rows}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.warning(f"[MASTER/TABLE] read '{name}' failed: {e}")
+        raise HTTPException(500, f"Could not read table '{name}': {e}")
+
 @app.get("/bar-data/{email}")
 def bar_data(email: str, token: str = ""):
     """Return bar chart data: last2 + user_avg + group_avg."""
