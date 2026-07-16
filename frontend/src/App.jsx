@@ -30,7 +30,7 @@ const NAV_ALL = [
   { to: '/forum',        icon: '💬', label: 'Forum' },
   { to: '/store',        icon: '🛒', label: 'Store' },
   { to: '/focus',        icon: '🧠', label: 'Focus Test' },
-  { to: '/resonances',   icon: '📈', label: 'Resonances' },
+  { to: '/resonances',   icon: '📈', label: 'LR-LT-LJ' },
   { to: 'https://lajtnerresonance.com', icon: '✉', label: 'Contact', external: true },
   { to: '/store-admin',   icon: '🏪', label: 'Store Admin', masterOnly: true },
   { to: '/statistics',    icon: '📊', label: 'Statistics', masterOnly: true, ultimateOk: true },

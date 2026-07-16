@@ -1355,6 +1355,76 @@ def api_lajtner_list(email: str = "", limit: int = 2000):
         out[k] = {"mine": _pack(buckets[k]["mine"]), "all": _pack(buckets[k]["all"])}
     return out
 
+
+@app.get("/api/lr-lt-lj")
+def api_lr_lt_lj(email: str = ""):
+    """Full LR / LT / LJ table.
+      LR = Lajtner Resonance (air basis, no unit) · LT = Lajtner Time (s) · LJ = Lajtner Jerk (deg/s^3)
+      is_master : requester is master (full emails + nicknames + may download all as CSV)
+      mine      : requester's own rows (full detail incl. nickname + video length)
+      all       : every measurement (email masked + no nickname unless master)
+      avg       : averages for the user and for everyone
+    """
+    from app.database import _sb
+    sb = _sb()
+    if not sb:
+        raise HTTPException(500, "DB unavailable")
+    em = (email or "").strip().lower()
+    master = _is_master(em)
+    try:
+        pres = sb.table("physics_results").select("job_id, email, physics_json").execute()
+        jres = sb.table("wt_jobs").select("id, user_email, created_at, duration_sec, nickname").execute()
+    except Exception as e:
+        log.warning(f"[LR-LT-LJ] read failed: {e}")
+        raise HTTPException(500, "DB read failed")
+
+    jobmap = {j.get("id"): j for j in (jres.data or [])}
+
+    def _num(x):
+        return x if isinstance(x, (int, float)) and x > 0 else None
+
+    mine, allrows = [], []
+    for r in (pres.data or []):
+        try:
+            p = json.loads(r.get("physics_json") or "{}")
+        except Exception:
+            continue
+        LR = _num((p.get("air") or {}).get("planck_freq"))
+        LT = _num(p.get("lajtner_time"))
+        LJ = _num(p.get("lajtner_jerk_deg"))
+        if LR is None and LT is None and LJ is None:
+            continue
+        job = jobmap.get(r.get("job_id"), {})
+        row_email = (job.get("user_email") or r.get("email") or "").strip()
+        is_mine = bool(em) and row_email.lower() == em
+        base = {
+            "date":       (job.get("created_at") or "")[:16].replace("T", " "),
+            "duration_s": job.get("duration_sec"),
+            "LR": LR, "LT": LT, "LJ": LJ,
+        }
+        allrows.append({
+            **base,
+            "email":    row_email if master else _mask_email(row_email),
+            "nickname": (job.get("nickname") if master else None),
+        })
+        if is_mine:
+            mine.append({**base, "email": row_email, "nickname": job.get("nickname")})
+
+    def _avg(rows, key):
+        vals = [x[key] for x in rows if x.get(key)]
+        return (sum(vals) / len(vals)) if vals else None
+
+    def _avgset(rows):
+        return {"LR": _avg(rows, "LR"), "LT": _avg(rows, "LT"),
+                "LJ": _avg(rows, "LJ"), "count": len(rows)}
+
+    return {
+        "is_master": master,
+        "mine": mine,
+        "all":  allrows,
+        "avg":  {"mine": _avgset(mine), "all": _avgset(allrows)},
+    }
+
 # ── WebSocket stream ───────────────────────────────────────────────────────
 @app.websocket("/stream")
 async def stream_ws(ws: WebSocket):

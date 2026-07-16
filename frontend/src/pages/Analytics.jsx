@@ -184,37 +184,6 @@ function PhysicsTable({ result, job, samples }) {
                 </td>
               </tr>
             </>}
-            {/* Lajtner Time / Acceleration / Jerk — single value, measured in the recorded medium */}
-            {result?.lajtner_time != null && (
-              <tr style={{borderBottom:'1px solid var(--border)',background:'rgba(255,136,0,.05)'}}>
-                <td style={{padding:'.3rem .6rem',color:'var(--text)',fontWeight:600}}>Lajtner Time</td>
-                <td style={{padding:'.3rem .6rem',color:'var(--muted)',fontSize:'.7rem'}}>s</td>
-                <td colSpan={3} style={{padding:'.3rem .6rem',color:'var(--amber)',textAlign:'left'}}>
-                  {(+result.lajtner_time).toFixed(3)} s
-                  <span style={{color:'var(--muted)',marginLeft:'.5rem',fontSize:'.75rem'}}>· measured in {(job?.medium || 'air')}</span>
-                </td>
-              </tr>
-            )}
-            {result?.lajtner_jerk_deg != null && (
-              <tr style={{borderBottom:'1px solid var(--border)'}}>
-                <td style={{padding:'.3rem .6rem',color:'var(--text)',fontWeight:600}}>Lajtner Jerk</td>
-                <td style={{padding:'.3rem .6rem',color:'var(--muted)',fontSize:'.7rem'}}>°/s³</td>
-                <td colSpan={3} style={{padding:'.3rem .6rem',color:'var(--amber)',textAlign:'left'}}>
-                  {fmt(result.lajtner_jerk_deg)}
-                  <span style={{color:'var(--muted)',marginLeft:'.5rem',fontSize:'.75rem'}}>· measured in {(job?.medium || 'air')}</span>
-                </td>
-              </tr>
-            )}
-            {result?.lajtner_jerk_rad != null && (
-              <tr style={{borderBottom:'2px solid var(--border)'}}>
-                <td style={{padding:'.3rem .6rem',color:'var(--text)',fontWeight:600}}>Lajtner Jerk (rad)</td>
-                <td style={{padding:'.3rem .6rem',color:'var(--muted)',fontSize:'.7rem'}}>rad/s³</td>
-                <td colSpan={3} style={{padding:'.3rem .6rem',color:'var(--amber)',textAlign:'left'}}>
-                  {fmt(result.lajtner_jerk_rad)}
-                  <span style={{color:'var(--muted)',marginLeft:'.5rem',fontSize:'.75rem'}}>· measured in {(job?.medium || 'air')}</span>
-                </td>
-              </tr>
-            )}
             {PHYS_ROWS.map(({ key, label, unit }, i) => (
               <tr key={key} style={{
                 background: i%2===0 ? 'transparent' : 'rgba(255,255,255,.02)',
@@ -229,6 +198,35 @@ function PhysicsTable({ result, job, samples }) {
                   {fmt(water[key], unit)}</td>
               </tr>
             ))}
+            {/* Lajtner metrics as regular rows (LR differs per medium; LT/LJ are
+                medium-independent, so shown identically across the 3 columns — like J / α / ω) */}
+            {(ideal?.planck_freq != null || air?.planck_freq != null) && (
+              <tr style={{borderTop:'2px solid var(--border)',background:'rgba(255,136,0,.06)'}}>
+                <td style={{padding:'.35rem .6rem',color:'var(--text)',fontWeight:600}}>Lajtner Resonance (LR)</td>
+                <td style={{padding:'.35rem .6rem',color:'var(--dim)',fontSize:'.72rem',textAlign:'right'}}>—</td>
+                <td style={{padding:'.35rem .6rem',color:'var(--blue)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(ideal.planck_freq)}</td>
+                <td style={{padding:'.35rem .6rem',color:'var(--green)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(air.planck_freq)}</td>
+                <td style={{padding:'.35rem .6rem',color:'#00bcd4',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(water.planck_freq)}</td>
+              </tr>
+            )}
+            {result?.lajtner_time != null && (
+              <tr style={{background:'rgba(255,136,0,.06)'}}>
+                <td style={{padding:'.35rem .6rem',color:'var(--text)',fontWeight:600}}>Lajtner Time (LT)</td>
+                <td style={{padding:'.35rem .6rem',color:'var(--dim)',fontSize:'.72rem',textAlign:'right'}}>s</td>
+                <td style={{padding:'.35rem .6rem',color:'var(--blue)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result.lajtner_time)}</td>
+                <td style={{padding:'.35rem .6rem',color:'var(--green)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result.lajtner_time)}</td>
+                <td style={{padding:'.35rem .6rem',color:'#00bcd4',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result.lajtner_time)}</td>
+              </tr>
+            )}
+            {result?.lajtner_jerk_deg != null && (
+              <tr style={{background:'rgba(255,136,0,.06)'}}>
+                <td style={{padding:'.35rem .6rem',color:'var(--text)',fontWeight:600}}>Lajtner Jerk (LJ)</td>
+                <td style={{padding:'.35rem .6rem',color:'var(--dim)',fontSize:'.72rem',textAlign:'right'}}>°/s³</td>
+                <td style={{padding:'.35rem .6rem',color:'var(--blue)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result.lajtner_jerk_deg)}</td>
+                <td style={{padding:'.35rem .6rem',color:'var(--green)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result.lajtner_jerk_deg)}</td>
+                <td style={{padding:'.35rem .6rem',color:'#00bcd4',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result.lajtner_jerk_deg)}</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
