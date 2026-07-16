@@ -1303,6 +1303,58 @@ def api_lajtner_averages(email: str = ""):
         "all":  {"avg_time_s": at, "avg_jerk_deg": aj, "count": max(atc, ajc)},
     }
 
+
+@app.get("/api/lajtner-list")
+def api_lajtner_list(email: str = "", limit: int = 2000):
+    """Sorted lists (min->max) + stats for Lajtner Resonance, Time and Jerk,
+    both for the given user ('mine') and for everyone ('all').
+    Resonance uses a common (air) basis.  Time: lower is better.  Jerk: higher is better."""
+    from app.database import _sb
+    sb = _sb()
+    if not sb:
+        raise HTTPException(500, "DB unavailable")
+    try:
+        resp = sb.table("physics_results").select("email, physics_json").execute()
+    except Exception as e:
+        log.warning(f"[LAJTNER-LIST] read failed: {e}")
+        raise HTTPException(500, "DB read failed")
+
+    em = (email or "").strip().lower()
+    buckets = {
+        "resonance": {"mine": [], "all": []},
+        "time":      {"mine": [], "all": []},
+        "jerk":      {"mine": [], "all": []},
+    }
+    for r in (resp.data or []):
+        try:
+            p = json.loads(r.get("physics_json") or "{}")
+        except Exception:
+            continue
+        mine = bool(em) and (r.get("email") or "").strip().lower() == em
+        vals = {
+            "resonance": (p.get("air") or {}).get("planck_freq"),
+            "time":      p.get("lajtner_time"),
+            "jerk":      p.get("lajtner_jerk_deg"),
+        }
+        for k, v in vals.items():
+            if isinstance(v, (int, float)) and v > 0:
+                buckets[k]["all"].append(v)
+                if mine:
+                    buckets[k]["mine"].append(v)
+
+    def _pack(vals):
+        vals = sorted(vals)
+        if limit:
+            vals = vals[:limit]
+        n = len(vals)
+        stats = {"min": vals[0], "max": vals[-1], "avg": sum(vals) / n, "count": n} if n else {}
+        return {"values": vals, "stats": stats}
+
+    out = {}
+    for k in buckets:
+        out[k] = {"mine": _pack(buckets[k]["mine"]), "all": _pack(buckets[k]["all"])}
+    return out
+
 # ── WebSocket stream ───────────────────────────────────────────────────────
 @app.websocket("/stream")
 async def stream_ws(ws: WebSocket):

@@ -12,8 +12,8 @@ const isLocalhost = typeof window !== 'undefined' &&
   /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/.test(window.location.hostname)
 
 // ── reCAPTCHA toggle ────────────────────────────────────────────────
-// Set to true to re-enable the captcha.
-const RECAPTCHA_ENABLED = false
+// Set to false to disable the captcha.
+const RECAPTCHA_ENABLED = true
 const RECAPTCHA_SITE_KEY = RECAPTCHA_ENABLED ? (isLocalhost ? TEST_KEY : PROD_KEY) : ''
 
 export default function Login() {
@@ -65,7 +65,7 @@ export default function Login() {
 
   const submit = async e => {
     e.preventDefault(); clear()
-    if (!consented) { setError('You must accept the Terms & Privacy to continue.'); return }
+    if (!consented) { setError('You must accept the Terms of Use, Privacy Policy and cookies to continue.'); return }
     if (RECAPTCHA_SITE_KEY && !recaptchaToken) { setError('Please verify you are not a robot.'); return }
     if (mode === 'register' && password !== confirm) { setError('Passwords do not match'); return }
     setLoading(true)
@@ -120,13 +120,19 @@ export default function Login() {
         onChange={e => setConsented(e.target.checked)}
         style={{marginTop:2,flexShrink:0,accentColor:'var(--green)',
           width:15,height:15,cursor:'pointer'}} />
-      <label htmlFor="consent" style={{fontSize:'.76rem',color:'var(--muted)',
-        lineHeight:1.5,cursor:'pointer'}}>
-        I accept the{' '}
-        <a href="https://lajtner.com/terms-privacy.html"
-          target="_blank" rel="noopener noreferrer"
-          style={{color:'var(--green)'}}>Terms of Use and Privacy Policy</a>.
-      </label>
+      <div>
+        <label htmlFor="consent" style={{fontSize:'.76rem',color:'var(--muted)',
+          lineHeight:1.5,cursor:'pointer'}}>
+          I accept the{' '}
+          <a href="https://lajtner.com/terms-privacy.html"
+            target="_blank" rel="noopener noreferrer"
+            style={{color:'var(--green)'}}>Terms of Use and Privacy Policy</a>
+          {' '}and the use of cookies.
+        </label>
+        <div style={{fontSize:'.7rem',color:'var(--dim)',marginTop:'.35rem',lineHeight:1.45}}>
+          This site uses cookies. If you do not agree to the use of cookies, please do not use this site.
+        </div>
+      </div>
     </div>
   )
 

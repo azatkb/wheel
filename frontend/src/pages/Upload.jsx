@@ -26,6 +26,7 @@ export default function Upload() {
   const [file, setFile] = useState(null)
   const [hand, setHand] = useState('')
   const [nickname, setNickname] = useState('')
+  const [showNickHelp, setShowNickHelp] = useState(false)
   const [medium, setMedium] = useState('')
   const [dragging, setDragging] = useState(false)
   const [direction, setDirection] = useState('')
@@ -292,12 +293,29 @@ export default function Upload() {
               style={{padding:'.45rem .65rem',opacity:.6}} />
           </div>
           <div style={{flex:2,minWidth:200}}>
-            <label className="form-label">Video nickname (optional)</label>
+            <label className="form-label" style={{display:'inline-flex',alignItems:'center',gap:'.35rem'}}>
+              Video nickname (optional)
+              <span onClick={() => setShowNickHelp(v => !v)}
+                title="Why is a nickname important?"
+                style={{cursor:'pointer',display:'inline-flex',alignItems:'center',
+                  justifyContent:'center',width:15,height:15,borderRadius:'50%',
+                  fontSize:'.62rem',fontWeight:700,lineHeight:1,
+                  background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--muted)'}}>?</span>
+            </label>
             <input className="form-input" value={nickname}
               onChange={e => setNickname(e.target.value)}
               maxLength={80}
               placeholder="e.g. Morning focus try #1"
               style={{padding:'.45rem .65rem'}} />
+            {showNickHelp && (
+              <div style={{fontSize:'.7rem',color:'var(--muted)',marginTop:'.35rem',lineHeight:1.45,
+                background:'rgba(0,255,136,.05)',border:'1px solid rgba(0,255,136,.15)',
+                borderRadius:6,padding:'.45rem .6rem'}}>
+                We don't send the video file back to you. The nickname is how you find this
+                measurement later in your <strong>History</strong>, and how you share it on the
+                <strong> forum</strong> — so pick something you'll recognise.
+              </div>
+            )}
           </div>
         </div>
 

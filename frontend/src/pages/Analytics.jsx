@@ -430,6 +430,42 @@ export default function Analytics() {
     XLSX.writeFile(wb, 'lajtner_measurements.xlsx')
   }
 
+  // Lajtner Resonance / Time / Jerk as a long table:
+  // value in one column, dimension in another, ';'-separated (Hungarian Excel).
+  const exportLajtnerCSV = () => {
+    const notLoaded = selected.filter(id => !physics[id]?.result)
+    if (notLoaded.length > 0) {
+      alert(`Please click "Analyse" first (${notLoaded.length} measurement(s) not loaded)`)
+      return
+    }
+    const rows = [['Measurement', 'Metric', 'Value', 'Dimension']]
+    selected.forEach(id => {
+      const job = jobs.find(j => j.id === id)
+      const res = physics[id]?.result
+      if (!res) return
+      const med   = job?.medium || 'air'
+      const label = job?.nickname
+        || (job?.created_at?.slice(0, 16)?.replace('T', ' '))
+        || id.slice(0, 8)
+      const reson = res?.[med]?.planck_freq ?? res?.air?.planck_freq ?? res?.ideal?.planck_freq
+      rows.push([label, 'Lajtner Resonance', reson ?? '', '1/s (Hz)'])
+      rows.push([label, 'Lajtner Time',      res.lajtner_time     ?? '', 's'])
+      rows.push([label, 'Lajtner Jerk',      res.lajtner_jerk_deg ?? '', 'degree/s^3'])
+    })
+    const csv = rows.map(r => r.map(c => {
+      const s = String(c ?? '')
+      return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s
+    }).join(';')).join('\r\n')
+    // BOM so Excel reads UTF-8 correctly
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'lajtner_metrics.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const chartDatasets = selected.map((id, di) => {
     const job = jobs.find(j => j.id === id)
     const s = samples[id] || []
@@ -599,7 +635,13 @@ export default function Analytics() {
             </button>
             <div style={{fontSize:'.78rem',color:'var(--muted)'}}>
               All 20 variables × 3 cases (Ideal/Air/Water) for {selected.length} measurement{selected.length>1?'s':''}.
-              Separator: semicolon, UTF-8.
+            </div>
+            <button className="btn btn-secondary" onClick={exportLajtnerCSV}>
+              ⬇ Lajtner metrics CSV (;)
+            </button>
+            <div style={{fontSize:'.78rem',color:'var(--muted)'}}>
+              Lajtner Resonance, Time, Jerk — value in one column, dimension in another,
+              <strong> ;</strong>-separated for Hungarian Excel (UTF-8).
             </div>
             {master && (
               <a href={`${API}/master/export-csv?token=wt_master_2026`}>
