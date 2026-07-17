@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx'
 import TawkWidget from './components/TawkWidget'
+import FeedbackWidget from './components/FeedbackWidget'
 import Login from './pages/Login'
 import Subscription from './pages/Subscription'
 import Upload from './pages/Upload'
@@ -102,7 +103,7 @@ function Shell() {
         <span className="mobile-logo" style={{display:'flex',alignItems:'center',gap:'.5rem'}}>
           <div className="wheel-logo-mobile" />
           <div style={{display:'flex',flexDirection:'column',lineHeight:1.05}}>
-            <h3 className="logo" style={{margin:0}}>LaJTNeR CoDe <span style={{fontSize:".55em",fontWeight:600,opacity:.9,color:"var(--blue)"}}>kinetic</span></h3>
+            <h3 className="logo" style={{margin:0}}>LaJTNeR CoDe <span style={{fontSize:".55em",fontWeight:600,opacity:.9,color:"var(--blue)"}}>kinetic</span> <span style={{fontSize:".5em",fontWeight:700,marginLeft:".35em",padding:".12em .45em",borderRadius:"4px",background:"var(--amber)",color:"#111",verticalAlign:"middle",letterSpacing:".05em"}}>BETA</span></h3>
             <span style={{fontSize:'.7rem',color:'var(--green)',fontWeight:600,marginTop:'.12rem'}}>
               {master ? 'Ultimate 1.0' : user?.plan === 'pro' ? 'Pro 1.0' : user?.plan === 'ultimate' ? 'Ultimate 1.0' : 'Basic 1.0'}
             </span>
@@ -136,7 +137,7 @@ function Shell() {
           <div className="wheel-logo" />
           <div>
             <div className="logo-text">
-              <h3 className="logo">LaJTNeR CoDe <span style={{fontSize:".55em",fontWeight:600,opacity:.9,color:"var(--blue)"}}>kinetic</span></h3>
+              <h3 className="logo">LaJTNeR CoDe <span style={{fontSize:".55em",fontWeight:600,opacity:.9,color:"var(--blue)"}}>kinetic</span> <span style={{fontSize:".5em",fontWeight:700,marginLeft:".35em",padding:".12em .45em",borderRadius:"4px",background:"var(--amber)",color:"#111",verticalAlign:"middle",letterSpacing:".05em"}}>BETA</span></h3>
               <div style={{fontSize:'.82rem',color:'var(--green)',marginTop:'.15rem',fontWeight:600}}>
                 {master ? 'Ultimate 1.0' : user?.plan === 'pro' ? 'Pro 1.0' : user?.plan === 'ultimate' ? 'Ultimate 1.0' : 'Basic 1.0'}
               </div>
@@ -229,6 +230,7 @@ export default function App() {
   return (
     <AuthProvider>
       <TawkWidget />
+      <FeedbackWidget />
       <Routes>
         <Route path="/login" element={<LoginGuard />} />
         <Route path="/*"    element={<Shell />} />

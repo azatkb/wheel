@@ -12,8 +12,8 @@ const isLocalhost = typeof window !== 'undefined' &&
   /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/.test(window.location.hostname)
 
 // ── reCAPTCHA toggle ────────────────────────────────────────────────
-// Set to false to disable the captcha.
-const RECAPTCHA_ENABLED = true
+// Set to true to re-enable the captcha.
+const RECAPTCHA_ENABLED = false
 const RECAPTCHA_SITE_KEY = RECAPTCHA_ENABLED ? (isLocalhost ? TEST_KEY : PROD_KEY) : ''
 
 export default function Login() {
@@ -157,7 +157,10 @@ export default function Login() {
       <div className="auth-box">
         <div className="auth-logo">
           <div className="auth-wheel" />
-          <h1 className="logo">LaJTNeR</h1>
+          <h1 className="logo">LaJTNeR <span style={{fontSize:'.5em',fontWeight:600,color:'var(--blue)'}}>kinetic</span></h1>
+          <div style={{display:'inline-block',margin:'.25rem 0 .5rem',padding:'.15rem .6rem',
+            borderRadius:6,background:'var(--amber)',color:'#111',fontWeight:700,
+            fontSize:'.72rem',letterSpacing:'.06em'}}>BETA VERSION</div>
           <p>
             {mode === 'login'        ? 'Sign in to your account'   :
              mode === 'register'     ? 'Create your account'       :

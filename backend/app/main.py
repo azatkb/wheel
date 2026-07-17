@@ -904,6 +904,68 @@ async def reset_request(request: Request):
         log.warning("[RESET] GMAIL_USER/GMAIL_PASS not set — code logged only")
     return {"ok": True}
 
+@app.post("/feedback")
+async def feedback(request: Request):
+    """Beta feedback / bug report — save to DB and email the owner.
+    Users write via a small in-app form (no email address is shown)."""
+    import html as _html
+    body = await request.json()
+    email   = (body.get("email") or "").strip()
+    subject = (body.get("subject") or "").strip()[:200]
+    message = (body.get("message") or "").strip()[:5000]
+    if not message:
+        raise HTTPException(400, "Message required")
+
+    # 1) save to DB (best effort — email is the primary channel)
+    try:
+        from app.database import _sb
+        sb = _sb()
+        if sb:
+            sb.table("feedback").insert({
+                "user_email": email,
+                "subject": subject or "(no subject)",
+                "message": message,
+                "created_at": datetime.datetime.utcnow().isoformat(),
+            }).execute()
+    except Exception as e:
+        log.warning(f"[FEEDBACK] DB save failed: {e}")
+
+    # 2) email the owner
+    to_addr    = os.environ.get("FEEDBACK_EMAIL", "lajtnert@gmail.com")
+    GMAIL_USER = os.environ.get("GMAIL_USER", "")
+    GMAIL_PASS = os.environ.get("GMAIL_PASS", "")
+    if GMAIL_USER and GMAIL_PASS:
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            s_msg = _html.escape(message)
+            s_em  = _html.escape(email or "anonymous")
+            s_sub = _html.escape(subject or "(no subject)")
+            msg = MIMEMultipart("alternative")
+            msg["Subject"]  = f"[Beta feedback] {subject or '(no subject)'}"
+            msg["From"]     = f"Lajtner Code Beta <{GMAIL_USER}>"
+            msg["To"]       = to_addr
+            msg["Reply-To"] = email or GMAIL_USER
+            body_text = f"From: {email or 'anonymous'}\nSubject: {subject}\n\n{message}"
+            body_html = f"""<div style="font-family:sans-serif;max-width:520px;margin:20px auto">
+  <h3 style="color:#00c271">Beta feedback</h3>
+  <p><b>From:</b> {s_em}<br><b>Subject:</b> {s_sub}</p>
+  <div style="background:#f5f5f5;border-radius:8px;padding:16px;white-space:pre-wrap">{s_msg}</div>
+</div>"""
+            msg.attach(MIMEText(body_text, "plain"))
+            msg.attach(MIMEText(body_html, "html"))
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as srv:
+                srv.login(GMAIL_USER, GMAIL_PASS)
+                srv.sendmail(GMAIL_USER, to_addr, msg.as_string())
+            log.info(f"[FEEDBACK] emailed to {to_addr} from {email or 'anonymous'}")
+        except Exception as e:
+            log.error(f"[FEEDBACK] email send failed: {e}")
+    else:
+        log.warning("[FEEDBACK] GMAIL not set — feedback saved/logged only")
+    return {"ok": True}
+
+
 @app.post("/auth/reset-confirm")
 async def reset_confirm(request: Request):
     body = await request.json()
@@ -977,6 +1039,18 @@ async def auth_update_plan(request: Request):
     except Exception as e:
         raise HTTPException(500, str(e))
 
+# ── Beta: all plans free (Ultimate-level access) until this date ──────
+BETA_FREE_UNTIL = os.environ.get("BETA_FREE_UNTIL", "2026-09-01")  # YYYY-MM-DD (UTC)
+def _beta_active() -> bool:
+    try:
+        return datetime.datetime.utcnow() <= datetime.datetime.strptime(BETA_FREE_UNTIL, "%Y-%m-%d")
+    except Exception:
+        return False
+def _effective_plan(plan: str) -> str:
+    """During the free Beta everyone gets Ultimate-level access."""
+    return "ultimate" if _beta_active() else (plan or "basic")
+
+
 @app.post("/auth/login")
 async def auth_login(request: Request):
     body = await request.json()
@@ -989,7 +1063,9 @@ async def auth_login(request: Request):
     if not user or user.get("password_hash") != _hash_pw(password):
         raise HTTPException(401, "Invalid email or password")
     token = secrets.token_hex(32)
-    return {"token": token, "email": email, "plan": user.get("plan", "basic")}
+    return {"token": token, "email": email,
+            "plan": _effective_plan(user.get("plan", "basic")),
+            "beta": _beta_active()}
 
 def add_lr_overlay(video_path: str, planck_freq: float):
     """Add Lajtner Resonance text to last 3 seconds of video."""
@@ -1092,6 +1168,7 @@ async def upload(
     # Master always gets Pro features regardless of plan
     if _is_master(user_email):
         version = "pro"
+    version = _effective_plan(version)   # free Beta → Ultimate for everyone
     create_job(job_id, user_email, "upload", direction, medium, hand_visible, info_level)
     _nn = _set_job_nickname(job_id, nickname)
     jobs[job_id] = {"status":"queued","progress":{"pct":0},
@@ -1437,6 +1514,7 @@ async def stream_ws(ws: WebSocket):
     # Master always gets Pro features regardless of plan
     if _is_master(email):
         _req_version = "pro"
+    _req_version = _effective_plan(_req_version)   # free Beta → Ultimate for everyone
     _sp = {
         "direction": params.get("direction", DEFAULT_DIRECTION),
         "medium":    params.get("medium",    DEFAULT_MEDIUM),
