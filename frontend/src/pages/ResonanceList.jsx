@@ -29,9 +29,10 @@ export default function ResonanceList() {
   const { user } = useAuth()
   const plan = (user?.plan || 'basic').toLowerCase()
   // plan gating: Basic = LR · Pro = LR+LT · Ultimate = LR+LT+LJ
-  const cols = plan === 'ultimate' ? ['LR','LT','LJ'] : plan === 'pro' ? ['LR','LT'] : ['LR']
-
   const [data, setData]   = useState(null)
+  // plan gating: Basic = LR · Pro = LR+LT · Ultimate/Master = LR+LT+LJ
+  const cols = (data?.is_master || plan === 'ultimate') ? ['LR','LT','LJ']
+             : plan === 'pro' ? ['LR','LT'] : ['LR']
   const [loading, setLoading] = useState(true)
   const [scope, setScope] = useState('mine')       // 'mine' | 'all'
   const [sortKey, setSortKey] = useState('LR')      // 'LR'|'LT'|'LJ'|'date'|'duration_s'

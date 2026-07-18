@@ -12,8 +12,8 @@ const isLocalhost = typeof window !== 'undefined' &&
   /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/.test(window.location.hostname)
 
 // ── reCAPTCHA toggle ────────────────────────────────────────────────
-// Set to true to re-enable the captcha.
-const RECAPTCHA_ENABLED = false
+// Set to false to disable the captcha.
+const RECAPTCHA_ENABLED = true
 const RECAPTCHA_SITE_KEY = RECAPTCHA_ENABLED ? (isLocalhost ? TEST_KEY : PROD_KEY) : ''
 
 export default function Login() {

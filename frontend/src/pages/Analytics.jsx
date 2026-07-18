@@ -198,35 +198,43 @@ function PhysicsTable({ result, job, samples }) {
                   {fmt(water[key], unit)}</td>
               </tr>
             ))}
-            {/* Lajtner metrics as regular rows (LR differs per medium; LT/LJ are
-                medium-independent, so shown identically across the 3 columns — like J / α / ω) */}
-            {(ideal?.planck_freq != null || air?.planck_freq != null) && (
-              <tr style={{borderTop:'2px solid var(--border)',background:'rgba(255,136,0,.06)'}}>
-                <td style={{padding:'.35rem .6rem',color:'var(--text)',fontWeight:600}}>Lajtner Resonance (LR)</td>
-                <td style={{padding:'.35rem .6rem',color:'var(--dim)',fontSize:'.72rem',textAlign:'right'}}>—</td>
-                <td style={{padding:'.35rem .6rem',color:'var(--blue)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(ideal.planck_freq)}</td>
-                <td style={{padding:'.35rem .6rem',color:'var(--green)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(air.planck_freq)}</td>
-                <td style={{padding:'.35rem .6rem',color:'#00bcd4',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(water.planck_freq)}</td>
-              </tr>
-            )}
-            {result?.lajtner_time != null && (
-              <tr style={{background:'rgba(255,136,0,.06)'}}>
-                <td style={{padding:'.35rem .6rem',color:'var(--text)',fontWeight:600}}>Lajtner Time (LT)</td>
-                <td style={{padding:'.35rem .6rem',color:'var(--dim)',fontSize:'.72rem',textAlign:'right'}}>s</td>
-                <td style={{padding:'.35rem .6rem',color:'var(--blue)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result.lajtner_time)}</td>
-                <td style={{padding:'.35rem .6rem',color:'var(--green)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result.lajtner_time)}</td>
-                <td style={{padding:'.35rem .6rem',color:'#00bcd4',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result.lajtner_time)}</td>
-              </tr>
-            )}
-            {result?.lajtner_jerk_deg != null && (
-              <tr style={{background:'rgba(255,136,0,.06)'}}>
-                <td style={{padding:'.35rem .6rem',color:'var(--text)',fontWeight:600}}>Lajtner Jerk (LJ)</td>
-                <td style={{padding:'.35rem .6rem',color:'var(--dim)',fontSize:'.72rem',textAlign:'right'}}>°/s³</td>
-                <td style={{padding:'.35rem .6rem',color:'var(--blue)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result.lajtner_jerk_deg)}</td>
-                <td style={{padding:'.35rem .6rem',color:'var(--green)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result.lajtner_jerk_deg)}</td>
-                <td style={{padding:'.35rem .6rem',color:'#00bcd4',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result.lajtner_jerk_deg)}</td>
-              </tr>
-            )}
+            {/* Lajtner metrics as regular rows. LR differs per medium; LT/LJ are
+                medium-independent. Per client: the column of the medium that was
+                NOT measured shows 0 (air measurement → water = 0, and vice versa). */}
+            {(() => {
+              const med = (job?.medium || 'air').toLowerCase()
+              const airCell = (v) => med === 'air'   ? v : 0
+              const watCell = (v) => med === 'water' ? v : 0
+              return (<>
+                {(ideal?.planck_freq != null || air?.planck_freq != null) && (
+                  <tr style={{borderTop:'2px solid var(--border)',background:'rgba(255,136,0,.06)'}}>
+                    <td style={{padding:'.35rem .6rem',color:'var(--text)',fontWeight:600}}>Lajtner Resonance (LR)</td>
+                    <td style={{padding:'.35rem .6rem',color:'var(--dim)',fontSize:'.72rem',textAlign:'right'}}>—</td>
+                    <td style={{padding:'.35rem .6rem',color:'var(--blue)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(ideal.planck_freq)}</td>
+                    <td style={{padding:'.35rem .6rem',color:'var(--green)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(airCell(air.planck_freq))}</td>
+                    <td style={{padding:'.35rem .6rem',color:'#00bcd4',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(watCell(water.planck_freq))}</td>
+                  </tr>
+                )}
+                {result?.lajtner_time != null && (
+                  <tr style={{background:'rgba(255,136,0,.06)'}}>
+                    <td style={{padding:'.35rem .6rem',color:'var(--text)',fontWeight:600}}>Lajtner Time (LT)</td>
+                    <td style={{padding:'.35rem .6rem',color:'var(--dim)',fontSize:'.72rem',textAlign:'right'}}>s</td>
+                    <td style={{padding:'.35rem .6rem',color:'var(--blue)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result.lajtner_time)}</td>
+                    <td style={{padding:'.35rem .6rem',color:'var(--green)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(airCell(result.lajtner_time))}</td>
+                    <td style={{padding:'.35rem .6rem',color:'#00bcd4',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(watCell(result.lajtner_time))}</td>
+                  </tr>
+                )}
+                {result?.lajtner_jerk_deg != null && (
+                  <tr style={{background:'rgba(255,136,0,.06)'}}>
+                    <td style={{padding:'.35rem .6rem',color:'var(--text)',fontWeight:600}}>Lajtner Jerk (LJ)</td>
+                    <td style={{padding:'.35rem .6rem',color:'var(--dim)',fontSize:'.72rem',textAlign:'right'}}>°/s³</td>
+                    <td style={{padding:'.35rem .6rem',color:'var(--blue)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result.lajtner_jerk_deg)}</td>
+                    <td style={{padding:'.35rem .6rem',color:'var(--green)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(airCell(result.lajtner_jerk_deg))}</td>
+                    <td style={{padding:'.35rem .6rem',color:'#00bcd4',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(watCell(result.lajtner_jerk_deg))}</td>
+                  </tr>
+                )}
+              </>)
+            })()}
           </tbody>
         </table>
       </div>

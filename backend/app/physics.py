@@ -902,13 +902,9 @@ def build_user_message(result: dict, medium: str,
       group_message: group rank message (paid)
       group_medal  : "gold"|"silver"|"bronze" (paid)
     """
-    # Ultimate 1.0 uses the IDEAL case (no braking force) — client spec:
-    # "in Ultimate use simple calculations without braking force,
-    #  the differences are greater, gives a better solution"
-    if version == "ultimate":
-        case = result.get("ideal") or result.get(medium) or result.get("air", {})
-    else:
-        case = result.get(medium) or result.get("air", {})
+    # The result card shows the values for the medium actually measured
+    # (air or water) — not the frictionless ideal.
+    case = result.get(medium) or result.get("air", {})
     W_total = case.get("W_total", 0)
     F_max   = case.get("F_max",   0)
     P_peak  = case.get("P_peak",  0)
