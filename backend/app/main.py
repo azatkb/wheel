@@ -34,7 +34,7 @@ from app.config import (
 from app.detector_seg import (
     load_yolo_seg, detect_seg,
     find_spoke_tips, find_orange_tip, find_all_tip_colors,
-    orange_angle, unwrap,
+    orange_angle, unwrap, set_medium as _seg_set_medium,
     draw_seg_overlay,
     YOLO_EVERY, SMOOTH_N as SEG_SMOOTH_N,
 )
@@ -251,6 +251,7 @@ def _process_video_seg(video_path, out_path, job_id="local",
     """Process uploaded video with seg model — draw mask + orange on each frame."""
     from app.detector_seg import draw_seg_overlay
     import time as _time
+    _seg_set_medium(medium)   # water: catch pale underwater orange; air: strict (reject red)
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -1157,9 +1158,16 @@ async def upload(
     lang:         str  = Form(default=DEFAULT_LANG),
     nickname:     str  = Form(default=""),
 ):
-    suffix = Path(file.filename).suffix.lower()
-    if suffix not in (".mp4",".avi",".mov",".mkv",".webm"):
-        raise HTTPException(400, f"Unsupported: {suffix}")
+    suffix = Path(file.filename or "").suffix.lower()
+    ALLOWED_EXT = (".mp4", ".avi", ".mov", ".mkv", ".webm",
+                   ".m4v", ".3gp", ".mpeg", ".mpg", ".ts", ".flv", ".wmv")
+    if suffix not in ALLOWED_EXT:
+        # phones / in-browser recorders often omit the extension → trust the MIME type
+        _ct = (getattr(file, "content_type", "") or "").lower()
+        if _ct.startswith("video/"):
+            suffix = ".mp4"
+        else:
+            raise HTTPException(400, f"Unsupported file type: '{suffix or _ct or 'unknown'}'")
     job_id   = str(uuid.uuid4())
     raw_path = INPUTS_DIR / f"{job_id}{suffix}"
     with open(raw_path,"wb") as f:
@@ -1353,31 +1361,40 @@ def api_lajtner_averages(email: str = ""):
         return ((sum(vals) / len(vals)) if vals else None), len(vals)
 
     em = (email or "").strip().lower()
-    all_t, all_j, my_t, my_j = [], [], [], []
+    all_t, all_j, all_r, my_t, my_j, my_r = [], [], [], [], [], []
     for r in (resp.data or []):
         try:
             p = json.loads(r.get("physics_json") or "{}")
         except Exception:
             continue
-        t = p.get("lajtner_time")
-        j = p.get("lajtner_jerk_deg")
+        t  = p.get("lajtner_time")
+        j  = p.get("lajtner_jerk_deg")
+        lr = (p.get("air") or {}).get("planck_freq")   # LR on the common air basis
         if t:
             all_t.append(t)
         if j:
             all_j.append(j)
+        if lr:
+            all_r.append(lr)
         if em and (r.get("email") or "").strip().lower() == em:
             if t:
                 my_t.append(t)
             if j:
                 my_j.append(j)
+            if lr:
+                my_r.append(lr)
 
     at, atc = _avg(all_t)
     aj, ajc = _avg(all_j)
+    ar, arc = _avg(all_r)
     mt, mtc = _avg(my_t)
     mj, mjc = _avg(my_j)
+    mr, mrc = _avg(my_r)
     return {
-        "user": {"avg_time_s": mt, "avg_jerk_deg": mj, "count": max(mtc, mjc)},
-        "all":  {"avg_time_s": at, "avg_jerk_deg": aj, "count": max(atc, ajc)},
+        "user": {"avg_resonance": mr, "avg_time_s": mt, "avg_jerk_deg": mj,
+                 "count": max(mtc, mjc, mrc)},
+        "all":  {"avg_resonance": ar, "avg_time_s": at, "avg_jerk_deg": aj,
+                 "count": max(atc, ajc, arc)},
     }
 
 
