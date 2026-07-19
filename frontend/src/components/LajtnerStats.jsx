@@ -31,9 +31,9 @@ function Row({ label, lr, time, jerk }) {
       alignItems:'center',padding:'.5rem .75rem',borderRadius:8,
       background:'rgba(255,136,0,.06)',marginTop:'.4rem'}}>
       <span style={{color:'var(--muted)',fontSize:'.78rem',minWidth:110}}>{label}</span>
-      <span style={{color:'#44aaff',fontSize:'.82rem'}}>🔷 {fmtLR(lr)}</span>
-      <span style={{color:'var(--amber)',fontSize:'.82rem'}}>⏳ {fmtT(time)}</span>
-      <span style={{color:'var(--amber)',fontSize:'.82rem'}}>🌀 {fmtJ(jerk)}</span>
+      <span style={{color:'#44aaff',fontSize:'.82rem'}}><b>LR</b> 🔷 {fmtLR(lr)}</span>
+      <span style={{color:'var(--amber)',fontSize:'.82rem'}}><b>LT</b> ⏳ {fmtT(time)}</span>
+      <span style={{color:'var(--amber)',fontSize:'.82rem'}}><b>LJ</b> 🌀 {fmtJ(jerk)}</span>
     </div>
   )
 }
@@ -80,6 +80,7 @@ export default function LajtnerStats() {
         <div style={{fontSize:'.72rem',color:'var(--muted)',lineHeight:1.5,
           background:'rgba(68,170,255,.06)',border:'1px solid rgba(68,170,255,.18)',
           borderRadius:6,padding:'.45rem .6rem',marginBottom:'.35rem'}}>
+          <strong>LR</strong> = Lajtner Resonance · <strong>LT</strong> = Lajtner Time · <strong>LJ</strong> = Lajtner Jerk.<br/>
           <strong>L</strong> means a small difference, <strong>R</strong> means a really big difference.
           E.g. 1.57L+23R is smaller than 1.8L+23R — this is a small difference.
           1.57L+23R and 1.57L+24R is a big difference.

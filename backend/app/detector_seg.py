@@ -47,6 +47,40 @@ def set_medium(m):
         ORA_H_MIN, ORA_H_MAX, ORA_S_MIN, ORA_V_MIN = 12, 28, 70, 60
     else:
         ORA_H_MIN, ORA_H_MAX, ORA_S_MIN, ORA_V_MIN = 13, 26, 120, 80
+
+
+def verify_orange_at(hsv, x, y, r=18):
+    """Probabilistic colour check at a point: is the marker here really ORANGE
+    (and not red or yellow)?  Used to veto YOLO's 'orange' class, because the
+    model can confuse the red marker with orange (esp. underwater).
+    Returns True only if orange is the most probable warm colour at (x, y)."""
+    H, W = hsv.shape[:2]
+    x0, x1 = max(0, int(x) - r), min(W, int(x) + r)
+    y0, y1 = max(0, int(y) - r), min(H, int(y) + r)
+    if x1 <= x0 or y1 <= y0:
+        return False
+    ph = hsv[y0:y1, x0:x1, 0].astype(np.float32)
+    ps = hsv[y0:y1, x0:x1, 1].astype(np.float32)
+    pv = hsv[y0:y1, x0:x1, 2].astype(np.float32)
+    REF = {"red": 178.0, "orange": 20.0, "yellow": 33.0}
+    SIG = 7.0
+    def _d(h, ref):
+        d = np.abs(h - ref)
+        return np.minimum(d, 180.0 - d)
+    warm = ((_d(ph, REF["orange"]) < 3*SIG) | (_d(ph, REF["red"]) < 2*SIG) |
+            (_d(ph, REF["yellow"]) < 2*SIG))
+    warm &= (ps >= ORA_S_MIN) & (pv >= ORA_V_MIN)
+    if int(warm.sum()) < 5:
+        return False
+    if float(np.median(ps[warm])) < 60:      # grey warm glare — not a marker
+        return False
+    hv = ph[warm]
+    p = {c: np.exp(-(_d(hv, rf) ** 2) / (2 * SIG ** 2)) for c, rf in REF.items()}
+    tot = p["red"] + p["orange"] + p["yellow"] + 1e-9
+    po = float(np.mean(p["orange"] / tot))
+    pr = float(np.mean(p["red"]    / tot))
+    py = float(np.mean(p["yellow"] / tot))
+    return po > pr and po > py
 ORA_PATCH  = 25
 
 # Spoke tip detection

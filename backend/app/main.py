@@ -34,7 +34,7 @@ from app.config import (
 from app.detector_seg import (
     load_yolo_seg, detect_seg,
     find_spoke_tips, find_orange_tip, find_all_tip_colors,
-    orange_angle, unwrap, set_medium as _seg_set_medium,
+    orange_angle, unwrap, set_medium as _seg_set_medium, verify_orange_at,
     draw_seg_overlay,
     YOLO_EVERY, SMOOTH_N as SEG_SMOOTH_N,
 )
@@ -321,8 +321,14 @@ def _process_video_seg(video_path, out_path, job_id="local",
         bbox     = _last_bbox
         has_hub  = hub is not None
 
-        # Priority 1: YOLO orange (class 1 from model)
+        # Priority 1: YOLO orange (class 1 from model).
+        # WATER only: verify its colour first — underwater the model can confuse
+        # the red marker with orange, so YOLO's orange must pass the probabilistic
+        # colour check, else HSV decides.  AIR: trust YOLO as before.
         yolo_orange = _last_yolo_orange
+        if yolo_orange is not None and has_hub and str(medium).lower() == "water":
+            if not verify_orange_at(hsv, yolo_orange[0], yolo_orange[1]):
+                yolo_orange = None      # not truly orange (red/yellow/glare) → reject
         if yolo_orange is not None and has_hub:
             if tips:
                 max_r = max(math.hypot(tx-hub[0], ty-hub[1]) for tx,ty in tips) * 1.2
