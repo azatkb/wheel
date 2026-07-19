@@ -31,10 +31,22 @@ YOLO_EVERY       = 2   # run seg every N processed frames
 SKIP_FRAMES      = 4   # process every N-th raw frame
 
 # Orange HSV (OpenCV H: 0-180)
-ORA_H_MIN  = 5
-ORA_H_MAX  = 18
-ORA_S_MIN  = 150
-ORA_V_MIN  = 100
+ORA_H_MIN  = 13
+ORA_H_MAX  = 26
+ORA_S_MIN  = 120
+ORA_V_MIN  = 80
+
+def set_medium(m):
+    """Tune orange detection for the recording medium. Call before processing a video.
+    Water: pale/washed-out underwater orange → lower saturation floor.
+    Air:   strict saturation (reject red / red-orange).
+    Hue is kept tight around the real orange (~20) both ways, so RED (hue 0-5 / 170-180)
+    is never picked up as orange."""
+    global ORA_H_MIN, ORA_H_MAX, ORA_S_MIN, ORA_V_MIN
+    if str(m or "").lower() == "water":
+        ORA_H_MIN, ORA_H_MAX, ORA_S_MIN, ORA_V_MIN = 12, 28, 70, 60
+    else:
+        ORA_H_MIN, ORA_H_MAX, ORA_S_MIN, ORA_V_MIN = 13, 26, 120, 80
 ORA_PATCH  = 25
 
 # Spoke tip detection
@@ -217,10 +229,26 @@ def find_spoke_tips(mask, hub, n_tips=N_TIPS):
 # ── Orange detection at tips ────────────────────────────────────────────────
 
 def find_orange_tip(hsv, tips, hub, last_ora=None):
+    """Probabilistic warm-marker classification.
+    For every spoke tip we detect ALL warm pixels (yellow + orange + red bands)
+    and compute, from the circular hue distance to each reference hue, the
+    probability that the tip's marker is yellow / orange / red.
+    The tip chosen as "orange" is the one with the highest P(orange) AND where
+    orange is more probable than red and yellow.  This is robust underwater,
+    where colours fade: even a pale orange stays closest to the orange hue."""
     H, W = hsv.shape[:2]
     hx, hy = hub
 
-    scores = []
+    # Reference hues (OpenCV 0-180), measured from real frames:
+    #   red ≈ 177 (wraps to ~0-5), orange ≈ 20, yellow ≈ 33
+    REF = {"red": 178.0, "orange": 20.0, "yellow": 33.0}
+    SIGMA = 7.0   # hue tolerance (gaussian width)
+
+    def _hue_dist(h, ref):
+        d = np.abs(h - ref)
+        return np.minimum(d, 180.0 - d)   # circular distance
+
+    scores = []   # P(orange)-weighted pixel score per tip
     blobs  = []
 
     for (tx, ty) in tips:
@@ -230,43 +258,60 @@ def find_orange_tip(hsv, tips, hub, last_ora=None):
         x1 = min(W, int(sx) + ORA_PATCH)
         y0 = max(0, int(sy) - ORA_PATCH)
         y1 = min(H, int(sy) + ORA_PATCH)
-        patch_h = hsv[y0:y1, x0:x1, 0]
-        patch_s = hsv[y0:y1, x0:x1, 1]
-        patch_v = hsv[y0:y1, x0:x1, 2]
+        patch_h = hsv[y0:y1, x0:x1, 0].astype(np.float32)
+        patch_s = hsv[y0:y1, x0:x1, 1].astype(np.float32)
+        patch_v = hsv[y0:y1, x0:x1, 2].astype(np.float32)
 
         if patch_h.size == 0:
-            scores.append(0); blobs.append(None); continue
+            scores.append(0.0); blobs.append(None); continue
 
-        hue_mask = (patch_h >= ORA_H_MIN) & (patch_h <= ORA_H_MAX)
+        # Warm pixels = anything near yellow/orange/red, saturated enough to be a marker.
+        warm = ((_hue_dist(patch_h, REF["orange"]) < 3*SIGMA) |
+                (_hue_dist(patch_h, REF["red"])    < 2*SIGMA) |
+                (_hue_dist(patch_h, REF["yellow"]) < 2*SIGMA))
+        warm &= (patch_s >= ORA_S_MIN) & (patch_v >= ORA_V_MIN)
 
-        if hue_mask.any():
-            sat_vals = patch_s[hue_mask]
-            sat_thresh = max(80, int(np.percentile(sat_vals, 40)))
-        else:
-            sat_thresh = ORA_S_MIN
+        n_warm = int(warm.sum())
+        if n_warm < 5:
+            scores.append(0.0); blobs.append(None); continue
 
-        orange_mask = hue_mask & (patch_s >= sat_thresh) & (patch_v >= ORA_V_MIN)
-        count = int(orange_mask.sum())
+        # SATURATION EVIDENCE GATE: a real painted marker is clearly saturated;
+        # grey warm-hued glare (S≈10-20, like bowl reflections) must never win,
+        # in any medium. Absolute floor: 60.
+        med_warm_sat = float(np.median(patch_s[warm]))
+        if med_warm_sat < 60:
+            scores.append(0.0); blobs.append(None); continue
 
-        if count > 0:
-            mean_sat = float(np.mean(patch_s[orange_mask]))
-            score = count * (mean_sat / 255.0)
-        else:
-            score = 0.0
+        hvals = patch_h[warm]
+        # Class likelihoods per pixel (gaussian on circular hue distance)
+        p = {c: np.exp(-(_hue_dist(hvals, r) ** 2) / (2 * SIGMA ** 2))
+             for c, r in REF.items()}
+        tot = p["red"] + p["orange"] + p["yellow"] + 1e-9
+        p_orange_px = p["orange"] / tot           # per-pixel P(orange)
+        p_orange = float(np.mean(p_orange_px))    # tip-level probability
+        p_red    = float(np.mean(p["red"]    / tot))
+        p_yellow = float(np.mean(p["yellow"] / tot))
 
-        if count > 0:
-            ys_o, xs_o = np.where(orange_mask)
-            cx = float(np.mean(xs_o) + x0)
-            cy = float(np.mean(ys_o) + y0)
-            sat = int(np.mean(patch_s[orange_mask]))
-            r   = max(5, int(math.sqrt(count / math.pi)))
-            blobs.append((cx, cy, float(count), sat, r))
-        else:
-            blobs.append(None)
+        # Orange must be the most probable class for this tip.
+        if p_orange <= max(p_red, p_yellow):
+            scores.append(0.0); blobs.append(None); continue
 
-        scores.append(score)
+        # Blob = centroid of the orange-probable pixels
+        om = np.zeros_like(warm)
+        om[warm] = p_orange_px > 0.5
+        if int(om.sum()) < 3:
+            om = warm  # fall back to all warm pixels (still orange-classified tip)
+        ys_o, xs_o = np.where(om)
+        cx = float(np.mean(xs_o) + x0)
+        cy = float(np.mean(ys_o) + y0)
+        sat = int(np.mean(patch_s[om]))
+        cnt = float(om.sum())
+        r   = max(5, int(math.sqrt(cnt / math.pi)))
+        blobs.append((cx, cy, cnt, sat, r))
+        # Score: confidence × amount of evidence
+        scores.append(p_orange * cnt)
 
-    if not scores or max(scores) < 5:
+    if not scores or max(scores) <= 0:
         return None
 
     best_idx  = int(np.argmax(scores))
@@ -306,7 +351,7 @@ def unwrap(prev, curr, cum):
 # ── Multi-color tip detection ───────────────────────────────────────────────
 
 TIP_COLORS = {
-    "orange": {"h_lo": 5,   "h_hi": 18,  "s_min": 100, "v_min": 80,  "bgr": (0,  120, 255)},
+    "orange": {"h_lo": 13,  "h_hi": 26,  "s_min": 100, "v_min": 80,  "bgr": (0,  120, 255)},
     "red":    {"h_lo": 0,   "h_hi": 5,   "s_min": 100, "v_min": 80,  "bgr": (0,   0,  220), "h_lo2": 170, "h_hi2": 180},
     "yellow": {"h_lo": 20,  "h_hi": 35,  "s_min": 100, "v_min": 100, "bgr": (0,  220, 220)},
     "green":  {"h_lo": 40,  "h_hi": 80,  "s_min": 80,  "v_min": 60,  "bgr": (0,  200,  60)},
