@@ -8,7 +8,7 @@ import { API } from '../config'
 export default function FeedbackWidget() {
   const { user } = useAuth()
   const [open, setOpen]       = useState(false)
-  const [subject, setSubject] = useState('')
+  const [subject, setSubject] = useState('Beta Feedback')
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [sent, setSent]       = useState(false)
@@ -24,7 +24,7 @@ export default function FeedbackWidget() {
         body: JSON.stringify({ email: user?.email || '', subject, message }),
       })
       if (!r.ok) throw new Error('send failed')
-      setSent(true); setMessage(''); setSubject('')
+      setSent(true); setMessage(''); setSubject('Beta Feedback')
     } catch {
       setErr('Could not send — please try again in a moment.')
     }

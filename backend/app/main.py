@@ -931,7 +931,7 @@ async def feedback(request: Request):
         log.warning(f"[FEEDBACK] DB save failed: {e}")
 
     # 2) email the owner
-    to_addr    = os.environ.get("FEEDBACK_EMAIL", "lajtnert@gmail.com")
+    to_addr    = os.environ.get("FEEDBACK_EMAIL", "mindpw1@gmail.com")
     GMAIL_USER = os.environ.get("GMAIL_USER", "")
     GMAIL_PASS = os.environ.get("GMAIL_PASS", "")
     if GMAIL_USER and GMAIL_PASS:
@@ -1703,6 +1703,38 @@ async def rerun_physics(job_id: str, medium: str = "air", version: str = "basic"
             "message": physics.get("message", {}).get("message", "")}
 
 
+@app.post("/admin/rerun-all-physics")
+def rerun_all_physics(token: str = "", email: str = "", limit: int = 2000):
+    """Reprocess EVERY measurement (direction auto) so physics_json is rewritten
+    with LT/LJ. Master only. Run once after deploying the new physics.py + database.py."""
+    MASTER_EMAILS = ["azatkb22@gmail.com", "lajtnert@gmail.com"]
+    if email not in MASTER_EMAILS and token != MASTER_TOKEN:
+        raise HTTPException(401, "Unauthorized")
+    from app.database import _sb
+    sb = _sb()
+    if not sb:
+        raise HTTPException(500, "DB unavailable")
+    try:
+        jr = sb.table("wt_jobs").select("id, medium").limit(limit).execute()
+    except Exception as e:
+        raise HTTPException(500, f"job list failed: {e}")
+    done, skipped, failed = 0, 0, 0
+    for j in (jr.data or []):
+        jid = j.get("id")
+        try:
+            samples = read_samples(jid)
+            if not samples:
+                skipped += 1
+                continue
+            _run_physics(samples, j.get("medium", "air"), "auto", "", jid,
+                         "ultimate", "en")
+            done += 1
+        except Exception as e:
+            log.warning(f"[RERUN-ALL] {jid} failed: {e}")
+            failed += 1
+    return {"reprocessed": done, "skipped_no_samples": skipped, "failed": failed}
+
+
 # ─────────────────────────────────────────────
 # QUESTIONNAIRE — 8 Primary Factors of Mental Focus
 # ─────────────────────────────────────────────
@@ -1950,8 +1982,11 @@ def stats_odds_ratio_auto(admin_email: str = "", threshold: float = 0, metric: s
 # ─────────────────────────────────────────────
 
 async def _verify_recaptcha(token: str) -> bool:
-    """Verify Google reCAPTCHA v2 token."""
+    """Verify Google reCAPTCHA v2 token. Disabled unless RECAPTCHA_ENABLED=1
+    (mirrors the frontend flag — keeps front and back in sync)."""
     import os as _os, httpx as _hx
+    if _os.environ.get("RECAPTCHA_ENABLED", "0") != "1":
+        return True  # captcha turned OFF by config
     secret = _os.environ.get("RECAPTCHA_SECRET_KEY", "")
     if not secret:
         log.warning("[RECAPTCHA] No secret key set — skipping verification")

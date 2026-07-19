@@ -235,6 +235,16 @@ function PhysicsTable({ result, job, samples }) {
                 )}
               </>)
             })()}
+            {/* Video length (measurement duration) — last row */}
+            {job?.duration_sec != null && (
+              <tr style={{borderTop:'2px solid var(--border)',background:'rgba(68,170,255,.05)'}}>
+                <td style={{padding:'.35rem .6rem',color:'var(--text)',fontWeight:600}}>Video length</td>
+                <td style={{padding:'.35rem .6rem',color:'var(--dim)',fontSize:'.72rem',textAlign:'right'}}>s</td>
+                <td colSpan={3} style={{padding:'.35rem .6rem',color:'var(--blue)',fontFamily:'var(--font-mono)',textAlign:'left'}}>
+                  {(+job.duration_sec).toFixed(2)} s
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
