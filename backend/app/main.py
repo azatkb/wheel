@@ -1476,7 +1476,7 @@ def api_lr_lt_lj(email: str = ""):
     master = _is_master(em)
     try:
         pres = sb.table("physics_results").select("job_id, email, physics_json").execute()
-        jres = sb.table("wt_jobs").select("id, user_email, created_at, duration_sec, nickname").execute()
+        jres = sb.table("wt_jobs").select("id, user_email, created_at, duration_sec, nickname, medium, direction").execute()
     except Exception as e:
         log.warning(f"[LR-LT-LJ] read failed: {e}")
         raise HTTPException(500, "DB read failed")
@@ -1503,15 +1503,18 @@ def api_lr_lt_lj(email: str = ""):
         base = {
             "date":       (job.get("created_at") or "")[:16].replace("T", " "),
             "duration_s": job.get("duration_sec"),
+            "medium":     job.get("medium"),
             "LR": LR, "LT": LT, "LJ": LJ,
         }
         allrows.append({
             **base,
             "email":    row_email if master else _mask_email(row_email),
             "nickname": (job.get("nickname") if master else None),
+            "job_id":   (r.get("job_id") if (master or is_mine) else None),
         })
         if is_mine:
-            mine.append({**base, "email": row_email, "nickname": job.get("nickname")})
+            mine.append({**base, "email": row_email, "nickname": job.get("nickname"),
+                         "job_id": r.get("job_id")})
 
     def _avg(rows, key):
         vals = [x[key] for x in rows if x.get(key)]
@@ -1526,6 +1529,51 @@ def api_lr_lt_lj(email: str = ""):
         "mine": mine,
         "all":  allrows,
         "avg":  {"mine": _avgset(mine), "all": _avgset(allrows)},
+    }
+
+
+@app.get("/api/measurement/{job_id}")
+def api_measurement(job_id: str, email: str = ""):
+    """Details of one measurement for the LR-LT-LJ page modal.
+    Own measurements (or master): full physics from DB physics_json + job meta."""
+    from app.database import _sb
+    sb = _sb()
+    if not sb:
+        raise HTTPException(500, "DB unavailable")
+    em = (email or "").strip().lower()
+    master = _is_master(em)
+    try:
+        jr = sb.table("wt_jobs").select(
+            "id, user_email, created_at, duration_sec, nickname, medium, direction"
+        ).eq("id", job_id).limit(1).execute()
+        pr = sb.table("physics_results").select("physics_json").eq("job_id", job_id).limit(1).execute()
+    except Exception as e:
+        log.warning(f"[MEASUREMENT] read failed: {e}")
+        raise HTTPException(500, "DB read failed")
+    job = (jr.data or [{}])[0]
+    owner = (job.get("user_email") or "").strip().lower()
+    if not master and (not em or owner != em):
+        raise HTTPException(403, "You can view details of your own measurements only")
+    phys = {}
+    if pr.data:
+        try:
+            phys = json.loads(pr.data[0].get("physics_json") or "{}")
+        except Exception:
+            phys = {}
+    return {
+        "job": {
+            "id": job.get("id"), "email": job.get("user_email"),
+            "date": (job.get("created_at") or "")[:16].replace("T", " "),
+            "duration_s": job.get("duration_sec"),
+            "nickname": job.get("nickname"),
+            "medium": job.get("medium"), "direction": job.get("direction"),
+        },
+        "physics": {
+            "ideal": phys.get("ideal"), "air": phys.get("air"), "water": phys.get("water"),
+            "lajtner_time": phys.get("lajtner_time"),
+            "lajtner_jerk_deg": phys.get("lajtner_jerk_deg"),
+            "lajtner_jerk_rad": phys.get("lajtner_jerk_rad"),
+        },
     }
 
 # ── WebSocket stream ───────────────────────────────────────────────────────
