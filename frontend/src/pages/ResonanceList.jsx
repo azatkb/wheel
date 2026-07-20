@@ -38,7 +38,8 @@ export default function ResonanceList() {
   const [sortKey, setSortKey] = useState('LR')      // 'LR'|'LT'|'LJ'|'date'|'duration_s'
   const [sortDesc, setSortDesc] = useState(true)    // sort direction
   const [rowMode, setRowMode] = useState('all')     // 'all' | 'top10' | 'bottom10'
-  const [detail, setDetail]   = useState(null)      // { row, data|null, loading }
+  const [selected, setSelected] = useState([])      // selected job_ids
+  const [detail, setDetail]   = useState(null)      // { rows, datas: {job_id: data}, loading }
 
   useEffect(() => {
     (async () => {
@@ -114,14 +115,25 @@ export default function ResonanceList() {
     URL.revokeObjectURL(url)
   }
 
-  const openDetail = async (row) => {
-    if (!row.job_id) return                       // other users' rows: no details
-    setDetail({ row, data: null, loading: true })
-    try {
-      const r = await fetch(`${API}/api/measurement/${row.job_id}?email=${encodeURIComponent(user?.email || '')}`)
-      const d = r.ok ? await r.json() : null
-      setDetail({ row, data: d, loading: false })
-    } catch { setDetail({ row, data: null, loading: false }) }
+  const toggleRow = (row) => {
+    if (!row.job_id) return                       // other users' rows: not selectable
+    setSelected(sel => sel.includes(row.job_id)
+      ? sel.filter(x => x !== row.job_id)
+      : [...sel, row.job_id])
+  }
+
+  const openDetails = async () => {
+    const rows = view.filter(r => r.job_id && selected.includes(r.job_id))
+    if (!rows.length) return
+    setDetail({ rows, datas: {}, loading: true })
+    const datas = {}
+    await Promise.all(rows.map(async (row) => {
+      try {
+        const r = await fetch(`${API}/api/measurement/${row.job_id}?email=${encodeURIComponent(user?.email || '')}`)
+        datas[row.job_id] = r.ok ? await r.json() : null
+      } catch { datas[row.job_id] = null }
+    }))
+    setDetail({ rows, datas, loading: false })
   }
 
   const avg = scope === 'mine' ? data?.avg?.mine : data?.avg?.all
@@ -175,6 +187,15 @@ export default function ResonanceList() {
                 onClick={()=>setRowMode(k)} disabled={k!=='all' && !isMetric(sortKey)}>{l}</button>
             ))}
             <span style={{color:'var(--muted)',fontSize:'.75rem',alignSelf:'center'}}>{view.length} rows · tap a header to sort</span>
+            <span style={{flex:1}} />
+            {selected.length > 0 && (
+              <>
+                <button className="btn btn-sm btn-primary" onClick={openDetails}>
+                  🔍 Show details ({selected.length})
+                </button>
+                <button className="btn btn-sm btn-secondary" onClick={() => setSelected([])}>Clear</button>
+              </>
+            )}
           </div>
 
           {/* table */}
@@ -182,6 +203,7 @@ export default function ResonanceList() {
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:'.78rem',whiteSpace:'nowrap'}}>
               <thead>
                 <tr style={{borderBottom:'2px solid var(--border)'}}>
+                  <th style={{padding:'.4rem .4rem'}}></th>
                   <th style={{padding:'.4rem .6rem',color:'var(--muted)',fontSize:'.68rem'}}>#</th>
                   <th onClick={()=>setSort('email')} style={thStyle(false, sortKey==='email')}>Email{arrow('email')}</th>
                   <th onClick={()=>setSort('date')} style={thStyle(false, sortKey==='date')}>Date{arrow('date')}</th>
@@ -195,11 +217,22 @@ export default function ResonanceList() {
                 </tr>
               </thead>
               <tbody>
-                {view.map((r, i) => (
-                  <tr key={i} onClick={() => openDetail(r)}
-                    title={r.job_id ? 'Click for details' : ''}
+                {view.map((r, i) => {
+                  const sel = r.job_id && selected.includes(r.job_id)
+                  return (
+                  <tr key={i} onClick={() => toggleRow(r)}
+                    title={r.job_id ? 'Click to select' : ''}
                     style={{borderBottom:'1px solid rgba(30,42,56,.4)',
-                      cursor: r.job_id ? 'pointer' : 'default'}}>
+                      cursor: r.job_id ? 'pointer' : 'default',
+                      background: sel ? 'rgba(0,255,136,.08)' : 'transparent'}}>
+                    <td style={{padding:'.32rem .4rem'}}>
+                      {r.job_id ? (
+                        <span style={{display:'inline-flex',width:14,height:14,borderRadius:3,
+                          alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:'#000',
+                          background: sel ? 'var(--green)' : 'transparent',
+                          border:`2px solid ${sel ? 'var(--green)' : 'var(--border)'}`}}>{sel ? '✓' : ''}</span>
+                      ) : null}
+                    </td>
                     <td style={{padding:'.32rem .6rem',color:'var(--muted)',fontFamily:'var(--font-mono)',fontSize:'.72rem'}}>{i+1}</td>
                     <td style={{padding:'.32rem .6rem',color:'var(--text)'}}>{r.email || '—'}</td>
                     <td style={{padding:'.32rem .6rem',color:'var(--muted)'}}>{r.date || '—'}</td>
@@ -211,7 +244,7 @@ export default function ResonanceList() {
                       </td>
                     ))}
                   </tr>
-                ))}
+                )})}
               </tbody>
             </table>
           </div>
@@ -245,32 +278,34 @@ export default function ResonanceList() {
           {!isMaster && (
             <div style={{fontSize:'.72rem',color:'var(--muted)',marginTop:'.5rem'}}>
               You can view your own data but not download it. Other users' emails are masked and their video nicknames are hidden.
-              Click one of your rows to see the full details of that measurement.
+              Select one or more of your rows and press “Show details” to see their full physics.
             </div>
           )}
         </>
       )}
 
-      {/* Measurement detail modal */}
+      {/* Measurement details modal — all selected measurements, one after another */}
       {detail && (
         <div onClick={e => e.target === e.currentTarget && setDetail(null)}
           style={{position:'fixed',inset:0,zIndex:1100,background:'rgba(0,0,0,.65)',
             display:'flex',alignItems:'flex-start',justifyContent:'center',
             padding:'1rem',overflowY:'auto'}}>
           <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:16,
-            width:'100%',maxWidth:640,padding:'1.25rem',position:'relative',marginTop:'2rem'}}>
+            width:'100%',maxWidth:720,padding:'1.25rem',position:'relative',marginTop:'2rem',marginBottom:'2rem'}}>
             <button onClick={() => setDetail(null)} style={{position:'absolute',top:10,right:12,
-              background:'none',border:'none',color:'var(--muted)',fontSize:'1.05rem',cursor:'pointer'}}>✕</button>
-            <h3 style={{marginBottom:'.35rem'}}>
-              {detail.row.nickname || 'Measurement'} <span style={{color:'var(--muted)',fontWeight:400,fontSize:'.8rem'}}>· {detail.row.date}</span>
-            </h3>
+              background:'none',border:'none',color:'var(--muted)',fontSize:'1.05rem',cursor:'pointer'}}>✕ </button>
+            <h3 style={{marginBottom:'.75rem'}}>Details — {detail.rows.length} measurement{detail.rows.length>1?'s':''}</h3>
             {detail.loading ? (
               <div style={{color:'var(--muted)',padding:'1rem 0'}}>Loading…</div>
-            ) : !detail.data ? (
-              <div style={{color:'var(--muted)',padding:'1rem 0'}}>Could not load details.</div>
-            ) : (() => {
-              const j = detail.data.job || {}
-              const ph = detail.data.physics || {}
+            ) : detail.rows.map((row, ri) => {
+              const d = detail.datas[row.job_id]
+              if (!d) return (
+                <div key={ri} style={{color:'var(--muted)',padding:'.5rem 0'}}>
+                  {row.nickname || row.date}: could not load details.
+                </div>
+              )
+              const j = d.job || {}
+              const ph = d.physics || {}
               const ideal = ph.ideal || {}, air = ph.air || {}, water = ph.water || {}
               const ROWS = [
                 ['W_total','Total Work','J'],['P_avg','Average Power','W'],
@@ -286,46 +321,53 @@ export default function ResonanceList() {
                 const a=Math.abs(v), e=Math.floor(Math.log10(a))
                 return `${(v/Math.pow(10,e)).toFixed(3).replace(/\.?0+$/,'')}e${e}`
               }
-              return (<>
-                <div style={{display:'flex',gap:'1rem',flexWrap:'wrap',fontSize:'.78rem',
-                  color:'var(--muted)',marginBottom:'.75rem'}}>
-                  <span>📧 {j.email}</span>
-                  <span>⏱ {j.duration_s != null ? (+j.duration_s).toFixed(1)+'s video' : '—'}</span>
-                  <span style={{color: j.medium==='water' ? '#00bcd4' : 'var(--blue)',fontWeight:700}}>
-                    {(j.medium||'air').toUpperCase()}{j.direction ? ' · '+String(j.direction).toUpperCase() : ''}
-                  </span>
-                </div>
-                <div style={{display:'flex',gap:'1rem',flexWrap:'wrap',marginBottom:'.75rem'}}>
-                  <span style={{color:'#44aaff',fontSize:'.85rem'}}><b>LR</b> 🔷 {fmtLR(detail.row.LR)}</span>
-                  <span style={{color:'var(--amber)',fontSize:'.85rem'}}><b>LT</b> ⏳ {ph.lajtner_time != null ? (+ph.lajtner_time).toFixed(3)+' s' : '—'}</span>
-                  <span style={{color:'var(--amber)',fontSize:'.85rem'}}><b>LJ</b> 🌀 {ph.lajtner_jerk_deg != null ? fmtLJ(ph.lajtner_jerk_deg)+' °/s³' : '—'}</span>
-                </div>
-                <div style={{overflowX:'auto'}}>
-                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:'.76rem',whiteSpace:'nowrap'}}>
-                    <thead>
-                      <tr style={{borderBottom:'2px solid var(--border)'}}>
-                        <th style={{textAlign:'left',padding:'.3rem .5rem',color:'var(--muted)',fontSize:'.66rem',textTransform:'uppercase'}}>Parameter</th>
-                        <th style={{padding:'.3rem .5rem',color:'var(--muted)',fontSize:'.66rem',textAlign:'right'}}>Unit</th>
-                        <th style={{padding:'.3rem .5rem',color:'var(--blue)',fontSize:'.66rem',textAlign:'right'}}>Ideal</th>
-                        <th style={{padding:'.3rem .5rem',color:'var(--green)',fontSize:'.66rem',textAlign:'right'}}>Air</th>
-                        <th style={{padding:'.3rem .5rem',color:'#00bcd4',fontSize:'.66rem',textAlign:'right'}}>Water</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ROWS.map(([k,label,unit]) => (
-                        <tr key={k} style={{borderBottom:'1px solid rgba(30,42,56,.4)'}}>
-                          <td style={{padding:'.3rem .5rem',color:'var(--text)'}}>{label}</td>
-                          <td style={{padding:'.3rem .5rem',color:'var(--dim)',fontSize:'.7rem',textAlign:'right'}}>{unit}</td>
-                          <td style={{padding:'.3rem .5rem',color:'var(--blue)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{f(ideal[k])}</td>
-                          <td style={{padding:'.3rem .5rem',color:'var(--green)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{f(air[k])}</td>
-                          <td style={{padding:'.3rem .5rem',color:'#00bcd4',fontFamily:'var(--font-mono)',textAlign:'right'}}>{f(water[k])}</td>
+              return (
+                <div key={ri} style={{marginBottom:'1.5rem',paddingBottom:'1.25rem',
+                  borderBottom: ri < detail.rows.length-1 ? '2px solid var(--border)' : 'none'}}>
+                  <div style={{fontWeight:700,marginBottom:'.3rem'}}>
+                    {ri+1}. {j.nickname || row.nickname || 'Measurement'}
+                    <span style={{color:'var(--muted)',fontWeight:400,fontSize:'.8rem'}}> · {j.date || row.date}</span>
+                  </div>
+                  <div style={{display:'flex',gap:'1rem',flexWrap:'wrap',fontSize:'.78rem',
+                    color:'var(--muted)',marginBottom:'.5rem'}}>
+                    <span>📧 {j.email}</span>
+                    <span>⏱ {j.duration_s != null ? (+j.duration_s).toFixed(1)+'s video' : '—'}</span>
+                    <span style={{color: j.medium==='water' ? '#00bcd4' : 'var(--blue)',fontWeight:700}}>
+                      {(j.medium||'air').toUpperCase()}{j.direction ? ' · '+String(j.direction).toUpperCase() : ''}
+                    </span>
+                  </div>
+                  <div style={{display:'flex',gap:'1rem',flexWrap:'wrap',marginBottom:'.5rem'}}>
+                    <span style={{color:'#44aaff',fontSize:'.85rem'}}><b>LR</b> 🔷 {fmtLR(row.LR)}</span>
+                    <span style={{color:'var(--amber)',fontSize:'.85rem'}}><b>LT</b> ⏳ {ph.lajtner_time != null ? (+ph.lajtner_time).toFixed(3)+' s' : '—'}</span>
+                    <span style={{color:'var(--amber)',fontSize:'.85rem'}}><b>LJ</b> 🌀 {ph.lajtner_jerk_deg != null ? fmtLJ(ph.lajtner_jerk_deg)+' °/s³' : '—'}</span>
+                  </div>
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:'.76rem',whiteSpace:'nowrap'}}>
+                      <thead>
+                        <tr style={{borderBottom:'2px solid var(--border)'}}>
+                          <th style={{textAlign:'left',padding:'.3rem .5rem',color:'var(--muted)',fontSize:'.66rem',textTransform:'uppercase'}}>Parameter</th>
+                          <th style={{padding:'.3rem .5rem',color:'var(--muted)',fontSize:'.66rem',textAlign:'right'}}>Unit</th>
+                          <th style={{padding:'.3rem .5rem',color:'var(--blue)',fontSize:'.66rem',textAlign:'right'}}>Ideal</th>
+                          <th style={{padding:'.3rem .5rem',color:'var(--green)',fontSize:'.66rem',textAlign:'right'}}>Air</th>
+                          <th style={{padding:'.3rem .5rem',color:'#00bcd4',fontSize:'.66rem',textAlign:'right'}}>Water</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {ROWS.map(([k,label,unit]) => (
+                          <tr key={k} style={{borderBottom:'1px solid rgba(30,42,56,.4)'}}>
+                            <td style={{padding:'.3rem .5rem',color:'var(--text)'}}>{label}</td>
+                            <td style={{padding:'.3rem .5rem',color:'var(--dim)',fontSize:'.7rem',textAlign:'right'}}>{unit}</td>
+                            <td style={{padding:'.3rem .5rem',color:'var(--blue)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{f(ideal[k])}</td>
+                            <td style={{padding:'.3rem .5rem',color:'var(--green)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{f(air[k])}</td>
+                            <td style={{padding:'.3rem .5rem',color:'#00bcd4',fontFamily:'var(--font-mono)',textAlign:'right'}}>{f(water[k])}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </>)
-            })()}
+              )
+            })}
           </div>
         </div>
       )}

@@ -31,9 +31,9 @@ function Row({ label, lr, time, jerk }) {
       alignItems:'center',padding:'.5rem .75rem',borderRadius:8,
       background:'rgba(255,136,0,.06)',marginTop:'.4rem'}}>
       <span style={{color:'var(--muted)',fontSize:'.78rem',minWidth:110}}>{label}</span>
-      <span style={{color:'#44aaff',fontSize:'.82rem'}}><b>LR</b> 🔷 {fmtLR(lr)}</span>
-      <span style={{color:'var(--amber)',fontSize:'.82rem'}}><b>LT</b> ⏳ {fmtT(time)}</span>
-      <span style={{color:'var(--amber)',fontSize:'.82rem'}}><b>LJ</b> 🌀 {fmtJ(jerk)}</span>
+      <span style={{color:'#44aaff',fontSize:'.82rem'}}><b>Lajtner Resonance</b> 🔷 {fmtLR(lr)}</span>
+      <span style={{color:'var(--amber)',fontSize:'.82rem'}}><b>Lajtner Time</b> ⏳ {fmtT(time)}</span>
+      <span style={{color:'var(--amber)',fontSize:'.82rem'}}><b>Lajtner Jerk</b> 🌀 {fmtJ(jerk)}</span>
     </div>
   )
 }
