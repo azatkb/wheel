@@ -491,19 +491,25 @@ def save_physics_result(job_id: str, email: str, medium: str,
         all_phases = result.get("all_phases", [])
         cw_total  = sum(abs(p.get("phi_total_deg", 0)) for p in all_phases if p.get("direction") == "CW")
         ccw_total = sum(abs(p.get("phi_total_deg", 0)) for p in all_phases if p.get("direction") == "CCW")
+        def _f(x):
+            """None-safe float: DB save must never crash on a missing value."""
+            try:
+                return float(x) if x is not None else 0.0
+            except (TypeError, ValueError):
+                return 0.0
         record = {
             "job_id":        job_id,
             "email":         email,
             "medium":        medium,
-            "cumulative_deg": round(abs(float(result.get("ideal", {}).get("phi_total", 0)) * 180 / 3.14159265), 4),
-            "w_total_air":   float(result.get("air",  {}).get("W_total", 0)),
-            "w_total_water": float(result.get("water",{}).get("W_total", 0)),
-            "f_max_air":     float(result.get("air",  {}).get("F_max",   0)),
-            "omega_max":     float(result.get("ideal", {}).get("omega_max", 0) or result.get("kinematics",{}).get("omega_max", 0)),
-            "p_peak_air":    float(result.get("air",  {}).get("P_peak", 0)),
-            "p_avg_air":     float(result.get("air",  {}).get("P_avg",  0)),
-            "t_lajtner":     float(result.get("t_lajtner", 0)),
-            "a_lajtner":     float(result.get("a_lajtner", 0)),
+            "cumulative_deg": round(abs(_f((result.get("ideal") or {}).get("phi_total")) * 180 / 3.14159265), 4),
+            "w_total_air":   _f((result.get("air")   or {}).get("W_total")),
+            "w_total_water": _f((result.get("water") or {}).get("W_total")),
+            "f_max_air":     _f((result.get("air")   or {}).get("F_max")),
+            "omega_max":     _f((result.get("ideal") or {}).get("omega_max")) or _f((result.get("kinematics") or {}).get("omega_max")),
+            "p_peak_air":    _f((result.get("air")   or {}).get("P_peak")),
+            "p_avg_air":     _f((result.get("air")   or {}).get("P_avg")),
+            "t_lajtner":     _f(result.get("t_lajtner")),
+            "a_lajtner":     _f(result.get("lajtner_time") if result.get("a_lajtner") is None else result.get("a_lajtner")),
             "cw_deg":        round(cw_total, 2),
             "ccw_deg":       round(ccw_total, 2),
             "cw_ccw_deg":    round(cw_total + ccw_total, 2),
