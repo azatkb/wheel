@@ -306,7 +306,8 @@ export default function Upload() {
               onChange={e => setNickname(e.target.value)}
               maxLength={80}
               placeholder="e.g. Morning focus try #1"
-              style={{padding:'.45rem .65rem'}} />
+              style={{padding:'.45rem .65rem',background:'#FFEF86',
+                color:'#333',borderColor:'#e8d96a'}} />
             {showNickHelp && (
               <div style={{fontSize:'.7rem',color:'var(--muted)',marginTop:'.35rem',lineHeight:1.45,
                 background:'rgba(0,255,136,.05)',border:'1px solid rgba(0,255,136,.15)',

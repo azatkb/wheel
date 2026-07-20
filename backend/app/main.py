@@ -1357,10 +1357,12 @@ def api_lajtner_averages(email: str = ""):
     if not sb:
         raise HTTPException(500, "DB unavailable")
     try:
-        resp = sb.table("physics_results").select("email, physics_json").execute()
+        resp = sb.table("physics_results").select("job_id, email, physics_json").execute()
+        jr   = sb.table("wt_jobs").select("id, user_email").execute()
     except Exception as e:
         log.warning(f"[LAJTNER-AVG] read failed: {e}")
         raise HTTPException(500, "DB read failed")
+    _jmail = {j.get("id"): (j.get("user_email") or "") for j in (jr.data or [])}
 
     def _avg(vals):
         vals = [v for v in vals if isinstance(v, (int, float)) and v > 0]
@@ -1382,7 +1384,8 @@ def api_lajtner_averages(email: str = ""):
             all_j.append(j)
         if lr:
             all_r.append(lr)
-        if em and (r.get("email") or "").strip().lower() == em:
+        _rowmail = (_jmail.get(r.get("job_id")) or r.get("email") or "").strip().lower()
+        if em and _rowmail == em:
             if t:
                 my_t.append(t)
             if j:
@@ -1738,7 +1741,7 @@ def rerun_all_physics(token: str = "", email: str = "", limit: int = 2000):
     if not sb:
         raise HTTPException(500, "DB unavailable")
     try:
-        jr = sb.table("wt_jobs").select("id, medium").limit(limit).execute()
+        jr = sb.table("wt_jobs").select("id, medium, user_email").limit(limit).execute()
     except Exception as e:
         raise HTTPException(500, f"job list failed: {e}")
     done, skipped, failed = 0, 0, 0
@@ -1749,7 +1752,8 @@ def rerun_all_physics(token: str = "", email: str = "", limit: int = 2000):
             if not samples:
                 skipped += 1
                 continue
-            _run_physics(samples, j.get("medium", "air"), "auto", "", jid,
+            _run_physics(samples, j.get("medium", "air"), "auto",
+                         j.get("user_email") or "", jid,
                          "ultimate", "en")
             done += 1
         except Exception as e:
