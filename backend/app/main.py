@@ -1249,20 +1249,17 @@ def results(job_id: str): return read_samples(job_id)
 
 @app.get("/physics/{job_id}")
 def physics_results(job_id: str):
-    # 1. Try memory first (fast, available right after processing)
-    info = jobs.get(job_id, {})
-    if info.get("physics") or info.get("message"):
-        return {"message": info.get("message", {}),
-                "result":  info.get("physics",  {}),
-                "phases":  info.get("phases",   {}),
-                "physics_url": f"/physics/{job_id}"}
-    # 2. Always fallback to Supabase (persists across restarts)
+    # DB ONLY — no in-memory data. Supabase physics_json is the single source
+    # of truth, so results are identical before/after any server restart.
     try:
         from app.database import _sb
         sb = _sb()
+        if not sb:
+            raise HTTPException(503, "DB unavailable — set SUPABASE_URL / SUPABASE_KEY "
+                                     "in the environment where uvicorn runs")
         if sb:
             resp = sb.table("physics_results").select(
-                "physics_json, t_lajtner, a_lajtner"
+                "physics_json"
             ).eq("job_id", job_id).limit(1).execute()
             if resp.data:
                 row  = resp.data[0]
@@ -1272,13 +1269,13 @@ def physics_results(job_id: str):
                 try:
                     # Get job info for email/direction/medium
                     job_resp = sb.table("wt_jobs").select(
-                        "user_email,direction,medium,plan"
+                        "user_email,direction,medium"
                     ).eq("id", job_id).limit(1).execute()
                     job_info = job_resp.data[0] if job_resp.data else {}
                     msg = build_message(
                         result=phys,
                         medium=job_info.get("medium","air"),
-                        version=job_info.get("plan","basic"),
+                        version="ultimate",   # beta: full display (wt_jobs has no plan column)
                         lang="en"
                     )
                 except Exception as _me:
@@ -1286,9 +1283,13 @@ def physics_results(job_id: str):
                     msg = {"moved": True}
                 return {"message": msg, "result": phys,
                         "phases": {}, "physics_url": f"/physics/{job_id}"}
+    except HTTPException:
+        raise
     except Exception as e:
         log.warning(f"[PHYSICS] DB read failed: {e}")
-    raise HTTPException(404, "Physics not found — may need to reprocess")
+        raise HTTPException(500, f"DB read failed: {e}")
+    raise HTTPException(404, "No physics row in DB for this job — reprocess it "
+                             "(POST /admin/rerun-all-physics?token=...)")
 
 @app.get("/csv/{job_id}")
 def csv_download(job_id: str):
