@@ -12,7 +12,7 @@ let _cacheKey = null
 const fmtLR = (v) => {
   if (!v || v <= 0) return '—'
   const e = Math.floor(Math.log10(v))
-  return `${(v / Math.pow(10, e)).toFixed(2)}L${e >= 0 ? '+' : ''}${e}R`
+  return `${(v / Math.pow(10, e)).toFixed(2)}L${e}R`
 }
 const fmtT = (v) => (v != null ? `${(+v).toFixed(3)} s` : '—')
 const fmtJ = (v) => {

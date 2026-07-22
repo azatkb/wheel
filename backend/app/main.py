@@ -973,6 +973,78 @@ async def feedback(request: Request):
     return {"ok": True}
 
 
+@app.post("/contact-general")
+async def contact_general(request: Request):
+    """General contact form (standalone — used by lajtnerresonance.com and other
+    sites). Separate from the in-app Beta feedback. Emails via our SMTP server.
+    Fields: name, email, subject (business|presentation|other), message, site."""
+    import html as _html
+    body = await request.json()
+    name    = (body.get("name")    or "").strip()[:120]
+    email   = (body.get("email")   or "").strip()[:200]
+    subject = (body.get("subject") or "other").strip().lower()[:40]
+    message = (body.get("message") or "").strip()[:5000]
+    site    = (body.get("site")    or "").strip()[:120]
+    if subject not in ("business", "presentation", "other"):
+        subject = "other"
+    if not message or not email:
+        raise HTTPException(400, "Email and message are required")
+
+    # save to DB (best effort — reuse a simple 'contact_messages' table)
+    try:
+        from app.database import _sb
+        sb = _sb()
+        if sb:
+            sb.table("contact_messages").insert({
+                "name": name, "email": email, "subject": subject,
+                "message": message, "site": site,
+                "created_at": datetime.datetime.utcnow().isoformat(),
+            }).execute()
+    except Exception as e:
+        log.warning(f"[CONTACT] DB save failed (continuing): {e}")
+
+    to_addr    = os.environ.get("CONTACT_EMAIL", os.environ.get("FEEDBACK_EMAIL", "mindpw1@gmail.com"))
+    GMAIL_USER = os.environ.get("GMAIL_USER", "")
+    GMAIL_PASS = os.environ.get("GMAIL_PASS", "")
+    if GMAIL_USER and GMAIL_PASS:
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            s_name = _html.escape(name or "—")
+            s_em   = _html.escape(email)
+            s_sub  = _html.escape(subject)
+            s_msg  = _html.escape(message)
+            s_site = _html.escape(site or "—")
+            msg = MIMEMultipart("alternative")
+            msg["Subject"]  = f"[Contact · {subject}] {name or email}"
+            msg["From"]     = f"Contact form <{GMAIL_USER}>"
+            msg["To"]       = to_addr
+            msg["Reply-To"] = email
+            body_text = (f"Site: {site}\nName: {name}\nEmail: {email}\n"
+                         f"Subject: {subject}\n\n{message}")
+            body_html = f"""<div style="font-family:sans-serif;max-width:560px;margin:20px auto">
+  <h3 style="color:#111">New contact message · {s_sub}</h3>
+  <p style="color:#444"><b>Name:</b> {s_name}<br>
+     <b>Email:</b> {s_em}<br>
+     <b>Site:</b> {s_site}<br>
+     <b>Subject:</b> {s_sub}</p>
+  <div style="background:#f5f5f5;border-radius:8px;padding:16px;white-space:pre-wrap;color:#222">{s_msg}</div>
+</div>"""
+            msg.attach(MIMEText(body_text, "plain"))
+            msg.attach(MIMEText(body_html, "html"))
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as srv:
+                srv.login(GMAIL_USER, GMAIL_PASS)
+                srv.sendmail(GMAIL_USER, to_addr, msg.as_string())
+            log.info(f"[CONTACT] emailed to {to_addr} · {subject} · from {email}")
+        except Exception as e:
+            log.error(f"[CONTACT] email send failed: {e}")
+            raise HTTPException(500, "Could not send message — please try again later")
+    else:
+        log.warning("[CONTACT] GMAIL not set — message saved/logged only")
+    return {"ok": True}
+
+
 @app.post("/auth/reset-confirm")
 async def reset_confirm(request: Request):
     body = await request.json()
@@ -1477,7 +1549,7 @@ def api_lr_lt_lj(email: str = ""):
     master = _is_master(em)
     try:
         pres = sb.table("physics_results").select("job_id, email, physics_json").execute()
-        jres = sb.table("wt_jobs").select("id, user_email, created_at, duration_sec, nickname, medium, direction").execute()
+        jres = sb.table("wt_jobs").select("id, user_email, created_at, duration_sec, nickname, medium, direction, hand_visible").execute()
     except Exception as e:
         log.warning(f"[LR-LT-LJ] read failed: {e}")
         raise HTTPException(500, "DB read failed")
@@ -1505,6 +1577,7 @@ def api_lr_lt_lj(email: str = ""):
             "date":       (job.get("created_at") or "")[:16].replace("T", " "),
             "duration_s": job.get("duration_sec"),
             "medium":     job.get("medium"),
+            "hand":       job.get("hand_visible"),
             "LR": LR, "LT": LT, "LJ": LJ,
         }
         allrows.append({
@@ -1545,7 +1618,7 @@ def api_measurement(job_id: str, email: str = ""):
     master = _is_master(em)
     try:
         jr = sb.table("wt_jobs").select(
-            "id, user_email, created_at, duration_sec, nickname, medium, direction"
+            "id, user_email, created_at, duration_sec, nickname, medium, direction, hand_visible"
         ).eq("id", job_id).limit(1).execute()
         pr = sb.table("physics_results").select("physics_json").eq("job_id", job_id).limit(1).execute()
     except Exception as e:
@@ -1568,6 +1641,7 @@ def api_measurement(job_id: str, email: str = ""):
             "duration_s": job.get("duration_sec"),
             "nickname": job.get("nickname"),
             "medium": job.get("medium"), "direction": job.get("direction"),
+            "hand": job.get("hand_visible"),
         },
         "physics": {
             "ideal": phys.get("ideal"), "air": phys.get("air"), "water": phys.get("water"),

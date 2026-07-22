@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Contact us</title>
+<style>
+  :root{
+    --bg:#0d1117; --card:#161b22; --border:#26303c; --text:#e6edf3;
+    --muted:#8b98a5; --accent:#00c271; --accent2:#44aaff; --field:#0d1117;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(1200px 600px at 50% -10%, #12303a 0%, var(--bg) 55%);
+    color:var(--text); display:flex; align-items:center; justify-content:center; padding:2rem 1rem;
+  }
+  .card{
+    width:100%; max-width:520px; background:var(--card); border:1px solid var(--border);
+    border-radius:18px; padding:2rem 1.75rem; box-shadow:0 20px 60px rgba(0,0,0,.45);
+  }
+  .logo{display:block; height:44px; margin:0 auto 1.25rem; object-fit:contain}
+  h1{font-size:1.4rem; margin:.25rem 0 .35rem; text-align:center}
+  .sub{color:var(--muted); font-size:.9rem; text-align:center; margin:0 0 1.5rem}
+  label{display:block; font-size:.8rem; color:var(--muted); margin:.9rem 0 .3rem}
+  input,select,textarea{
+    width:100%; background:var(--field); border:1px solid var(--border); color:var(--text);
+    border-radius:10px; padding:.6rem .7rem; font-size:.92rem; font-family:inherit; outline:none;
+    transition:border-color .15s;
+  }
+  input:focus,select:focus,textarea:focus{border-color:var(--accent2)}
+  textarea{resize:vertical; min-height:120px}
+  button{
+    width:100%; margin-top:1.4rem; background:var(--accent); color:#04140c; border:none;
+    border-radius:10px; padding:.75rem; font-size:.98rem; font-weight:700; cursor:pointer;
+    transition:filter .15s, opacity .15s;
+  }
+  button:hover{filter:brightness(1.06)}
+  button:disabled{opacity:.6; cursor:default}
+  .note{font-size:.75rem; color:var(--muted); text-align:center; margin-top:1rem}
+  .msg{margin-top:1rem; padding:.7rem .8rem; border-radius:10px; font-size:.88rem; display:none}
+  .msg.ok{display:block; background:rgba(0,194,113,.12); border:1px solid rgba(0,194,113,.4); color:#4ade80}
+  .msg.err{display:block; background:rgba(255,80,80,.10); border:1px solid rgba(255,80,80,.35); color:#ff8080}
+  a{color:var(--accent2); text-decoration:none}
+</style>
+</head>
+<body>
+  <div class="card">
+    <img class="logo" src="https://mindpw.com/black.png" alt="Logo"
+         onerror="this.style.display='none'" />
+    <h1>Get in touch</h1>
+    <p class="sub">Send us a message and we'll get back to you by email.</p>
+
+    <form id="contactForm" novalidate>
+      <label for="name">Name</label>
+      <input id="name" type="text" maxlength="120" placeholder="Your name" autocomplete="name" />
+
+      <label for="email">Email <span style="color:#ff8080">*</span></label>
+      <input id="email" type="email" maxlength="200" placeholder="you@example.com"
+             autocomplete="email" required />
+
+      <label for="subject">Subject</label>
+      <select id="subject">
+        <option value="business">Business</option>
+        <option value="presentation">Presentation</option>
+        <option value="other" selected>Other</option>
+      </select>
+
+      <label for="message">Message <span style="color:#ff8080">*</span></label>
+      <textarea id="message" maxlength="5000" placeholder="How can we help?" required></textarea>
+
+      <button id="submitBtn" type="submit">Send message</button>
+    </form>
+
+    <div id="result" class="msg"></div>
+    <p class="note">We reply to the email address you provide.</p>
+  </div>
+
+<script>
+  // Point this at your API server. The endpoint is shared across all sites.
+  const API_ENDPOINT = "https://wheelttt.xyz/contact-general";
+
+  const form   = document.getElementById("contactForm");
+  const btn    = document.getElementById("submitBtn");
+  const result = document.getElementById("result");
+
+  function show(kind, text){
+    result.className = "msg " + kind;
+    result.textContent = text;
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const email   = document.getElementById("email").value.trim();
+    const message = document.getElementById("message").value.trim();
+    if (!email || !message){
+      show("err", "Please fill in your email and a message.");
+      return;
+    }
+    const payload = {
+      name:    document.getElementById("name").value.trim(),
+      email,
+      subject: document.getElementById("subject").value,
+      message,
+      site:    location.hostname || "contact-general"
+    };
+    btn.disabled = true; btn.textContent = "Sending…";
+    result.className = "msg";
+    try{
+      const r = await fetch(API_ENDPOINT, {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!r.ok) throw new Error("send failed");
+      show("ok", "✓ Thank you! Your message has been sent. We'll reply by email.");
+      form.reset();
+      document.getElementById("subject").value = "other";
+    }catch(err){
+      show("err", "Could not send your message. Please try again in a moment.");
+    }finally{
+      btn.disabled = false; btn.textContent = "Send message";
+    }
+  });
+</script>
+</body>
+</html>

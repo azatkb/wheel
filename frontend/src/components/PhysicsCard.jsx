@@ -383,9 +383,10 @@ export default function PhysicsCard({ msg, result, jobId, isPaid, showTable = tr
           <strong style={{color:'var(--amber)'}}>Lajtner Resonance</strong> (based on Planck constant): f = E/h<br/>
           Your result: <strong style={{color:'var(--amber)'}}>
             {fmtLR(msg.display.planck_freq_raw || msg.display.planck_freq_Hz)}
-          </strong><br/>
-          For comparison: the electromagnetic waves of the human brain reach only about <strong>2,000 Hz (2.00×10³)</strong>.<br/>
-          <em style={{color:'var(--green)'}}>Your directed intention produced an energy far beyond that — this is what your Lajtner Resonance measures.</em>
+          </strong>{' '}
+          <span>— higher is better (example: 1L20R &lt; 2L20R, and 1L20R ≪ 1L21R).</span><br/>
+          <em style={{color:'var(--green)'}}>This is a special directed intent energy that you have.</em><br/>
+          The brain&apos;s electromagnetic waves do not exceed <strong>2,000 Hz (2.00×10³)</strong>, according to mainstream science.
         </div>
       )}
 

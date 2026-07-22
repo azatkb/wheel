@@ -6,7 +6,7 @@ import { API } from '../config'
 const fmtLR = (v) => {
   if (!v || v <= 0) return '—'
   const e = Math.floor(Math.log10(v))
-  return `${(v / Math.pow(10, e)).toFixed(2)}L${e >= 0 ? '+' : ''}${e}R`
+  return `${(v / Math.pow(10, e)).toFixed(2)}L${e}R`
 }
 const fmtLT = (v) => (v != null ? `${(+v).toFixed(3)}` : '—')       // seconds
 const SUP = { '-':'⁻',0:'⁰',1:'¹',2:'²',3:'³',4:'⁴',5:'⁵',6:'⁶',7:'⁷',8:'⁸',9:'⁹' }
@@ -17,6 +17,7 @@ const fmtLJ = (v) => {
   return `${(v / Math.pow(10, e)).toFixed(2)}×10${sup(e)}`
 }
 const fmtDur = (s) => (s != null ? `${(+s).toFixed(1)}s` : '—')
+const fmtHand = (h) => (h === true || h === 'true' ? 'hand' : h === false || h === 'false' ? 'no hand' : '—')
 
 // metric meta: label, formatter, colour, and "best" direction
 const METRICS = {
@@ -100,10 +101,10 @@ export default function ResonanceList() {
   const arrow = (k) => (sortKey === k ? (sortDesc ? ' ▾' : ' ▴') : '')
 
   const downloadCSV = () => {
-    const head = ['email','date','video_length_s','nickname', ...cols]
+    const head = ['email','date','video_length_s','hand','nickname', ...cols]
     const lines = [head]
     ;(data?.all || []).forEach(r => {
-      lines.push([r.email||'', r.date||'', r.duration_s??'', r.nickname||'', ...cols.map(c => r[c] ?? '')])
+      lines.push([r.email||'', r.date||'', r.duration_s??'', fmtHand(r.hand), r.nickname||'', ...cols.map(c => r[c] ?? '')])
     })
     const csv = lines.map(l => l.map(c => {
       const s = String(c ?? '')
@@ -146,7 +147,7 @@ export default function ResonanceList() {
     <div>
       <div className="page-header">
         <h1>LR-LT-LJ — {scope === 'mine' ? 'My values' : 'Everyone'}</h1>
-        <p>Lajtner Resonance · Time (lower is better) · Jerk (higher is better).</p>
+        <p>Lajtner Resonance (higher is better) · Time (lower is better) · Jerk (higher is better).</p>
       </div>
 
       <div style={{display:'flex',gap:'.4rem',flexWrap:'wrap',marginBottom:'.6rem',alignItems:'center'}}>
@@ -208,6 +209,7 @@ export default function ResonanceList() {
                   <th onClick={()=>setSort('email')} style={thStyle(false, sortKey==='email')}>Email{arrow('email')}</th>
                   <th onClick={()=>setSort('date')} style={thStyle(false, sortKey==='date')}>Date{arrow('date')}</th>
                   <th onClick={()=>setSort('duration_s')} style={thStyle(true, sortKey==='duration_s')}>Video{arrow('duration_s')}</th>
+                  <th style={{padding:'.4rem .6rem',textAlign:'left',color:'var(--muted)',fontSize:'.68rem',textTransform:'uppercase'}}>Hand</th>
                   {showNick && <th style={{padding:'.4rem .6rem',textAlign:'left',color:'var(--muted)',fontSize:'.68rem',textTransform:'uppercase'}}>Nickname</th>}
                   {cols.map(c => (
                     <th key={c} onClick={()=>setSort(c)} style={thStyle(true, sortKey===c)}>
@@ -237,6 +239,7 @@ export default function ResonanceList() {
                     <td style={{padding:'.32rem .6rem',color:'var(--text)'}}>{r.email || '—'}</td>
                     <td style={{padding:'.32rem .6rem',color:'var(--muted)'}}>{r.date || '—'}</td>
                     <td style={{padding:'.32rem .6rem',color:'var(--muted)',textAlign:'right'}}>{fmtDur(r.duration_s)}</td>
+                    <td style={{padding:'.32rem .6rem',color:'var(--muted)'}}>{fmtHand(r.hand)}</td>
                     {showNick && <td style={{padding:'.32rem .6rem',color:'var(--amber)'}}>{r.nickname || '—'}</td>}
                     {cols.map(c => (
                       <td key={c} style={{padding:'.32rem .6rem',textAlign:'right',fontFamily:'var(--font-mono)',color:METRICS[c].color}}>
@@ -335,6 +338,7 @@ export default function ResonanceList() {
                     <span style={{color: j.medium==='water' ? '#00bcd4' : 'var(--blue)',fontWeight:700}}>
                       {(j.medium||'air').toUpperCase()}{j.direction ? ' · '+String(j.direction).toUpperCase() : ''}
                     </span>
+                    <span>✋ {fmtHand(j.hand)}</span>
                   </div>
                   <div style={{display:'flex',gap:'1rem',flexWrap:'wrap',marginBottom:'.5rem'}}>
                     <span style={{color:'#44aaff',fontSize:'.85rem'}}><b>LR</b> 🔷 {fmtLR(row.LR)}</span>

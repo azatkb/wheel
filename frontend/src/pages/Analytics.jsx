@@ -58,7 +58,7 @@ const fmtLR = (v) => {
   if (!v || v <= 0) return '—'
   const exp = Math.floor(Math.log10(v))
   const man = (v / Math.pow(10, exp)).toFixed(2)
-  return `${man}L${exp >= 0 ? '+' : ''}${exp}R`
+  return `${man}L${exp}R`
 }
 
 const COLORS = ['#00ff88','#44aaff','#ff8800','#f44','#cc88ff','#00bcd4','#ffcc00']
@@ -101,12 +101,12 @@ function PhysicsTable({ result, job, samples }) {
             </span>
           ) : null
         })()}
-        {result?.lajtner_time != null && (
+        {(ideal?.planck_freq != null || air?.planck_freq != null) && (
           <span style={{color:'var(--amber)'}}>⏳ {(+result.lajtner_time).toFixed(3)} s
             <span style={{color:'var(--muted)',marginLeft:'.3rem'}}>Lajtner Time</span></span>
         )}
-        {result?.lajtner_jerk_deg != null && (
-          <span style={{color:'var(--amber)'}}>🌀 {fmt(result.lajtner_jerk_deg)} °/s³
+        {(ideal?.planck_freq != null || air?.planck_freq != null) && (
+          <span style={{color:'var(--amber)'}}>🌀 {fmt(result?.lajtner_jerk_deg ?? 0)} °/s³
             <span style={{color:'var(--muted)',marginLeft:'.3rem'}}>Lajtner Jerk</span></span>
         )}
       </div>
@@ -176,11 +176,19 @@ function PhysicsTable({ result, job, samples }) {
                     : '—'} °/s
                 </td>
               </tr>
-              <tr style={{borderBottom:'2px solid var(--border)'}}>
+              <tr style={{borderBottom:'1px solid var(--border)'}}>
                 <td style={{padding:'.3rem .6rem',color:'var(--text)',fontWeight:600}}>Medium</td>
                 <td style={{padding:'.3rem .6rem',color:'var(--muted)',fontSize:'.7rem'}}>—</td>
                 <td colSpan={3} style={{padding:'.3rem .6rem',color:'var(--amber)',textAlign:'left'}}>
                   {(job.medium || 'air').toUpperCase()} · {job.direction?.toUpperCase() || '—'}
+                </td>
+              </tr>
+              <tr style={{borderBottom:'2px solid var(--border)'}}>
+                <td style={{padding:'.3rem .6rem',color:'var(--text)',fontWeight:600}}>Hand</td>
+                <td style={{padding:'.3rem .6rem',color:'var(--muted)',fontSize:'.7rem'}}>—</td>
+                <td colSpan={3} style={{padding:'.3rem .6rem',color:'var(--text)',textAlign:'left'}}>
+                  {job.hand_visible === true || job.hand_visible === 'true' ? 'Hand'
+                    : job.hand_visible === false || job.hand_visible === 'false' ? 'No hand' : '—'}
                 </td>
               </tr>
             </>}
@@ -219,18 +227,18 @@ function PhysicsTable({ result, job, samples }) {
                   <tr style={{background:'rgba(255,136,0,.06)'}}>
                     <td style={{padding:'.35rem .6rem',color:'var(--text)',fontWeight:600}}>Lajtner Time (LT)</td>
                     <td style={{padding:'.35rem .6rem',color:'var(--dim)',fontSize:'.72rem',textAlign:'right'}}>s</td>
-                    <td style={{padding:'.35rem .6rem',color:'var(--blue)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result.lajtner_time)}</td>
-                    <td style={{padding:'.35rem .6rem',color:'var(--green)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(airCell(result.lajtner_time))}</td>
-                    <td style={{padding:'.35rem .6rem',color:'#00bcd4',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(watCell(result.lajtner_time))}</td>
+                    <td style={{padding:'.35rem .6rem',color:'var(--blue)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result?.lajtner_time ?? 0)}</td>
+                    <td style={{padding:'.35rem .6rem',color:'var(--green)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(airCell(result?.lajtner_time ?? 0))}</td>
+                    <td style={{padding:'.35rem .6rem',color:'#00bcd4',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(watCell(result?.lajtner_time ?? 0))}</td>
                   </tr>
                 )}
                 {result?.lajtner_jerk_deg != null && (
                   <tr style={{background:'rgba(255,136,0,.06)'}}>
                     <td style={{padding:'.35rem .6rem',color:'var(--text)',fontWeight:600}}>Lajtner Jerk (LJ)</td>
                     <td style={{padding:'.35rem .6rem',color:'var(--dim)',fontSize:'.72rem',textAlign:'right'}}>°/s³</td>
-                    <td style={{padding:'.35rem .6rem',color:'var(--blue)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result.lajtner_jerk_deg)}</td>
-                    <td style={{padding:'.35rem .6rem',color:'var(--green)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(airCell(result.lajtner_jerk_deg))}</td>
-                    <td style={{padding:'.35rem .6rem',color:'#00bcd4',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(watCell(result.lajtner_jerk_deg))}</td>
+                    <td style={{padding:'.35rem .6rem',color:'var(--blue)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(result?.lajtner_jerk_deg ?? 0)}</td>
+                    <td style={{padding:'.35rem .6rem',color:'var(--green)',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(airCell(result?.lajtner_jerk_deg ?? 0))}</td>
+                    <td style={{padding:'.35rem .6rem',color:'#00bcd4',fontFamily:'var(--font-mono)',textAlign:'right'}}>{fmt(watCell(result?.lajtner_jerk_deg ?? 0))}</td>
                   </tr>
                 )}
               </>)
