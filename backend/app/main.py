@@ -990,6 +990,32 @@ async def contact_general(request: Request):
     if not message or not email:
         raise HTTPException(400, "Email and message are required")
 
+    # reCAPTCHA (same master switch as the app: RECAPTCHA_ENABLED=1 + secret key)
+    if not await _verify_recaptcha(body.get("recaptcha_token") or ""):
+        raise HTTPException(400, "reCAPTCHA verification failed. Please try again.")
+
+    # log EVERY message to CSV (';' separated, BOM — opens correctly in Excel)
+    try:
+        import csv as _csv
+        from app.database import CSV_DIR
+        _csv_path = CSV_DIR / "contact_messages.csv"
+        _new = not _csv_path.exists()
+        with open(_csv_path, "a", newline="", encoding="utf-8-sig") as _fh:
+            _w = _csv.writer(_fh, delimiter=";", quoting=_csv.QUOTE_ALL)
+            if _new:
+                _w.writerow(["created_at_utc", "site", "subject", "name",
+                             "email", "message", "client_ip", "user_agent"])
+            _w.writerow([
+                datetime.datetime.utcnow().isoformat(timespec="seconds"),
+                site, subject, name, email,
+                message.replace("\r\n", " ").replace("\n", " "),
+                (request.client.host if request.client else ""),
+                (request.headers.get("user-agent") or "")[:300],
+            ])
+        log.info(f"[CONTACT] logged to CSV: {_csv_path}")
+    except Exception as e:
+        log.warning(f"[CONTACT] CSV log failed (continuing): {e}")
+
     # save to DB (best effort — reuse a simple 'contact_messages' table)
     try:
         from app.database import _sb
@@ -1043,6 +1069,20 @@ async def contact_general(request: Request):
     else:
         log.warning("[CONTACT] GMAIL not set — message saved/logged only")
     return {"ok": True}
+
+
+@app.get("/admin/contact-csv")
+def admin_contact_csv(token: str = "", email: str = ""):
+    """Master: download every contact-form message as CSV (';' separated)."""
+    MASTER_EMAILS = ["azatkb22@gmail.com", "lajtnert@gmail.com"]
+    if email not in MASTER_EMAILS and token != MASTER_TOKEN:
+        raise HTTPException(401, "Unauthorized")
+    from app.database import CSV_DIR
+    path = CSV_DIR / "contact_messages.csv"
+    if not path.exists():
+        raise HTTPException(404, "No contact messages yet")
+    return FileResponse(str(path), media_type="text/csv",
+                        filename="contact_messages.csv")
 
 
 @app.post("/auth/reset-confirm")

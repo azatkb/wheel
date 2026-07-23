@@ -32,7 +32,7 @@ const NAV_ALL = [
   { to: '/store',        icon: '🛒', label: 'Store' },
   { to: '/focus',        icon: '🧠', label: 'Focus Test' },
   { to: '/resonances',   icon: '📈', label: 'LR-LT-LJ' },
-  { to: 'https://lajtnerresonance.com', icon: '✉', label: 'Contact', external: true },
+  { to: 'https://mindpw.com/feedback.html', icon: '✉', label: 'Contact', external: true },
   { to: '/store-admin',   icon: '🏪', label: 'Store Admin', masterOnly: true },
   { to: '/statistics',    icon: '📊', label: 'Statistics', masterOnly: true, ultimateOk: true },
   { to: '/focus-db',      icon: '🗄', label: 'Focus DB', masterOnly: true },

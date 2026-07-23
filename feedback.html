@@ -43,6 +43,7 @@
   .msg.err{display:block; background:rgba(255,80,80,.10); border:1px solid rgba(255,80,80,.35); color:#ff8080}
   a{color:var(--accent2); text-decoration:none}
 </style>
+<script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
 <body>
   <div class="card">
@@ -68,6 +69,10 @@
 
       <label for="message">Message <span style="color:#ff8080">*</span></label>
       <textarea id="message" maxlength="5000" placeholder="How can we help?" required></textarea>
+
+      <div id="captchaBox" style="margin-top:1.1rem;display:flex;justify-content:center">
+        <div class="g-recaptcha" data-sitekey="6LfS9wotAAAAAATGxKXIotj1kEpJWwzj4-ew3F_c" data-theme="dark"></div>
+      </div>
 
       <button id="submitBtn" type="submit">Send message</button>
     </form>
@@ -97,12 +102,22 @@
       show("err", "Please fill in your email and a message.");
       return;
     }
+    // reCAPTCHA token (only required when the widget is present/enabled)
+    let captchaToken = "";
+    if (window.grecaptcha && typeof grecaptcha.getResponse === "function") {
+      captchaToken = grecaptcha.getResponse();
+      if (!captchaToken) {
+        show("err", "Please confirm you are not a robot.");
+        return;
+      }
+    }
     const payload = {
       name:    document.getElementById("name").value.trim(),
       email,
       subject: document.getElementById("subject").value,
       message,
-      site:    location.hostname || "contact-general"
+      site:    location.hostname || "contact-general",
+      recaptcha_token: captchaToken
     };
     btn.disabled = true; btn.textContent = "Sending…";
     result.className = "msg";
@@ -116,8 +131,10 @@
       show("ok", "✓ Thank you! Your message has been sent. We'll reply by email.");
       form.reset();
       document.getElementById("subject").value = "other";
+      if (window.grecaptcha && typeof grecaptcha.reset === "function") grecaptcha.reset();
     }catch(err){
       show("err", "Could not send your message. Please try again in a moment.");
+      if (window.grecaptcha && typeof grecaptcha.reset === "function") grecaptcha.reset();
     }finally{
       btn.disabled = false; btn.textContent = "Send message";
     }
