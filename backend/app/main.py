@@ -82,6 +82,14 @@ jobs: dict = {}
 _seg  = load_yolo_seg()          # segmentation model (cpica)
 _TMPL = Path(__file__).parent / "templates"
 
+# ── NTAG 424 DNA verification routes (/verify, /device-session, /sim) ────────
+try:
+    from app.ntag_routes import router as ntag_router
+    app.include_router(ntag_router)
+    log.info("[NTAG] verification routes mounted (/verify, /device-session, /sim)")
+except Exception as _e:
+    log.warning(f"[NTAG] routes NOT mounted: {_e}")
+
 # ── Frontend ───────────────────────────────────────────────────────────────
 def _tmpl(name):
     p = _TMPL / name

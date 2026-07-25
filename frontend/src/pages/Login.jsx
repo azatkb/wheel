@@ -13,7 +13,7 @@ const isLocalhost = typeof window !== 'undefined' &&
 
 // ── reCAPTCHA toggle ────────────────────────────────────────────────
 // Set to false to disable the captcha.
-const RECAPTCHA_ENABLED = false
+const RECAPTCHA_ENABLED = true
 const RECAPTCHA_SITE_KEY = RECAPTCHA_ENABLED ? (isLocalhost ? TEST_KEY : PROD_KEY) : ''
 
 export default function Login() {
@@ -33,22 +33,45 @@ export default function Login() {
   const { login, register } = useAuth()
   const navigate = useNavigate()
 
-  // Load reCAPTCHA script
+  // Load reCAPTCHA script and render the widget EXPLICITLY.
+  // Auto-render only scans the DOM once, when api.js finishes loading — in a SPA
+  // the container often mounts later, so the box never appeared. Explicit render
+  // waits for both the script and the container, then draws the widget.
   useEffect(() => {
     if (!RECAPTCHA_SITE_KEY) return
     const scriptId = 'recaptcha-script'
     if (!document.getElementById(scriptId)) {
       const script = document.createElement('script')
       script.id = scriptId
-      script.src = 'https://www.google.com/recaptcha/api.js'
+      script.src = 'https://www.google.com/recaptcha/api.js?render=explicit'
       script.async = true
       script.defer = true
       document.head.appendChild(script)
     }
-    // Expose callback for reCAPTCHA
     window.onRecaptchaVerified = (token) => setRecaptchaToken(token)
     window.onRecaptchaExpired  = () => setRecaptchaToken('')
+
+    let tries = 0
+    const timer = setInterval(() => {
+      tries += 1
+      const box = recaptchaRef.current
+      if (window.grecaptcha?.render && box && !box.hasChildNodes()) {
+        try {
+          window.__wtCaptchaId = window.grecaptcha.render(box, {
+            sitekey: RECAPTCHA_SITE_KEY,
+            callback: window.onRecaptchaVerified,
+            'expired-callback': window.onRecaptchaExpired,
+          })
+          clearInterval(timer)
+        } catch (e) {
+          clearInterval(timer)   // already rendered
+        }
+      }
+      if (tries > 60) clearInterval(timer)   // give up after ~15s
+    }, 250)
+
     return () => {
+      clearInterval(timer)
       delete window.onRecaptchaVerified
       delete window.onRecaptchaExpired
     }
@@ -57,7 +80,9 @@ export default function Login() {
   const resetRecaptcha = () => {
     setRecaptchaToken('')
     if (RECAPTCHA_SITE_KEY && window.grecaptcha?.reset) {
-      try { window.grecaptcha.reset() } catch {}
+      try {
+        window.grecaptcha.reset(window.__wtCaptchaId)
+      } catch {}
     }
   }
 
@@ -201,13 +226,7 @@ export default function Login() {
             {/* reCAPTCHA widget — only shown when key is configured */}
             {RECAPTCHA_SITE_KEY && (
               <div style={{margin:'.75rem 0', display:'flex', justifyContent:'center'}}>
-                <div
-                  ref={recaptchaRef}
-                  className="g-recaptcha"
-                  data-sitekey={RECAPTCHA_SITE_KEY}
-                  data-callback="onRecaptchaVerified"
-                  data-expired-callback="onRecaptchaExpired"
-                />
+                <div ref={recaptchaRef} />
               </div>
             )}
             <button className="btn btn-primary" type="submit"

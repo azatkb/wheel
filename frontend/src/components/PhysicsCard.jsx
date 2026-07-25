@@ -42,13 +42,14 @@ const fmtSI = (v, u='') => {
   return v.toExponential(2)+' '+u
 }
 
-// Lajtner Resonance formatter: 3.56e+14 → 3.56L14R
+// Lajtner Resonance formatter: 3.56e+14 → 3.56L+14R
 const fmtLR = (v) => {
   if (!v) return '0 LR'
   const s = (+v).toExponential(2)  // e.g. "3.56e+24"
   const [mantissa, exp] = s.split('e')
-  const expNum = exp.replace('+','').replace('-0','-')
-  return `${mantissa}L${expNum}R`
+  const expNum = exp.replace('-0','-').replace('+0','+')
+  const signed = expNum.startsWith('-') ? expNum : (expNum.startsWith('+') ? expNum : '+' + expNum)
+  return `${mantissa}L${signed}R`
 }
 
 // SVG Star component

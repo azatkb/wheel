@@ -205,6 +205,15 @@ export default function Upload() {
   return (
     <DeviceGate>
     <div>
+      <style>{`
+        .nickname-yellow {
+          background: #FFF8C6 !important;
+          color: #333 !important;
+          border-color: #e8d96a !important;
+          color-scheme: light;
+        }
+        .nickname-yellow::placeholder { color: #8a8360 !important; }
+      `}</style>
       <div className="page-header">
         <h1>Upload Video</h1>
         <p>Upload a video — detect wheel rotation using colored markers</p>
@@ -302,12 +311,12 @@ export default function Upload() {
                   fontSize:'.62rem',fontWeight:700,lineHeight:1,
                   background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--muted)'}}>?</span>
             </label>
-            <input className="form-input" value={nickname}
+            <input value={nickname}
               onChange={e => setNickname(e.target.value)}
               maxLength={80}
               placeholder="e.g. Morning focus try #1"
-              style={{padding:'.45rem .65rem',background:'#FFF9C9',
-                color:'#333',borderColor:'#e8d96a',colorScheme:'light'}} />
+              className="form-input nickname-yellow"
+              style={{padding:'.45rem .65rem'}} />
             {showNickHelp && (
               <div style={{fontSize:'.7rem',color:'var(--muted)',marginTop:'.35rem',lineHeight:1.45,
                 background:'rgba(0,255,136,.05)',border:'1px solid rgba(0,255,136,.15)',

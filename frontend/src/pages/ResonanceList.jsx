@@ -6,7 +6,7 @@ import { API } from '../config'
 const fmtLR = (v) => {
   if (!v || v <= 0) return '—'
   const e = Math.floor(Math.log10(v))
-  return `${(v / Math.pow(10, e)).toFixed(2)}L${e}R`
+  return `${(v / Math.pow(10, e)).toFixed(2)}L${e >= 0 ? '+' : ''}${e}R`
 }
 const fmtLT = (v) => (v != null ? `${(+v).toFixed(3)}` : '—')       // seconds
 const SUP = { '-':'⁻',0:'⁰',1:'¹',2:'²',3:'³',4:'⁴',5:'⁵',6:'⁶',7:'⁷',8:'⁸',9:'⁹' }

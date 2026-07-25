@@ -324,6 +324,20 @@ function NewPostModal({ user, onClose, onCreated, shareData }) {
   const [category, setCategory] = useState('results')
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState('')
+  // Attach one of my own measurement videos to the post
+  const [myJobs, setMyJobs]   = useState([])
+  const [jobId, setJobId]     = useState(shareData?.job_id || '')
+
+  useEffect(() => {
+    if (!user?.email) return
+    ;(async () => {
+      try {
+        const r = await fetch(`${API}/api/jobs?email=${encodeURIComponent(user.email)}&limit=50`)
+        const d = await r.json()
+        setMyJobs((d.jobs || []).filter(j => j.status === 'done'))
+      } catch {}
+    })()
+  }, [user?.email])
 
   const submit = async () => {
     if (!title.trim() || !body.trim()) { setError('Title and text required'); return }
@@ -335,7 +349,7 @@ function NewPostModal({ user, onClose, onCreated, shareData }) {
         title:        title.trim(),
         body:         body.trim(),
         category:     category,
-        job_id:       shareData?.job_id,
+        job_id:       jobId || shareData?.job_id,
         lr_value:     shareData?.lr_value,
         rotation_deg: shareData?.rotation_deg,
         medium:       shareData?.medium,
@@ -400,6 +414,25 @@ function NewPostModal({ user, onClose, onCreated, shareData }) {
             ))}
           </div>
         </div>
+        <div className="form-group">
+          <label className="form-label">🎥 Attach one of my videos (optional)</label>
+          <select value={jobId} onChange={e => setJobId(e.target.value)}
+            className="form-input" style={{width:'100%'}}>
+            <option value="">— No video —</option>
+            {myJobs.map(j => (
+              <option key={j.id} value={j.id}>
+                {(j.nickname || 'Measurement')} · {(j.created_at || '').slice(0,16).replace('T',' ')}
+                {j.medium ? ' · ' + String(j.medium).toUpperCase() : ''}
+              </option>
+            ))}
+          </select>
+          <div style={{fontSize:'.7rem',color:'var(--dim)',marginTop:'.2rem'}}>
+            {myJobs.length
+              ? 'Only your own measurements are listed. The video is shown with your post.'
+              : 'No finished measurements yet — upload one to attach its video.'}
+          </div>
+        </div>
+
         <div className="form-group">
           <label className="form-label">Title</label>
           <input value={title} onChange={e=>setTitle(e.target.value)}

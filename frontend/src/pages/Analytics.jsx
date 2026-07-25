@@ -58,7 +58,7 @@ const fmtLR = (v) => {
   if (!v || v <= 0) return '—'
   const exp = Math.floor(Math.log10(v))
   const man = (v / Math.pow(10, exp)).toFixed(2)
-  return `${man}L${exp}R`
+  return `${man}L${exp >= 0 ? '+' : ''}${exp}R`
 }
 
 const COLORS = ['#00ff88','#44aaff','#ff8800','#f44','#cc88ff','#00bcd4','#ffcc00']
