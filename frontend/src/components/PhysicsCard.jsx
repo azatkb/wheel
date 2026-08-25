@@ -52,6 +52,36 @@ const fmtLR = (v) => {
   return `${mantissa}L${signed}R`
 }
 
+// Extract k (the R exponent) from a Lajtner Resonance value.
+const lrExponent = (v) => {
+  if (!v || v <= 0) return null
+  return Math.round(Math.log10(Math.abs(+v)))
+}
+
+// Brain-photon impossibility calculation (per the agreed physics).
+//   a = 10^11 neurons, f_source = 2000 Hz (literature max neuron frequency)
+//   f_combined = a * f_source = 2e14 Hz   (simultaneous emission, 1 photon each)
+//   t = 10^k / (a * f_source^2)   seconds to accumulate a 10^k Hz-equivalent
+const A_SOURCES = 1e11
+const F_SOURCE  = 2000
+const H_EV      = 4.135667696e-15
+const F_COMBINED = A_SOURCES * F_SOURCE            // 2e14 Hz
+const E_COMBINED_EV = F_COMBINED * H_EV            // ≈ 0.827 eV
+
+const brainPhotonTime = (k) => 10 ** k / (A_SOURCES * F_SOURCE * F_SOURCE)
+
+const fmtDuration = (t) => {
+  if (!isFinite(t)) return '—'
+  if (t < 60)     return `${t.toFixed(1)} seconds`
+  if (t < 3600)   { const m = Math.floor(t/60); const s = Math.round(t%60); return `${m} min ${s} s` }
+  if (t < 86400)  { const h = Math.floor(t/3600); const m = Math.round((t%3600)/60); return `${h} h ${m} min` }
+  const days = t / 86400
+  if (days < 365) return `${days.toFixed(1)} days`
+  const years = days / 365
+  if (years < 1e6) return `${years.toLocaleString(undefined,{maximumFractionDigits:0})} years`
+  return `${years.toExponential(2)} years`
+}
+
 // SVG Star component
 const Star = ({ filled, color = '#FFD700', size = 22 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" style={{display:'inline-block'}}>
@@ -219,6 +249,7 @@ const LABELS = {
 
 export default function PhysicsCard({ msg, result, jobId, isPaid, showTable = true, master = false, medium }) {
   const [showPhysTable, setShowPhysTable] = useState(false)
+  const [showBrainInfo, setShowBrainInfo] = useState(false)
   if (!msg && !result) return null
 
   return (
@@ -373,6 +404,35 @@ export default function PhysicsCard({ msg, result, jobId, isPaid, showTable = tr
           <div style={{fontSize:'.7rem',color:'var(--dim)',marginTop:'.2rem'}}>
             f = E/h &nbsp;·&nbsp; h = 6.63×10⁻³⁴ J·s
           </div>
+
+          {/* Brain-photon impossibility line (first-row explanation) */}
+          {(() => {
+            const k = lrExponent(msg.display.planck_freq_raw || msg.display.planck_freq_Hz)
+            if (k == null) return null
+            const t = brainPhotonTime(k)
+            return (
+              <div style={{marginTop:'.55rem',paddingTop:'.55rem',
+                borderTop:'1px dashed rgba(255,136,0,.3)',
+                fontSize:'.78rem',color:'var(--text)',lineHeight:1.6}}>
+                <strong>This Lajtner Resonance cannot be sent by the brain&apos;s photons.</strong>
+                <span onClick={() => setShowBrainInfo(true)}
+                  title="How is this calculated?"
+                  style={{cursor:'pointer',display:'inline-flex',alignItems:'center',
+                    justifyContent:'center',width:15,height:15,borderRadius:'50%',
+                    fontSize:'.62rem',fontWeight:700,marginLeft:6,verticalAlign:'middle',
+                    background:'var(--bg3)',border:'1px solid var(--border)',color:'var(--muted)'}}>?</span>
+                <br/>
+                <span style={{color:'var(--muted)'}}>
+                  If all 10<sup>11</sup> neurons emitted one photon at once:{' '}
+                  f<sub>combined</sub> = 10<sup>11</sup> × 2000 Hz = <strong>2×10<sup>14</sup> Hz</strong>.
+                </span><br/>
+                <span style={{color:'var(--muted)'}}>
+                  Time needed to build your +{k}R:{' '}
+                  <strong style={{color:'var(--amber)'}}>{fmtDuration(t)}</strong>.
+                </span>
+              </div>
+            )
+          })()}
         </div>
       )}
 
@@ -471,6 +531,55 @@ export default function PhysicsCard({ msg, result, jobId, isPaid, showTable = tr
           )}
         </>
       )}
+
+      {/* Brain-photon impossibility — explanation popup */}
+      {showBrainInfo && (() => {
+        const k = lrExponent(msg?.display?.planck_freq_raw || msg?.display?.planck_freq_Hz)
+        const t = k != null ? brainPhotonTime(k) : null
+        return (
+          <div onClick={e => e.target === e.currentTarget && setShowBrainInfo(false)}
+            style={{position:'fixed',inset:0,zIndex:1200,background:'rgba(0,0,0,.65)',
+              display:'flex',alignItems:'center',justifyContent:'center',padding:'1rem'}}>
+            <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:14,
+              width:'100%',maxWidth:520,padding:'1.4rem',position:'relative',maxHeight:'85vh',overflowY:'auto'}}>
+              <button onClick={() => setShowBrainInfo(false)} style={{position:'absolute',top:10,right:14,
+                background:'none',border:'none',color:'var(--muted)',fontSize:'1.1rem',cursor:'pointer'}}>✕</button>
+              <h3 style={{marginBottom:'.6rem',color:'var(--amber)'}}>Why the brain can&apos;t emit this</h3>
+              <div style={{fontSize:'.86rem',color:'var(--text)',lineHeight:1.7}}>
+                <p style={{marginBottom:'.6rem'}}>
+                  The human brain has about <strong>10<sup>11</sup> neurons</strong>. According to the
+                  literature, the highest frequency a single neuron can emit is about{' '}
+                  <strong>2000 Hz</strong>.
+                </p>
+                <p style={{marginBottom:'.6rem'}}>
+                  <strong>Simultaneous emission</strong> — if every neuron emitted one photon at the same instant:
+                </p>
+                <div style={{background:'var(--bg3)',borderRadius:8,padding:'.6rem .8rem',
+                  fontFamily:'var(--font-mono)',fontSize:'.82rem',marginBottom:'.6rem'}}>
+                  f<sub>combined</sub> = a × f<sub>source</sub> = 10<sup>11</sup> × 2000 Hz = <strong>2×10<sup>14</sup> Hz</strong><br/>
+                  E<sub>combined</sub> ≈ {E_COMBINED_EV.toFixed(4)} eV
+                </div>
+                <p style={{marginBottom:'.6rem'}}>
+                  Your Lajtner Resonance has an R-exponent of <strong>k = {k}</strong> (the number after the “+”,
+                  meaning 10<sup>{k}</sup>). The time the whole brain would need to accumulate a
+                  10<sup>{k}</sup> Hz-equivalent photon energy is:
+                </p>
+                <div style={{background:'var(--bg3)',borderRadius:8,padding:'.6rem .8rem',
+                  fontFamily:'var(--font-mono)',fontSize:'.82rem',marginBottom:'.6rem'}}>
+                  t = 10<sup>{k}</sup> / (a × f<sub>source</sub><sup>2</sup>)
+                  {' '}= 10<sup>{k}</sup> / (10<sup>11</sup> × 2000<sup>2</sup>)<br/>
+                  = <strong style={{color:'var(--amber)'}}>{t != null ? fmtDuration(t) : '—'}</strong>
+                </div>
+                <p style={{color:'var(--muted)',fontSize:'.8rem'}}>
+                  Because that time is far beyond any real emission, a resonance this large cannot be produced
+                  by ordinary brain photons — it reflects a special directed-intent energy.{' '}
+                  <strong style={{color:'var(--green)'}}>It is a new fundamental interaction.</strong>
+                </p>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

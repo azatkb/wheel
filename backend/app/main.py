@@ -34,7 +34,7 @@ from app.config import (
 from app.detector_seg import (
     load_yolo_seg, detect_seg,
     find_spoke_tips, find_orange_tip, find_all_tip_colors,
-    orange_angle, unwrap, set_medium as _seg_set_medium, verify_orange_at,
+    orange_angle, unwrap,
     draw_seg_overlay,
     YOLO_EVERY, SMOOTH_N as SEG_SMOOTH_N,
 )
@@ -56,7 +56,7 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger(__name__)
 
 # ── App settings ───────────────────────────────────────────────────────────
-WATERMARK_TEXT       = "lajtnerresonance.com"
+WATERMARK_TEXT       = "LAJTNER.com"
 MAX_ANGLE_JUMP       = 30.0   # degrees — reject spoke-hop jumps
 DEFAULT_LANG         = "en"
 DEFAULT_VERSION      = "basic"
@@ -81,14 +81,6 @@ executor = ThreadPoolExecutor(max_workers=2)
 jobs: dict = {}
 _seg  = load_yolo_seg()          # segmentation model (cpica)
 _TMPL = Path(__file__).parent / "templates"
-
-# ── NTAG 424 DNA verification routes (/verify, /device-session, /sim) ────────
-try:
-    from app.ntag_routes import router as ntag_router
-    app.include_router(ntag_router)
-    log.info("[NTAG] verification routes mounted (/verify, /device-session, /sim)")
-except Exception as _e:
-    log.warning(f"[NTAG] routes NOT mounted: {_e}")
 
 # ── Frontend ───────────────────────────────────────────────────────────────
 def _tmpl(name):
@@ -259,7 +251,6 @@ def _process_video_seg(video_path, out_path, job_id="local",
     """Process uploaded video with seg model — draw mask + orange on each frame."""
     from app.detector_seg import draw_seg_overlay
     import time as _time
-    _seg_set_medium(medium)   # water: catch pale underwater orange; air: strict (reject red)
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -329,14 +320,8 @@ def _process_video_seg(video_path, out_path, job_id="local",
         bbox     = _last_bbox
         has_hub  = hub is not None
 
-        # Priority 1: YOLO orange (class 1 from model).
-        # WATER only: verify its colour first — underwater the model can confuse
-        # the red marker with orange, so YOLO's orange must pass the probabilistic
-        # colour check, else HSV decides.  AIR: trust YOLO as before.
+        # Priority 1: YOLO orange (class 1 from model)
         yolo_orange = _last_yolo_orange
-        if yolo_orange is not None and has_hub and str(medium).lower() == "water":
-            if not verify_orange_at(hsv, yolo_orange[0], yolo_orange[1]):
-                yolo_orange = None      # not truly orange (red/yellow/glare) → reject
         if yolo_orange is not None and has_hub:
             if tips:
                 max_r = max(math.hypot(tx-hub[0], ty-hub[1]) for tx,ty in tips) * 1.2
@@ -788,8 +773,18 @@ async def stripe_webhook(request: Request):
     if evt in ("checkout.session.completed", "customer.subscription.created",
                "invoice.paid"):
         obj = event["data"]["object"]
-        # Stripe objects use attribute access, not .get()
+        # Numbered-unit purchase (Pioneer/Founder/Alpha) → finalize allocation
         try:
+            meta = getattr(obj, "metadata", {}) or {}
+            mget = (lambda k: meta.get(k) if isinstance(meta, dict) else getattr(meta, k, None))
+            if mget("kind") == "unit":
+                _finalize_unit(mget("series") or "pioneer",
+                               int(mget("number") or 0),
+                               (mget("email") or "").lower(),
+                               mget("name") or "")
+                return {"ok": True}
+        except Exception as e:
+            log.error(f"[STRIPE] unit finalize failed: {e}")
             email = getattr(obj, "customer_email", None) or ""
         except Exception:
             email = ""
@@ -919,180 +914,6 @@ async def reset_request(request: Request):
         log.warning("[RESET] GMAIL_USER/GMAIL_PASS not set — code logged only")
     return {"ok": True}
 
-@app.post("/feedback")
-async def feedback(request: Request):
-    """Beta feedback / bug report — save to DB and email the owner.
-    Users write via a small in-app form (no email address is shown)."""
-    import html as _html
-    body = await request.json()
-    email   = (body.get("email") or "").strip()
-    subject = (body.get("subject") or "").strip()[:200]
-    message = (body.get("message") or "").strip()[:5000]
-    if not message:
-        raise HTTPException(400, "Message required")
-
-    # 1) save to DB (best effort — email is the primary channel)
-    try:
-        from app.database import _sb
-        sb = _sb()
-        if sb:
-            sb.table("feedback").insert({
-                "user_email": email,
-                "subject": subject or "(no subject)",
-                "message": message,
-                "created_at": datetime.datetime.utcnow().isoformat(),
-            }).execute()
-    except Exception as e:
-        log.warning(f"[FEEDBACK] DB save failed: {e}")
-
-    # 2) email the owner
-    to_addr    = os.environ.get("FEEDBACK_EMAIL", "mindpw1@gmail.com")
-    GMAIL_USER = os.environ.get("GMAIL_USER", "")
-    GMAIL_PASS = os.environ.get("GMAIL_PASS", "")
-    if GMAIL_USER and GMAIL_PASS:
-        try:
-            import smtplib
-            from email.mime.text import MIMEText
-            from email.mime.multipart import MIMEMultipart
-            s_msg = _html.escape(message)
-            s_em  = _html.escape(email or "anonymous")
-            s_sub = _html.escape(subject or "(no subject)")
-            msg = MIMEMultipart("alternative")
-            msg["Subject"]  = f"[Beta feedback] {subject or '(no subject)'}"
-            msg["From"]     = f"Lajtner Code Beta <{GMAIL_USER}>"
-            msg["To"]       = to_addr
-            msg["Reply-To"] = email or GMAIL_USER
-            body_text = f"From: {email or 'anonymous'}\nSubject: {subject}\n\n{message}"
-            body_html = f"""<div style="font-family:sans-serif;max-width:520px;margin:20px auto">
-  <h3 style="color:#00c271">Beta feedback</h3>
-  <p><b>From:</b> {s_em}<br><b>Subject:</b> {s_sub}</p>
-  <div style="background:#f5f5f5;border-radius:8px;padding:16px;white-space:pre-wrap">{s_msg}</div>
-</div>"""
-            msg.attach(MIMEText(body_text, "plain"))
-            msg.attach(MIMEText(body_html, "html"))
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as srv:
-                srv.login(GMAIL_USER, GMAIL_PASS)
-                srv.sendmail(GMAIL_USER, to_addr, msg.as_string())
-            log.info(f"[FEEDBACK] emailed to {to_addr} from {email or 'anonymous'}")
-        except Exception as e:
-            log.error(f"[FEEDBACK] email send failed: {e}")
-    else:
-        log.warning("[FEEDBACK] GMAIL not set — feedback saved/logged only")
-    return {"ok": True}
-
-
-@app.post("/contact-general")
-async def contact_general(request: Request):
-    """General contact form (standalone — used by lajtnerresonance.com and other
-    sites). Separate from the in-app Beta feedback. Emails via our SMTP server.
-    Fields: name, email, subject (business|presentation|other), message, site."""
-    import html as _html
-    body = await request.json()
-    name    = (body.get("name")    or "").strip()[:120]
-    email   = (body.get("email")   or "").strip()[:200]
-    subject = (body.get("subject") or "other").strip().lower()[:40]
-    message = (body.get("message") or "").strip()[:5000]
-    site    = (body.get("site")    or "").strip()[:120]
-    if subject not in ("business", "presentation", "other"):
-        subject = "other"
-    if not message or not email:
-        raise HTTPException(400, "Email and message are required")
-
-    # reCAPTCHA (same master switch as the app: RECAPTCHA_ENABLED=1 + secret key)
-    if not await _verify_recaptcha(body.get("recaptcha_token") or ""):
-        raise HTTPException(400, "reCAPTCHA verification failed. Please try again.")
-
-    # log EVERY message to CSV (';' separated, BOM — opens correctly in Excel)
-    try:
-        import csv as _csv
-        from app.database import CSV_DIR
-        _csv_path = CSV_DIR / "contact_messages.csv"
-        _new = not _csv_path.exists()
-        with open(_csv_path, "a", newline="", encoding="utf-8-sig") as _fh:
-            _w = _csv.writer(_fh, delimiter=";", quoting=_csv.QUOTE_ALL)
-            if _new:
-                _w.writerow(["created_at_utc", "site", "subject", "name",
-                             "email", "message", "client_ip", "user_agent"])
-            _w.writerow([
-                datetime.datetime.utcnow().isoformat(timespec="seconds"),
-                site, subject, name, email,
-                message.replace("\r\n", " ").replace("\n", " "),
-                (request.client.host if request.client else ""),
-                (request.headers.get("user-agent") or "")[:300],
-            ])
-        log.info(f"[CONTACT] logged to CSV: {_csv_path}")
-    except Exception as e:
-        log.warning(f"[CONTACT] CSV log failed (continuing): {e}")
-
-    # save to DB (best effort — reuse a simple 'contact_messages' table)
-    try:
-        from app.database import _sb
-        sb = _sb()
-        if sb:
-            sb.table("contact_messages").insert({
-                "name": name, "email": email, "subject": subject,
-                "message": message, "site": site,
-                "created_at": datetime.datetime.utcnow().isoformat(),
-            }).execute()
-    except Exception as e:
-        log.warning(f"[CONTACT] DB save failed (continuing): {e}")
-
-    to_addr    = os.environ.get("CONTACT_EMAIL", os.environ.get("FEEDBACK_EMAIL", "mindpw1@gmail.com"))
-    GMAIL_USER = os.environ.get("GMAIL_USER", "")
-    GMAIL_PASS = os.environ.get("GMAIL_PASS", "")
-    if GMAIL_USER and GMAIL_PASS:
-        try:
-            import smtplib
-            from email.mime.text import MIMEText
-            from email.mime.multipart import MIMEMultipart
-            s_name = _html.escape(name or "—")
-            s_em   = _html.escape(email)
-            s_sub  = _html.escape(subject)
-            s_msg  = _html.escape(message)
-            s_site = _html.escape(site or "—")
-            msg = MIMEMultipart("alternative")
-            msg["Subject"]  = f"[Contact · {subject}] {name or email}"
-            msg["From"]     = f"Contact form <{GMAIL_USER}>"
-            msg["To"]       = to_addr
-            msg["Reply-To"] = email
-            body_text = (f"Site: {site}\nName: {name}\nEmail: {email}\n"
-                         f"Subject: {subject}\n\n{message}")
-            body_html = f"""<div style="font-family:sans-serif;max-width:560px;margin:20px auto">
-  <h3 style="color:#111">New contact message · {s_sub}</h3>
-  <p style="color:#444"><b>Name:</b> {s_name}<br>
-     <b>Email:</b> {s_em}<br>
-     <b>Site:</b> {s_site}<br>
-     <b>Subject:</b> {s_sub}</p>
-  <div style="background:#f5f5f5;border-radius:8px;padding:16px;white-space:pre-wrap;color:#222">{s_msg}</div>
-</div>"""
-            msg.attach(MIMEText(body_text, "plain"))
-            msg.attach(MIMEText(body_html, "html"))
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as srv:
-                srv.login(GMAIL_USER, GMAIL_PASS)
-                srv.sendmail(GMAIL_USER, to_addr, msg.as_string())
-            log.info(f"[CONTACT] emailed to {to_addr} · {subject} · from {email}")
-        except Exception as e:
-            log.error(f"[CONTACT] email send failed: {e}")
-            raise HTTPException(500, "Could not send message — please try again later")
-    else:
-        log.warning("[CONTACT] GMAIL not set — message saved/logged only")
-    return {"ok": True}
-
-
-@app.get("/admin/contact-csv")
-def admin_contact_csv(token: str = "", email: str = ""):
-    """Master: download every contact-form message as CSV (';' separated)."""
-    MASTER_EMAILS = ["azatkb22@gmail.com", "lajtnert@gmail.com"]
-    if email not in MASTER_EMAILS and token != MASTER_TOKEN:
-        raise HTTPException(401, "Unauthorized")
-    from app.database import CSV_DIR
-    path = CSV_DIR / "contact_messages.csv"
-    if not path.exists():
-        raise HTTPException(404, "No contact messages yet")
-    return FileResponse(str(path), media_type="text/csv",
-                        filename="contact_messages.csv")
-
-
 @app.post("/auth/reset-confirm")
 async def reset_confirm(request: Request):
     body = await request.json()
@@ -1166,18 +987,6 @@ async def auth_update_plan(request: Request):
     except Exception as e:
         raise HTTPException(500, str(e))
 
-# ── Beta: all plans free (Ultimate-level access) until this date ──────
-BETA_FREE_UNTIL = os.environ.get("BETA_FREE_UNTIL", "2026-09-01")  # YYYY-MM-DD (UTC)
-def _beta_active() -> bool:
-    try:
-        return datetime.datetime.utcnow() <= datetime.datetime.strptime(BETA_FREE_UNTIL, "%Y-%m-%d")
-    except Exception:
-        return False
-def _effective_plan(plan: str) -> str:
-    """During the free Beta everyone gets Ultimate-level access."""
-    return "ultimate" if _beta_active() else (plan or "basic")
-
-
 @app.post("/auth/login")
 async def auth_login(request: Request):
     body = await request.json()
@@ -1189,10 +998,10 @@ async def auth_login(request: Request):
     user = _get_user(email)
     if not user or user.get("password_hash") != _hash_pw(password):
         raise HTTPException(401, "Invalid email or password")
+    if user.get("blocked"):
+        raise HTTPException(403, "This account has been suspended.")
     token = secrets.token_hex(32)
-    return {"token": token, "email": email,
-            "plan": _effective_plan(user.get("plan", "basic")),
-            "beta": _beta_active()}
+    return {"token": token, "email": email, "plan": user.get("plan", "basic")}
 
 def add_lr_overlay(video_path: str, planck_freq: float):
     """Add Lajtner Resonance text to last 3 seconds of video."""
@@ -1236,42 +1045,6 @@ def add_lr_overlay(video_path: str, planck_freq: float):
         log.warning(f"[VIDEO] LR overlay failed: {e}")
 
 
-def _set_job_nickname(job_id: str, nickname: str) -> str:
-    """Save a user-facing nickname for a job (auto-generate one if empty).
-    Videos are never sent back to the user — this nickname is how they find
-    and share the measurement from their own page / the forum."""
-    nn = (nickname or "").strip()[:80]
-    if not nn:
-        ts = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
-        nn = f"Measurement {ts}"
-    try:
-        from app.database import _sb
-        sb = _sb()
-        if sb:
-            sb.table("wt_jobs").update({"nickname": nn}).eq("id", job_id).execute()
-    except Exception as e:
-        log.warning(f"[JOB] nickname save failed: {e}")
-    return nn
-
-
-def _mask_email(email: str) -> str:
-    """Mask an email for public display on the forum, e.g.
-    lajtnert@gmail.com -> l...t@g...m  (never show the full address)."""
-    try:
-        email = (email or "").strip()
-        if "@" not in email:
-            return "user"
-        local, domain = email.split("@", 1)
-        def _m(s):
-            s = s or ""
-            if len(s) <= 2:
-                return (s[:1] or "") + "…"
-            return s[0] + "…" + s[-1]
-        return f"{_m(local)}@{_m(domain)}"
-    except Exception:
-        return "user"
-
-
 @app.post("/upload")
 async def upload(
     file:         UploadFile = File(...),
@@ -1282,18 +1055,10 @@ async def upload(
     info_level:   str  = Form(default=DEFAULT_INFO_LEVEL),
     version:      str  = Form(default=DEFAULT_VERSION),
     lang:         str  = Form(default=DEFAULT_LANG),
-    nickname:     str  = Form(default=""),
 ):
-    suffix = Path(file.filename or "").suffix.lower()
-    ALLOWED_EXT = (".mp4", ".avi", ".mov", ".mkv", ".webm",
-                   ".m4v", ".3gp", ".mpeg", ".mpg", ".ts", ".flv", ".wmv")
-    if suffix not in ALLOWED_EXT:
-        # phones / in-browser recorders often omit the extension → trust the MIME type
-        _ct = (getattr(file, "content_type", "") or "").lower()
-        if _ct.startswith("video/"):
-            suffix = ".mp4"
-        else:
-            raise HTTPException(400, f"Unsupported file type: '{suffix or _ct or 'unknown'}'")
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in (".mp4",".avi",".mov",".mkv",".webm"):
+        raise HTTPException(400, f"Unsupported: {suffix}")
     job_id   = str(uuid.uuid4())
     raw_path = INPUTS_DIR / f"{job_id}{suffix}"
     with open(raw_path,"wb") as f:
@@ -1302,18 +1067,15 @@ async def upload(
     # Master always gets Pro features regardless of plan
     if _is_master(user_email):
         version = "pro"
-    version = _effective_plan(version)   # free Beta → Ultimate for everyone
     create_job(job_id, user_email, "upload", direction, medium, hand_visible, info_level)
-    _nn = _set_job_nickname(job_id, nickname)
     jobs[job_id] = {"status":"queued","progress":{"pct":0},
                     "user_email": user_email,
                     "source_type": "upload",
-                    "nickname": _nn,
                     "created_at": datetime.datetime.utcnow().isoformat()}
     asyncio.get_event_loop().run_in_executor(
         executor, _run_job, job_id, raw_path,
         direction, medium, hand_visible, info_level, user_email, version, lang)
-    return {"job_id":job_id,"status":"queued","nickname":_nn,
+    return {"job_id":job_id,"status":"queued",
             "status_url":f"/status/{job_id}","video_info":info}
 
 @app.get("/status/{job_id}")
@@ -1369,17 +1131,20 @@ def results(job_id: str): return read_samples(job_id)
 
 @app.get("/physics/{job_id}")
 def physics_results(job_id: str):
-    # DB ONLY — no in-memory data. Supabase physics_json is the single source
-    # of truth, so results are identical before/after any server restart.
+    # 1. Try memory first (fast, available right after processing)
+    info = jobs.get(job_id, {})
+    if info.get("physics") or info.get("message"):
+        return {"message": info.get("message", {}),
+                "result":  info.get("physics",  {}),
+                "phases":  info.get("phases",   {}),
+                "physics_url": f"/physics/{job_id}"}
+    # 2. Always fallback to Supabase (persists across restarts)
     try:
         from app.database import _sb
         sb = _sb()
-        if not sb:
-            raise HTTPException(503, "DB unavailable — set SUPABASE_URL / SUPABASE_KEY "
-                                     "in the environment where uvicorn runs")
         if sb:
             resp = sb.table("physics_results").select(
-                "physics_json"
+                "physics_json, t_lajtner, a_lajtner"
             ).eq("job_id", job_id).limit(1).execute()
             if resp.data:
                 row  = resp.data[0]
@@ -1389,13 +1154,13 @@ def physics_results(job_id: str):
                 try:
                     # Get job info for email/direction/medium
                     job_resp = sb.table("wt_jobs").select(
-                        "user_email,direction,medium"
+                        "user_email,direction,medium,plan"
                     ).eq("id", job_id).limit(1).execute()
                     job_info = job_resp.data[0] if job_resp.data else {}
                     msg = build_message(
                         result=phys,
                         medium=job_info.get("medium","air"),
-                        version="ultimate",   # beta: full display (wt_jobs has no plan column)
+                        version=job_info.get("plan","basic"),
                         lang="en"
                     )
                 except Exception as _me:
@@ -1403,13 +1168,9 @@ def physics_results(job_id: str):
                     msg = {"moved": True}
                 return {"message": msg, "result": phys,
                         "phases": {}, "physics_url": f"/physics/{job_id}"}
-    except HTTPException:
-        raise
     except Exception as e:
         log.warning(f"[PHYSICS] DB read failed: {e}")
-        raise HTTPException(500, f"DB read failed: {e}")
-    raise HTTPException(404, "No physics row in DB for this job — reprocess it "
-                             "(POST /admin/rerun-all-physics?token=...)")
+    raise HTTPException(404, "Physics not found — may need to reprocess")
 
 @app.get("/csv/{job_id}")
 def csv_download(job_id: str):
@@ -1442,263 +1203,6 @@ def api_jobs(email: str = "", limit: int = 200, token: str = ""):
             row["message"] = mem["message"]
     return {"jobs": rows}
 
-@app.get("/api/resonance-list")
-def api_resonance_list(limit: int = 2000):
-    """Public: all Lajtner Resonance values (numeric, sorted min -> max) for comparison.
-    Air-basis (uniform scale for everyone). No emails — privacy safe."""
-    from app.database import _sb
-    sb = _sb()
-    if not sb:
-        raise HTTPException(500, "DB unavailable")
-    try:
-        resp = sb.table("physics_results").select("w_total_air").execute()
-    except Exception as e:
-        log.warning(f"[RESONANCE] list read failed: {e}")
-        raise HTTPException(500, "DB read failed")
-    vals = []
-    for r in (resp.data or []):
-        e = r.get("w_total_air") or 0
-        if e and e > 0:
-            vals.append(e / 6.626e-34)          # Lajtner Resonance = Work / Planck
-    vals.sort()                                  # min -> max
-    if limit:
-        vals = vals[:limit]
-    n = len(vals)
-    stats = {"min": vals[0], "max": vals[-1], "avg": sum(vals) / n, "count": n} if n else {}
-    return {"values": vals, "stats": stats}
-
-
-@app.get("/api/lajtner-averages")
-def api_lajtner_averages(email: str = ""):
-    """Average Lajtner Time and Lajtner Jerk for one user and for ALL users.
-    Time: lower is better.  Jerk: higher is better.
-    (Frontend shows the user's own average on Pro+Ultimate, all-users on Ultimate.)"""
-    from app.database import _sb
-    sb = _sb()
-    if not sb:
-        raise HTTPException(500, "DB unavailable")
-    try:
-        resp = sb.table("physics_results").select("job_id, email, physics_json").execute()
-        jr   = sb.table("wt_jobs").select("id, user_email").execute()
-    except Exception as e:
-        log.warning(f"[LAJTNER-AVG] read failed: {e}")
-        raise HTTPException(500, "DB read failed")
-    _jmail = {j.get("id"): (j.get("user_email") or "") for j in (jr.data or [])}
-
-    def _avg(vals):
-        vals = [v for v in vals if isinstance(v, (int, float)) and v > 0]
-        return ((sum(vals) / len(vals)) if vals else None), len(vals)
-
-    em = (email or "").strip().lower()
-    all_t, all_j, all_r, my_t, my_j, my_r = [], [], [], [], [], []
-    for r in (resp.data or []):
-        try:
-            p = json.loads(r.get("physics_json") or "{}")
-        except Exception:
-            continue
-        t  = p.get("lajtner_time")
-        j  = p.get("lajtner_jerk_deg")
-        lr = (p.get("air") or {}).get("planck_freq")   # LR on the common air basis
-        if t:
-            all_t.append(t)
-        if j:
-            all_j.append(j)
-        if lr:
-            all_r.append(lr)
-        _rowmail = (_jmail.get(r.get("job_id")) or r.get("email") or "").strip().lower()
-        if em and _rowmail == em:
-            if t:
-                my_t.append(t)
-            if j:
-                my_j.append(j)
-            if lr:
-                my_r.append(lr)
-
-    at, atc = _avg(all_t)
-    aj, ajc = _avg(all_j)
-    ar, arc = _avg(all_r)
-    mt, mtc = _avg(my_t)
-    mj, mjc = _avg(my_j)
-    mr, mrc = _avg(my_r)
-    return {
-        "user": {"avg_resonance": mr, "avg_time_s": mt, "avg_jerk_deg": mj,
-                 "count": max(mtc, mjc, mrc)},
-        "all":  {"avg_resonance": ar, "avg_time_s": at, "avg_jerk_deg": aj,
-                 "count": max(atc, ajc, arc)},
-    }
-
-
-@app.get("/api/lajtner-list")
-def api_lajtner_list(email: str = "", limit: int = 2000):
-    """Sorted lists (min->max) + stats for Lajtner Resonance, Time and Jerk,
-    both for the given user ('mine') and for everyone ('all').
-    Resonance uses a common (air) basis.  Time: lower is better.  Jerk: higher is better."""
-    from app.database import _sb
-    sb = _sb()
-    if not sb:
-        raise HTTPException(500, "DB unavailable")
-    try:
-        resp = sb.table("physics_results").select("email, physics_json").execute()
-    except Exception as e:
-        log.warning(f"[LAJTNER-LIST] read failed: {e}")
-        raise HTTPException(500, "DB read failed")
-
-    em = (email or "").strip().lower()
-    buckets = {
-        "resonance": {"mine": [], "all": []},
-        "time":      {"mine": [], "all": []},
-        "jerk":      {"mine": [], "all": []},
-    }
-    for r in (resp.data or []):
-        try:
-            p = json.loads(r.get("physics_json") or "{}")
-        except Exception:
-            continue
-        mine = bool(em) and (r.get("email") or "").strip().lower() == em
-        vals = {
-            "resonance": (p.get("air") or {}).get("planck_freq"),
-            "time":      p.get("lajtner_time"),
-            "jerk":      p.get("lajtner_jerk_deg"),
-        }
-        for k, v in vals.items():
-            if isinstance(v, (int, float)) and v > 0:
-                buckets[k]["all"].append(v)
-                if mine:
-                    buckets[k]["mine"].append(v)
-
-    def _pack(vals):
-        vals = sorted(vals)
-        if limit:
-            vals = vals[:limit]
-        n = len(vals)
-        stats = {"min": vals[0], "max": vals[-1], "avg": sum(vals) / n, "count": n} if n else {}
-        return {"values": vals, "stats": stats}
-
-    out = {}
-    for k in buckets:
-        out[k] = {"mine": _pack(buckets[k]["mine"]), "all": _pack(buckets[k]["all"])}
-    return out
-
-
-@app.get("/api/lr-lt-lj")
-def api_lr_lt_lj(email: str = ""):
-    """Full LR / LT / LJ table.
-      LR = Lajtner Resonance (air basis, no unit) · LT = Lajtner Time (s) · LJ = Lajtner Jerk (deg/s^3)
-      is_master : requester is master (full emails + nicknames + may download all as CSV)
-      mine      : requester's own rows (full detail incl. nickname + video length)
-      all       : every measurement (email masked + no nickname unless master)
-      avg       : averages for the user and for everyone
-    """
-    from app.database import _sb
-    sb = _sb()
-    if not sb:
-        raise HTTPException(500, "DB unavailable")
-    em = (email or "").strip().lower()
-    master = _is_master(em)
-    try:
-        pres = sb.table("physics_results").select("job_id, email, physics_json").execute()
-        jres = sb.table("wt_jobs").select("id, user_email, created_at, duration_sec, nickname, medium, direction, hand_visible").execute()
-    except Exception as e:
-        log.warning(f"[LR-LT-LJ] read failed: {e}")
-        raise HTTPException(500, "DB read failed")
-
-    jobmap = {j.get("id"): j for j in (jres.data or [])}
-
-    def _num(x):
-        return x if isinstance(x, (int, float)) and x > 0 else None
-
-    mine, allrows = [], []
-    for r in (pres.data or []):
-        try:
-            p = json.loads(r.get("physics_json") or "{}")
-        except Exception:
-            continue
-        LR = _num((p.get("air") or {}).get("planck_freq"))
-        LT = _num(p.get("lajtner_time"))
-        LJ = _num(p.get("lajtner_jerk_deg"))
-        if LR is None and LT is None and LJ is None:
-            continue
-        job = jobmap.get(r.get("job_id"), {})
-        row_email = (job.get("user_email") or r.get("email") or "").strip()
-        is_mine = bool(em) and row_email.lower() == em
-        base = {
-            "date":       (job.get("created_at") or "")[:16].replace("T", " "),
-            "duration_s": job.get("duration_sec"),
-            "medium":     job.get("medium"),
-            "hand":       job.get("hand_visible"),
-            "LR": LR, "LT": LT, "LJ": LJ,
-        }
-        allrows.append({
-            **base,
-            "email":    row_email if master else _mask_email(row_email),
-            "nickname": (job.get("nickname") if master else None),
-            "job_id":   (r.get("job_id") if (master or is_mine) else None),
-        })
-        if is_mine:
-            mine.append({**base, "email": row_email, "nickname": job.get("nickname"),
-                         "job_id": r.get("job_id")})
-
-    def _avg(rows, key):
-        vals = [x[key] for x in rows if x.get(key)]
-        return (sum(vals) / len(vals)) if vals else None
-
-    def _avgset(rows):
-        return {"LR": _avg(rows, "LR"), "LT": _avg(rows, "LT"),
-                "LJ": _avg(rows, "LJ"), "count": len(rows)}
-
-    return {
-        "is_master": master,
-        "mine": mine,
-        "all":  allrows,
-        "avg":  {"mine": _avgset(mine), "all": _avgset(allrows)},
-    }
-
-
-@app.get("/api/measurement/{job_id}")
-def api_measurement(job_id: str, email: str = ""):
-    """Details of one measurement for the LR-LT-LJ page modal.
-    Own measurements (or master): full physics from DB physics_json + job meta."""
-    from app.database import _sb
-    sb = _sb()
-    if not sb:
-        raise HTTPException(500, "DB unavailable")
-    em = (email or "").strip().lower()
-    master = _is_master(em)
-    try:
-        jr = sb.table("wt_jobs").select(
-            "id, user_email, created_at, duration_sec, nickname, medium, direction, hand_visible"
-        ).eq("id", job_id).limit(1).execute()
-        pr = sb.table("physics_results").select("physics_json").eq("job_id", job_id).limit(1).execute()
-    except Exception as e:
-        log.warning(f"[MEASUREMENT] read failed: {e}")
-        raise HTTPException(500, "DB read failed")
-    job = (jr.data or [{}])[0]
-    owner = (job.get("user_email") or "").strip().lower()
-    if not master and (not em or owner != em):
-        raise HTTPException(403, "You can view details of your own measurements only")
-    phys = {}
-    if pr.data:
-        try:
-            phys = json.loads(pr.data[0].get("physics_json") or "{}")
-        except Exception:
-            phys = {}
-    return {
-        "job": {
-            "id": job.get("id"), "email": job.get("user_email"),
-            "date": (job.get("created_at") or "")[:16].replace("T", " "),
-            "duration_s": job.get("duration_sec"),
-            "nickname": job.get("nickname"),
-            "medium": job.get("medium"), "direction": job.get("direction"),
-            "hand": job.get("hand_visible"),
-        },
-        "physics": {
-            "ideal": phys.get("ideal"), "air": phys.get("air"), "water": phys.get("water"),
-            "lajtner_time": phys.get("lajtner_time"),
-            "lajtner_jerk_deg": phys.get("lajtner_jerk_deg"),
-            "lajtner_jerk_rad": phys.get("lajtner_jerk_rad"),
-        },
-    }
-
 # ── WebSocket stream ───────────────────────────────────────────────────────
 @app.websocket("/stream")
 async def stream_ws(ws: WebSocket):
@@ -1711,7 +1215,6 @@ async def stream_ws(ws: WebSocket):
     # Master always gets Pro features regardless of plan
     if _is_master(email):
         _req_version = "pro"
-    _req_version = _effective_plan(_req_version)   # free Beta → Ultimate for everyone
     _sp = {
         "direction": params.get("direction", DEFAULT_DIRECTION),
         "medium":    params.get("medium",    DEFAULT_MEDIUM),
@@ -1720,10 +1223,8 @@ async def stream_ws(ws: WebSocket):
         "lang":      params.get("lang",       DEFAULT_LANG),
     }
     create_job(job_id, email, "stream", _sp["direction"], _sp["medium"], False, "basic")
-    _nn = _set_job_nickname(job_id, params.get("nickname", ""))
     jobs[job_id] = {"status":"streaming", "user_email": email,
                     "source_type": "stream",
-                    "nickname": _nn,
                     "created_at": datetime.datetime.utcnow().isoformat(),
                     "progress": {"pct":0}}
     log.info(f"[WS] {ws.client}  job={job_id}")
@@ -1796,6 +1297,151 @@ async def stream_ws(ws: WebSocket):
 
 # ── Master user endpoints ─────────────────────────────────────────────────
 MASTER_TOKEN = os.environ.get("MASTER_TOKEN", "wt_master_2026")
+_MASTER_EMAILS = ["azatkb22@gmail.com", "lajtnert@gmail.com"]
+
+def _master_ok(email="", token=""):
+    return (email or "").lower() in _MASTER_EMAILS or token == MASTER_TOKEN
+
+# ── Pioneer / Founder / Alpha unit allocation ───────────────────────────────
+@app.get("/allocation/{series}")
+def allocation_list(series: str):
+    """Public: list all units of a series with status available/allocated.
+    series ∈ pioneer(50) | founder(50) | alpha(500)."""
+    series = series.lower()
+    totals = {"pioneer": 50, "founder": 50, "alpha": 500}
+    if series not in totals:
+        raise HTTPException(404, "Unknown series")
+    total = totals[series]
+    taken = {}
+    from app.database import _sb
+    sb = _sb()
+    if sb:
+        try:
+            r = sb.table("unit_allocations").select("number, status").eq("series", series).execute()
+            for row in (r.data or []):
+                taken[int(row["number"])] = row.get("status", "allocated")
+        except Exception as e:
+            log.warning(f"[ALLOC] read failed: {e}")
+    units = [{"number": n, "status": taken.get(n, "available")} for n in range(1, total + 1)]
+    return {"series": series, "total": total, "units": units}
+
+
+@app.post("/allocation/checkout")
+async def allocation_checkout(request: Request):
+    """Create a Stripe checkout for one numbered unit. Marks it 'pending' so it
+    can't be double-sold; the webhook flips it to 'allocated' once paid."""
+    body = await request.json()
+    series = (body.get("series") or "pioneer").lower()
+    number = int(body.get("number") or 0)
+    email  = (body.get("email") or "").strip().lower()
+    name   = (body.get("name") or "").strip()
+    ship   = body.get("shipping") or {}
+    price  = {"pioneer": 249, "founder": None, "alpha": None}.get(series)
+    if not email or not name or not number:
+        raise HTTPException(400, "Name, email and number are required")
+    if series != "pioneer" or not price:
+        raise HTTPException(400, "This series is not open for sale yet")
+
+    from app.database import _sb
+    sb = _sb()
+    if sb:
+        # reject if already taken
+        ex = sb.table("unit_allocations").select("status").eq("series", series).eq("number", number).execute()
+        if ex.data and ex.data[0].get("status") in ("allocated", "pending"):
+            raise HTTPException(409, f"#{number:02d} is no longer available")
+        sb.table("unit_allocations").upsert({
+            "series": series, "number": number, "status": "pending",
+            "buyer_email": email, "buyer_name": name,
+            "shipping": json.dumps(ship), "created_at": datetime.datetime.utcnow().isoformat(),
+        }, on_conflict="series,number").execute()
+
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(503, "Stripe not configured")
+    import stripe
+    stripe.api_key = STRIPE_SECRET_KEY
+    session = stripe.checkout.Session.create(
+        payment_method_types=["card"], mode="payment", customer_email=email,
+        line_items=[{"price_data": {"currency": "usd",
+            "product_data": {"name": f"Lajtner {series.title()} #{number:02d} of {50}"},
+            "unit_amount": price * 100}, "quantity": 1}],
+        shipping_address_collection={"allowed_countries": ["US","GB","DE","HU","FR","AT","CA","AU"]},
+        success_url=body.get("success_url", "https://lajtnerresonance.com/thankyou"),
+        cancel_url=body.get("cancel_url", "https://lajtnerresonance.com/pioneer"),
+        metadata={"kind": "unit", "series": series, "number": str(number),
+                  "email": email, "name": name},
+    )
+    return {"url": session.url, "session_id": session.id}
+
+
+def _finalize_unit(series, number, email, name):
+    """Mark a unit allocated + send confirmation email. Called from the webhook."""
+    from app.database import _sb
+    sb = _sb()
+    if sb:
+        try:
+            sb.table("unit_allocations").upsert({
+                "series": series, "number": number, "status": "allocated",
+                "buyer_email": email, "buyer_name": name,
+                "paid_at": datetime.datetime.utcnow().isoformat(),
+            }, on_conflict="series,number").execute()
+        except Exception as e:
+            log.error(f"[ALLOC] finalize failed: {e}")
+    _send_pioneer_email(email, name, series, number)
+
+
+def _send_pioneer_email(email, name, series, number):
+    GMAIL_USER = os.environ.get("GMAIL_USER", "")
+    GMAIL_PASS = os.environ.get("GMAIL_PASS", "")
+    if not (GMAIL_USER and GMAIL_PASS):
+        log.warning("[ALLOC] GMAIL not set — confirmation email skipped")
+        return
+    try:
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        label = f"{series.title()} #{number:02d} of 50"
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"Confirmation of Your Pioneer Order – Lajtner Resonance {label}"
+        msg["From"] = f"Lajtner Resonance <{GMAIL_USER}>"
+        msg["To"] = email
+        text = (f"Dear {name},\n\n"
+                f"Thank you very much for your order, and congratulations on securing your place "
+                f"in the Pioneer program!\n\n"
+                f"We are pleased to confirm that {label} has been successfully reserved for you. "
+                f"We deeply appreciate your trust and support in joining us at the very beginning of "
+                f"this journey.\n\n"
+                f"As your device is being crafted to order, we will keep you updated on its progress "
+                f"and send you a notification with full shipping details as soon as it is ready to be "
+                f"dispatched.\n\n"
+                f"Thank you once again for your partnership in shaping the future of Lajtner Resonance. "
+                f"If you have any questions in the meantime, please do not hesitate to reach out directly.\n\n"
+                f"Warm regards,\n\nDr. Tamás Lajtner\nLajtner Resonance")
+        msg.attach(MIMEText(text, "plain"))
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+            s.login(GMAIL_USER, GMAIL_PASS)
+            s.sendmail(GMAIL_USER, email, msg.as_string())
+        log.info(f"[ALLOC] confirmation email sent to {email} for {label}")
+    except Exception as e:
+        log.error(f"[ALLOC] email failed: {e}")
+
+
+# ── Block / unblock users (admin) ───────────────────────────────────────────
+@app.post("/admin/block-user")
+async def admin_block_user(request: Request):
+    body = await request.json()
+    if not _master_ok(body.get("admin_email", ""), body.get("token", "")):
+        raise HTTPException(401, "Unauthorized")
+    target = (body.get("email") or "").strip().lower()
+    blocked = bool(body.get("blocked", True))
+    if not target:
+        raise HTTPException(400, "email required")
+    from app.database import _sb
+    sb = _sb()
+    if sb:
+        sb.table("wt_users").update({"blocked": blocked}).eq("email", target).execute()
+    log.info(f"[ADMIN] {'blocked' if blocked else 'unblocked'} {target}")
+    return {"ok": True, "email": target, "blocked": blocked}
+
 
 @app.get("/master/all")
 def master_all(email: str = "", token: str = "", limit: int = 1000):
@@ -1844,39 +1490,33 @@ def admin_set_plan(email: str, plan: str, admin: str = ""):
 
 @app.get("/master/users")
 def master_users(email: str = "", token: str = ""):
-    """Master: list all unique users with measurement counts."""
-    MASTER_EMAILS = ["azatkb22@gmail.com", "lajtnert@gmail.com"]
-    if email not in MASTER_EMAILS and token != MASTER_TOKEN:
+    """Master: list all users (from wt_users) with measurement counts + blocked flag."""
+    if not _master_ok(email, token):
         raise HTTPException(401, "Unauthorized")
     rows = get_master_data(limit=10000)
     from collections import defaultdict
-    users = defaultdict(int)
+    counts = defaultdict(int)
     for r in rows:
-        users[r.get("email","?")] += 1
-    return {"users": [{"email": e, "count": c} for e,c in sorted(users.items())]}
-
-@app.get("/master/table")
-def master_table(name: str = "", token: str = "", email: str = "", limit: int = 1000):
-    """Master: read raw rows from any table by name (for the DB viewer)."""
-    MASTER_EMAILS = ["azatkb22@gmail.com", "lajtnert@gmail.com"]
-    if email not in MASTER_EMAILS and token != MASTER_TOKEN:
-        raise HTTPException(401, "Unauthorized")
-    import re as _re
-    if not _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name or ''):
-        raise HTTPException(400, "Invalid table name")
-    try:
-        from app.database import _sb
-        sb = _sb()
-        if sb is None:
-            raise HTTPException(500, "DB unavailable")
-        resp = sb.table(name).select("*").limit(max(1, min(limit, 10000))).execute()
-        rows = resp.data or []
-        return {"name": name, "count": len(rows), "rows": rows}
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.warning(f"[MASTER/TABLE] read '{name}' failed: {e}")
-        raise HTTPException(500, f"Could not read table '{name}': {e}")
+        counts[(r.get("email") or "?").lower()] += 1
+    # pull the full user list (so users with 0 measurements also appear) + blocked flag
+    users = {}
+    from app.database import _sb
+    sb = _sb()
+    if sb:
+        try:
+            ur = sb.table("wt_users").select("email, plan, blocked").execute()
+            for u in (ur.data or []):
+                em = (u.get("email") or "").lower()
+                if em:
+                    users[em] = {"email": em, "plan": u.get("plan", "basic"),
+                                 "blocked": bool(u.get("blocked")), "count": counts.get(em, 0)}
+        except Exception as e:
+            log.warning(f"[MASTER-USERS] read failed: {e}")
+    # include any measurement emails not in wt_users
+    for em, c in counts.items():
+        if em not in users:
+            users[em] = {"email": em, "plan": "basic", "blocked": False, "count": c}
+    return {"users": sorted(users.values(), key=lambda x: (-x["count"], x["email"]))}
 
 @app.get("/bar-data/{email}")
 def bar_data(email: str, token: str = ""):
@@ -1898,39 +1538,6 @@ async def rerun_physics(job_id: str, medium: str = "air", version: str = "basic"
         jobs[job_id]["phases"]  = physics.get("phases", {})
     return {"ok": True, "samples": len(samples),
             "message": physics.get("message", {}).get("message", "")}
-
-
-@app.post("/admin/rerun-all-physics")
-def rerun_all_physics(token: str = "", email: str = "", limit: int = 2000):
-    """Reprocess EVERY measurement (direction auto) so physics_json is rewritten
-    with LT/LJ. Master only. Run once after deploying the new physics.py + database.py."""
-    MASTER_EMAILS = ["azatkb22@gmail.com", "lajtnert@gmail.com"]
-    if email not in MASTER_EMAILS and token != MASTER_TOKEN:
-        raise HTTPException(401, "Unauthorized")
-    from app.database import _sb
-    sb = _sb()
-    if not sb:
-        raise HTTPException(500, "DB unavailable")
-    try:
-        jr = sb.table("wt_jobs").select("id, medium, user_email").limit(limit).execute()
-    except Exception as e:
-        raise HTTPException(500, f"job list failed: {e}")
-    done, skipped, failed = 0, 0, 0
-    for j in (jr.data or []):
-        jid = j.get("id")
-        try:
-            samples = read_samples(jid)
-            if not samples:
-                skipped += 1
-                continue
-            _run_physics(samples, j.get("medium", "air"), "auto",
-                         j.get("user_email") or "", jid,
-                         "ultimate", "en")
-            done += 1
-        except Exception as e:
-            log.warning(f"[RERUN-ALL] {jid} failed: {e}")
-            failed += 1
-    return {"reprocessed": done, "skipped_no_samples": skipped, "failed": failed}
 
 
 # ─────────────────────────────────────────────
@@ -2180,11 +1787,8 @@ def stats_odds_ratio_auto(admin_email: str = "", threshold: float = 0, metric: s
 # ─────────────────────────────────────────────
 
 async def _verify_recaptcha(token: str) -> bool:
-    """Verify Google reCAPTCHA v2 token. Disabled unless RECAPTCHA_ENABLED=1
-    (mirrors the frontend flag — keeps front and back in sync)."""
+    """Verify Google reCAPTCHA v2 token."""
     import os as _os, httpx as _hx
-    if _os.environ.get("RECAPTCHA_ENABLED", "0") != "1":
-        return True  # captcha turned OFF by config
     secret = _os.environ.get("RECAPTCHA_SECRET_KEY", "")
     if not secret:
         log.warning("[RECAPTCHA] No secret key set — skipping verification")

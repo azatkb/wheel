@@ -1,7 +1,13 @@
 import { useDeviceAuth } from '../hooks/useDeviceAuth'
+import { useAuth } from '../hooks/useAuth.jsx'
 
 // Set to true to require an NFC tap. false = gate disabled (open access).
 const DEVICE_GATE_ENABLED = false
+
+// Master accounts never need the chip — they always pass the gate
+// (e.g. to check statistics without a physical tag).
+const MASTER_EMAILS = ['azatkb22@gmail.com', 'lajtnert@gmail.com']
+const isMaster = e => MASTER_EMAILS.includes((e || '').toLowerCase())
 
 /**
  * Wrap the measurement UI:
@@ -13,7 +19,9 @@ const DEVICE_GATE_ENABLED = false
  * open it, and you'll be redirected back here authorized.
  */
 export default function DeviceGate({ children }) {
+  const { user } = useAuth()
   if (!DEVICE_GATE_ENABLED) return children
+  if (isMaster(user?.email)) return children       // master bypass — no chip needed
   const { deviceAuthorized, checking } = useDeviceAuth()
 
   if (checking) {

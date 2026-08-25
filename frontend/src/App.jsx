@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx'
+import UserManagement from './pages/UserManagement'
 import TawkWidget from './components/TawkWidget'
 import FeedbackWidget from './components/FeedbackWidget'
 import Login from './pages/Login'
@@ -39,6 +40,7 @@ const NAV_ALL = [
   { to: '/master',       icon: '⬡', label: 'Master',    masterOnly: true },
   { to: '/fpe',          icon: '⚡', label: 'FPE',        masterOnly: true },
   { to: '/db',           icon: '⊞', label: 'Database',  masterOnly: true },
+  { to: '/users',           icon: '⊞', label: 'Users',  masterOnly: true },
 ]
 
 function isMaster(email) {
@@ -219,6 +221,7 @@ function Shell() {
           <Route path="/focus"         element={<Questionnaire />} />
           <Route path="/focus-db"      element={master ? <QuestionnaireViewer /> : <Navigate to="/upload" replace />} />
           <Route path="/db"           element={master ? <DbViewer /> : <Navigate to="/upload" replace />} />
+          <Route path="/users" element={<UserManagement />} />
           <Route path="*"             element={<Navigate to="/upload" replace />} />
         </Routes>
       </main>

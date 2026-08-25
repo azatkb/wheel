@@ -9,6 +9,12 @@ function readStored() {
   catch { return { authorized: false } }
 }
 
+// Call this from the app's logout handler so the NFC gate closes on sign-out
+// (the next visit will then require a fresh tap).
+export function clearDeviceAuth() {
+  try { sessionStorage.removeItem(SS_KEY) } catch {}
+}
+
 /**
  * Device authorization for the NTAG verify flow.
  *

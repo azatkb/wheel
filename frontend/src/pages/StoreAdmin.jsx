@@ -73,7 +73,7 @@ function ProductModal({ user, product, onClose, onSaved }) {
         overflow:'auto',padding:'1.5rem',position:'relative'
       }}>
         <button onClick={onClose} style={{
-          position:'ultimate',top:'1rem',right:'1rem',
+          position:'absolute',top:'1rem',right:'1rem',
           background:'none',border:'none',color:'var(--muted)',fontSize:'1.3rem',cursor:'pointer'
         }}>×</button>
 
@@ -249,6 +249,189 @@ function FileUploader({ adminEmail, fileType, onUploaded }) {
   )
 }
 
+// ── Visual Bundle Builder — no JSON, all controls ──────────────────────────
+function BundleBuilder({ user, products, showMsg }) {
+  const em = encodeURIComponent(user.email)
+  const physicalProducts = products.filter(p => p.type === 'physical')
+  const digitalProducts  = products.filter(p => ['video','pdf'].includes(p.type))
+
+  const [productId, setProductId] = useState('')
+  const [grants, setGrants] = useState([])          // list of grant rows (visual)
+  const [existing, setExisting] = useState([])       // saved bundles for the selected product
+  const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+  // load existing bundle grants when a physical product is selected
+  useEffect(() => {
+    if (!productId) { setGrants([]); setExisting([]); return }
+    ;(async () => {
+      setLoading(true)
+      try {
+        const r = await fetch(`${API}/store/bundles?product_id=${productId}&admin_email=${em}`)
+        if (r.ok) {
+          const d = await r.json()
+          const g = d.grants || d.bundle?.grants || []
+          setExisting(Array.isArray(g) ? g : [])
+          setGrants(Array.isArray(g) ? g.map(normalizeGrant) : [])
+        } else { setExisting([]); setGrants([]) }
+      } catch { setExisting([]); setGrants([]) }
+      setLoading(false)
+    })()
+  }, [productId])
+
+  function normalizeGrant(g) {
+    if (g.type === 'product') return { kind:'product', product_id:g.product_id || '', months:'' }
+    return { kind: g.type, product_id:'', months: g.months || 12 }
+  }
+
+  const addGrant = (kind) => {
+    if (kind === 'product') setGrants(gs => [...gs, { kind:'product', product_id:'', months:'' }])
+    else setGrants(gs => [...gs, { kind, product_id:'', months: 12 }])
+  }
+  const removeGrant = (i) => setGrants(gs => gs.filter((_,idx) => idx !== i))
+  const updateGrant = (i, patch) => setGrants(gs => gs.map((g,idx) => idx===i ? {...g,...patch} : g))
+
+  const toPayload = () => grants.map(g => {
+    if (g.kind === 'product') return { type:'product', product_id: g.product_id }
+    return { type: g.kind, months: parseInt(g.months) || 12 }
+  }).filter(g => g.type !== 'product' || g.product_id)
+
+  const save = async () => {
+    if (!productId) { showMsg('Select a physical product first'); return }
+    setSaving(true)
+    const r = await fetch(`${API}/store/bundles`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ product_id: productId, grants: toPayload(), admin_email: user.email })
+    })
+    showMsg(r.ok ? '✓ Bundle saved!' : 'Error saving bundle')
+    if (r.ok) setExisting(toPayload())
+    setSaving(false)
+  }
+
+  const grantLabel = (g) => {
+    if (g.kind === 'subscription_pro')      return '⚡ Pro subscription'
+    if (g.kind === 'subscription_ultimate') return '🌟 Ultimate subscription'
+    if (g.kind === 'product')               return '🎬 Free digital product'
+    return g.kind
+  }
+
+  return (
+    <div className="card">
+      <div className="card-title">🎁 Bundle Builder</div>
+      <p style={{fontSize:'.82rem',color:'var(--muted)',marginBottom:'1rem'}}>
+        Pick a physical product, then add what buyers get for free with it. No JSON — just add rows.
+      </p>
+
+      {/* Step 1: pick physical product */}
+      <label className="form-label">1 · Physical product</label>
+      <select value={productId} onChange={e=>setProductId(e.target.value)} className="form-input">
+        <option value="">— Select a physical product —</option>
+        {physicalProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
+      {physicalProducts.length === 0 && (
+        <div style={{fontSize:'.75rem',color:'var(--amber)',marginTop:'.35rem'}}>
+          No physical products yet — add one in the Products tab first.
+        </div>
+      )}
+
+      {productId && (
+        <>
+          {/* Step 2: grants list */}
+          <div style={{marginTop:'1.25rem'}}>
+            <label className="form-label">2 · What the buyer gets for free</label>
+
+            {loading ? (
+              <div style={{color:'var(--muted)',fontSize:'.85rem',padding:'.5rem 0'}}>Loading…</div>
+            ) : grants.length === 0 ? (
+              <div style={{color:'var(--dim)',fontSize:'.82rem',padding:'.75rem',
+                border:'1px dashed var(--border)',borderRadius:8,textAlign:'center'}}>
+                No grants yet. Add one below.
+              </div>
+            ) : (
+              <div style={{display:'flex',flexDirection:'column',gap:'.5rem'}}>
+                {grants.map((g, i) => (
+                  <div key={i} style={{display:'flex',alignItems:'center',gap:'.6rem',
+                    background:'var(--bg3)',border:'1px solid var(--border)',
+                    borderRadius:8,padding:'.55rem .7rem',flexWrap:'wrap'}}>
+                    <span style={{fontSize:'.85rem',color:'var(--text)',minWidth:170,fontWeight:600}}>
+                      {grantLabel(g)}
+                    </span>
+
+                    {/* subscription → months */}
+                    {(g.kind === 'subscription_pro' || g.kind === 'subscription_ultimate') && (
+                      <span style={{display:'flex',alignItems:'center',gap:'.4rem'}}>
+                        <input type="number" min="1" value={g.months}
+                          onChange={e=>updateGrant(i,{months:e.target.value})}
+                          className="form-input" style={{width:80,padding:'.3rem .5rem'}} />
+                        <span style={{fontSize:'.8rem',color:'var(--muted)'}}>months</span>
+                      </span>
+                    )}
+
+                    {/* product → which digital product */}
+                    {g.kind === 'product' && (
+                      <select value={g.product_id}
+                        onChange={e=>updateGrant(i,{product_id:e.target.value})}
+                        className="form-input" style={{flex:1,minWidth:180,padding:'.3rem .5rem'}}>
+                        <option value="">— choose digital product —</option>
+                        {digitalProducts.map(p => (
+                          <option key={p.id} value={p.id}>{TYPE_LABELS[p.type]?.icon} {p.name}</option>
+                        ))}
+                      </select>
+                    )}
+
+                    <button onClick={()=>removeGrant(i)} title="Remove"
+                      style={{marginLeft:'auto',background:'none',border:'none',
+                        color:'var(--red)',cursor:'pointer',fontSize:'1rem'}}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* add-grant buttons */}
+            <div style={{display:'flex',gap:'.5rem',flexWrap:'wrap',marginTop:'.75rem'}}>
+              <button onClick={()=>addGrant('subscription_pro')} className="btn btn-sm btn-secondary">
+                + ⚡ Pro subscription
+              </button>
+              <button onClick={()=>addGrant('subscription_ultimate')} className="btn btn-sm btn-secondary">
+                + 🌟 Ultimate subscription
+              </button>
+              <button onClick={()=>addGrant('product')} className="btn btn-sm btn-secondary">
+                + 🎬 Free digital product
+              </button>
+            </div>
+          </div>
+
+          {/* Step 3: preview + save */}
+          <div style={{marginTop:'1.25rem',background:'rgba(68,170,255,.06)',
+            border:'1px solid rgba(68,170,255,.18)',borderRadius:8,padding:'.75rem'}}>
+            <div style={{fontSize:'.72rem',color:'var(--blue)',textTransform:'uppercase',
+              letterSpacing:'.05em',marginBottom:'.4rem'}}>Preview — buyer gets</div>
+            {toPayload().length === 0 ? (
+              <div style={{color:'var(--dim)',fontSize:'.82rem'}}>Nothing yet.</div>
+            ) : (
+              <ul style={{margin:0,paddingLeft:'1.1rem',color:'var(--text)',fontSize:'.85rem'}}>
+                {grants.map((g,i) => {
+                  if (g.kind === 'product') {
+                    const p = digitalProducts.find(x => x.id === g.product_id)
+                    return <li key={i}>Free: {p ? p.name : '(choose a product)'}</li>
+                  }
+                  const label = g.kind === 'subscription_pro' ? 'Pro' : 'Ultimate'
+                  return <li key={i}>{label} subscription — {g.months} months</li>
+                })}
+              </ul>
+            )}
+          </div>
+
+          <button onClick={save} disabled={saving} className="btn btn-primary"
+            style={{marginTop:'1rem'}}>
+            {saving ? 'Saving…' : '💾 Save Bundle'}
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function StoreAdmin() {
   const { user } = useAuth()
   if (!user) return null
@@ -260,26 +443,18 @@ export default function StoreAdmin() {
   const [products, setProducts] = useState([])
   const [coupons, setCoupons] = useState([])
   const [orders, setOrders] = useState([])
-  const [form, setForm] = useState({
-    name:'', description:'', type:'video', price_usd:'',
-    price_annual:'', file_url:'', image_url:'', stock:'', active:true
-  })
   const [couponForm, setCouponForm] = useState({
     code:'', type:'percent', value:'', global:true,
     user_email:'', max_uses:'', valid_until:''
-  })
-  const [bundleForm, setBundleForm] = useState({
-    product_id:'', grants:''
   })
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [editProduct, setEditProduct] = useState(null)  // null=closed, {}=add, {id,...}=edit
 
-
   const em = encodeURIComponent(user.email)
 
   useEffect(() => {
-    if (tab === 'products' || tab === 'add_product') loadProducts()
+    if (tab === 'products' || tab === 'bundles') loadProducts()
     if (tab === 'coupons'  || tab === 'add_coupon')  loadCoupons()
     if (tab === 'orders')   loadOrders()
   }, [tab])
@@ -299,22 +474,6 @@ export default function StoreAdmin() {
 
   const showMsg = (m) => { setMsg(m); setTimeout(() => setMsg(''), 3000) }
 
-  const addProduct = async () => {
-    setSaving(true)
-    const r = await fetch(`${API}/store/products`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({...form, admin_email: user.email,
-        price_usd: parseFloat(form.price_usd),
-        price_annual: form.price_annual ? parseFloat(form.price_annual) : null,
-        stock: form.stock ? parseInt(form.stock) : null })
-    })
-    const d = await r.json()
-    showMsg(r.ok ? '✓ Product added!' : 'Error: ' + d.detail)
-    if (r.ok) { loadProducts(); setForm({name:'',description:'',type:'video',price_usd:'',
-      price_annual:'',file_url:'',image_url:'',stock:'',active:true}) }
-    setSaving(false)
-  }
-
   const addCoupon = async () => {
     setSaving(true)
     const r = await fetch(`${API}/store/coupons`, {
@@ -327,18 +486,6 @@ export default function StoreAdmin() {
     const d = await r.json()
     showMsg(r.ok ? '✓ Coupon created!' : 'Error: ' + d.detail)
     if (r.ok) { loadCoupons() }
-    setSaving(false)
-  }
-
-  const setBundle = async () => {
-    setSaving(true)
-    let grants
-    try { grants = JSON.parse(bundleForm.grants) } catch { showMsg('Invalid JSON in grants'); setSaving(false); return }
-    const r = await fetch(`${API}/store/bundles`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ product_id: bundleForm.product_id, grants, admin_email: user.email })
-    })
-    showMsg(r.ok ? '✓ Bundle saved!' : 'Error')
     setSaving(false)
   }
 
@@ -480,70 +627,6 @@ export default function StoreAdmin() {
         </div>
       )}
 
-      {/* ── Add product ── */}
-      {tab === 'add_product' && (
-        <div className="card">
-          <div className="card-title">Add New Product</div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'.75rem'}}>
-            <div style={{gridColumn:'1/-1'}}>
-              <label className="form-label">Type</label>
-              <select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}
-                className="form-input">
-                {Object.entries(TYPE_LABELS).map(([k,v]) => (
-                  <option key={k} value={k}>{v.icon} {v.label}</option>
-                ))}
-              </select>
-            </div>
-            {[
-              ['name','Product Name *'],
-              ['price_usd','Price USD *'],
-              ['price_annual','Annual Price (subscriptions)'],
-              ['stock','Stock qty (empty = unlimited)'],
-            ].map(([k,pl]) => (
-              <div key={k}>
-                <label className="form-label">{pl}</label>
-                <input value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}
-                  placeholder={pl} className="form-input" />
-              </div>
-            ))}
-            <div style={{gridColumn:'1/-1'}}>
-              <label className="form-label">Product Image (upload or paste URL)</label>
-              <ImageUploader adminEmail={user.email}
-                onUploaded={url => setForm(f=>({...f, image_url: url}))} />
-              <input value={form.image_url} onChange={e=>setForm(f=>({...f,image_url:e.target.value}))}
-                placeholder="Or paste image URL..." className="form-input"
-                style={{marginTop:'.4rem'}} />
-            </div>
-            <div style={{gridColumn:'1/-1'}}>
-              <label className="form-label">Digital File (video/pdf upload or paste URL)</label>
-              <FileUploader adminEmail={user.email}
-                fileType={form.type === 'pdf' ? 'pdf' : 'video'}
-                onUploaded={url => setForm(f=>({...f, file_url: url}))} />
-              <input value={form.file_url} onChange={e=>setForm(f=>({...f,file_url:e.target.value}))}
-                placeholder="Or paste file URL..." className="form-input"
-                style={{marginTop:'.4rem'}} />
-            </div>
-            <div style={{gridColumn:'1/-1'}}>
-              <label className="form-label">Description</label>
-              <textarea value={form.description}
-                onChange={e=>setForm(f=>({...f,description:e.target.value}))}
-                placeholder="Product description..." className="form-input"
-                style={{minHeight:80,resize:'vertical'}} />
-            </div>
-            <div style={{gridColumn:'1/-1',display:'flex',alignItems:'center',gap:'.5rem'}}>
-              <input type="checkbox" id="active" checked={form.active}
-                onChange={e=>setForm(f=>({...f,active:e.target.checked}))}
-                style={{accentColor:'var(--green)',width:16,height:16}} />
-              <label htmlFor="active" style={{color:'var(--text)',cursor:'pointer'}}>Active (visible in store)</label>
-            </div>
-            <button onClick={addProduct} disabled={saving}
-              className="btn btn-primary" style={{gridColumn:'1/-1'}}>
-              {saving ? 'Saving...' : '+ Add Product'}
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* ── Coupons list ── */}
       {tab === 'coupons' && (
         <div className="card">
@@ -638,43 +721,9 @@ export default function StoreAdmin() {
         </div>
       )}
 
-      {/* ── Bundles ── */}
+      {/* ── Bundles (visual builder) ── */}
       {tab === 'bundles' && (
-        <div className="card">
-          <div className="card-title">Bundle Grants</div>
-          <p style={{fontSize:'.82rem',color:'var(--muted)',marginBottom:'1rem'}}>
-            When a physical product is purchased, automatically grant subscriptions and digital products.
-          </p>
-          <div style={{marginBottom:'.75rem'}}>
-            <label className="form-label">Physical Product</label>
-            <select value={bundleForm.product_id}
-              onChange={e=>setBundleForm(f=>({...f,product_id:e.target.value}))}
-              className="form-input">
-              <option value="">— Select product —</option>
-              {products.filter(p=>p.type==='physical').map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
-          <div style={{marginBottom:'.75rem'}}>
-            <label className="form-label">Grants (JSON array)</label>
-            <textarea value={bundleForm.grants}
-              onChange={e=>setBundleForm(f=>({...f,grants:e.target.value}))}
-              placeholder={`[{"type":"subscription_pro","months":24}]`}
-              className="form-input" style={{minHeight:120,resize:'vertical',fontFamily:'monospace',fontSize:'.8rem'}} />
-          </div>
-          <div style={{background:'rgba(68,170,255,.08)',border:'1px solid rgba(68,170,255,.2)',
-            borderRadius:8,padding:'.75rem',fontSize:'.8rem',color:'var(--muted)',marginBottom:'.75rem'}}>
-            <strong style={{color:'var(--blue)'}}>Grant types:</strong><br/>
-            • <code>{"{"}"type":"subscription_pro","months":24{"}"}</code> — 2 year Pro<br/>
-            • <code>{"{"}"type":"subscription_ultimate","months":12{"}"}</code> — 1 year Ultimate<br/>
-            • <code>{"{"}"type":"product","product_id":"uuid"{"}"}</code> — free digital product
-          </div>
-          <button onClick={setBundle} disabled={saving || !bundleForm.product_id}
-            className="btn btn-primary">
-            {saving ? 'Saving...' : '💾 Save Bundle'}
-          </button>
-        </div>
+        <BundleBuilder user={user} products={products} showMsg={showMsg} />
       )}
 
       {/* Product Add/Edit Modal */}
