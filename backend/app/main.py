@@ -1381,8 +1381,8 @@ async def allocation_checkout(request: Request):
             "unit_amount": price * 100}, "quantity": 1}],
         shipping_address_collection={"allowed_countries": ["US","GB","DE","HU","FR","AT","CA","AU"]},
         success_url=body.get("success_url",
-            f"https://lajtnerresonance.com/thankyou.html?serial={series.upper()}+%23{number:02d}+of+%2350"),
-        cancel_url=body.get("cancel_url", "https://lajtnerresonance.com/pioneer.html"),
+            f"https://mindpw.com/thankyou.html?serial={series.upper()}+%23{number:02d}+of+%2350"),
+        cancel_url=body.get("cancel_url", "https://mindpw.com/pioneer.html"),
         metadata={"kind": "unit", "series": series, "number": str(number),
                   "email": email, "name": name},
     )
