@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Thank You — Pioneer Order Confirmed</title>
+<style>
+  :root{
+    --bg:#0d1117; --card:#161b22; --border:#26303c; --text:#e6edf3;
+    --muted:#8b98a5; --green:#00c271; --amber:#ff9500; --box:#1c2530;
+  }
+  [data-theme="light"]{
+    --bg:#f2f4f7; --card:#ffffff; --border:#d7dde5; --text:#1a2330;
+    --muted:#5a6b7b; --box:#e9edf2;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;flex-direction:column;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--text);transition:background .2s,color .2s;line-height:1.6}
+  .topbar{display:flex;justify-content:space-between;align-items:center;
+    max-width:640px;width:100%;margin:0 auto;padding:1.2rem 1.1rem 0}
+  .logo{height:32px;object-fit:contain}
+  .toggle{background:var(--box);border:1px solid var(--border);color:var(--text);
+    border-radius:20px;padding:.35rem .8rem;font-size:.8rem;cursor:pointer}
+  .center{flex:1;display:flex;align-items:center;justify-content:center;padding:2rem 1.1rem}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:18px;
+    padding:2.4rem 2rem;max-width:520px;width:100%;text-align:center}
+  .check{width:74px;height:74px;border-radius:50%;background:rgba(0,194,113,.12);
+    border:2px solid var(--green);display:flex;align-items:center;justify-content:center;
+    margin:0 auto 1.2rem;font-size:2.2rem;color:var(--green)}
+  h1{font-size:1.5rem;margin:.2rem 0 .3rem}
+  .serial{display:inline-block;margin:.6rem 0 1rem;padding:.5rem 1rem;border-radius:10px;
+    background:var(--box);border:1px solid var(--border);font-weight:800;font-size:1.1rem;
+    color:var(--amber);letter-spacing:.03em}
+  p{color:var(--muted);font-size:.94rem;margin:.6rem 0}
+  .note{margin-top:1.4rem;padding:.9rem 1rem;background:var(--box);border-radius:10px;
+    font-size:.85rem;color:var(--muted);text-align:left}
+  .note strong{color:var(--text)}
+  .home{display:inline-block;margin-top:1.6rem;color:var(--green);text-decoration:none;
+    font-weight:600;font-size:.92rem}
+  .sign{margin-top:1.6rem;font-size:.85rem;color:var(--muted)}
+  .sign b{color:var(--text)}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <img class="logo" src="https://mindpw.com/black.png" alt="Lajtner Resonance" onerror="this.style.display='none'"/>
+    <button class="toggle" id="themeBtn">🌙 Night</button>
+  </div>
+
+  <div class="center">
+    <div class="card">
+      <div class="check">✓</div>
+      <h1>Thank you — your order is confirmed!</h1>
+      <div class="serial" id="serial">Pioneer Series</div>
+      <p>Congratulations on securing your place in the <strong>Pioneer program</strong>. We deeply appreciate
+        your trust and support in joining us at the very beginning of this journey.</p>
+
+      <div class="note">
+        <p style="margin:.2rem 0"><strong>What happens next:</strong></p>
+        <p style="margin:.4rem 0">📧 A confirmation email is on its way to your inbox.</p>
+        <p style="margin:.4rem 0">🛠️ Your Analyzer is being crafted to order — we'll notify you with full
+          shipping details as soon as it's ready to dispatch.</p>
+      </div>
+
+      <div class="sign">Warm regards,<br/><b>Dr. Tamás Lajtner</b><br/>Lajtner Resonance</div>
+
+      <a class="home" href="https://lajtnerresonance.com">← Back to home</a>
+    </div>
+  </div>
+
+<script>
+  const themeBtn=document.getElementById("themeBtn");
+  function setTheme(t){
+    document.documentElement.setAttribute("data-theme",t==="light"?"light":"dark");
+    themeBtn.textContent=t==="light"?"☀️ Day":"🌙 Night";
+    try{localStorage.setItem("pioneer_theme",t)}catch{}
+  }
+  themeBtn.onclick=()=>{const c=document.documentElement.getAttribute("data-theme")==="light"?"light":"dark";setTheme(c==="light"?"dark":"light")};
+  setTheme((()=>{try{return localStorage.getItem("pioneer_theme")}catch{return null}})()||"dark");
+
+  // Optional: show the reserved serial if passed as ?serial=PIONEER%20%2305%20of%20%2350
+  const params=new URLSearchParams(location.search);
+  const serial=params.get("serial");
+  if(serial) document.getElementById("serial").textContent=serial;
+</script>
+</body>
+</html>

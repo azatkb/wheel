@@ -1373,14 +1373,16 @@ async def allocation_checkout(request: Request):
         raise HTTPException(503, "Stripe not configured")
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
+    label = f"Lajtner {series.title()} #{number:02d} of {50}"
     session = stripe.checkout.Session.create(
         payment_method_types=["card"], mode="payment", customer_email=email,
         line_items=[{"price_data": {"currency": "usd",
-            "product_data": {"name": f"Lajtner {series.title()} #{number:02d} of {50}"},
+            "product_data": {"name": label},
             "unit_amount": price * 100}, "quantity": 1}],
         shipping_address_collection={"allowed_countries": ["US","GB","DE","HU","FR","AT","CA","AU"]},
-        success_url=body.get("success_url", "https://lajtnerresonance.com/thankyou"),
-        cancel_url=body.get("cancel_url", "https://lajtnerresonance.com/pioneer"),
+        success_url=body.get("success_url",
+            f"https://lajtnerresonance.com/thankyou.html?serial={series.upper()}+%23{number:02d}+of+%2350"),
+        cancel_url=body.get("cancel_url", "https://lajtnerresonance.com/pioneer.html"),
         metadata={"kind": "unit", "series": series, "number": str(number),
                   "email": email, "name": name},
     )
