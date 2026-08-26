@@ -40,7 +40,7 @@ const NAV_ALL = [
   { to: '/master',       icon: '⬡', label: 'Master',    masterOnly: true },
   { to: '/fpe',          icon: '⚡', label: 'FPE',        masterOnly: true },
   { to: '/db',           icon: '⊞', label: 'Database',  masterOnly: true },
-  { to: '/users',           icon: '⊞', label: 'Users',  masterOnly: true },
+  { to: '/users',        icon: '👥', label: 'Users',  masterOnly: true },
 ]
 
 function isMaster(email) {

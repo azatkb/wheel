@@ -1317,13 +1317,27 @@ def allocation_list(series: str):
     sb = _sb()
     if sb:
         try:
-            r = sb.table("unit_allocations").select("number, status").eq("series", series).execute()
+            r = sb.table("unit_allocations").select("number, status, notes").eq("series", series).execute()
             for row in (r.data or []):
-                taken[int(row["number"])] = row.get("status", "allocated")
+                taken[int(row["number"])] = {"status": row.get("status", "allocated"),
+                                             "notes": row.get("notes") or ""}
         except Exception as e:
             log.warning(f"[ALLOC] read failed: {e}")
-    units = [{"number": n, "status": taken.get(n, "available")} for n in range(1, total + 1)]
-    return {"series": series, "total": total, "units": units}
+    prefix = {"pioneer": "PIONEER", "founder": "FOUNDER", "alpha": "ALPHA"}[series]
+    pad = 3 if series == "alpha" else 2
+    units = []
+    for n in range(1, total + 1):
+        t = taken.get(n)
+        status = t["status"] if t else "available"
+        notes  = t["notes"] if t else ("Ready to Claim" if status == "available" else "")
+        units.append({
+            "number": n,
+            "serial": f"{prefix} #{str(n).zfill(pad)} of #{total}",
+            "status": status,
+            "notes": notes or ("Ready to Claim" if status == "available" else "Reserved"),
+        })
+    allocated = sum(1 for u in units if u["status"] != "available")
+    return {"series": series, "total": total, "allocated": allocated, "units": units}
 
 
 @app.post("/allocation/checkout")
