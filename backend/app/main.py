@@ -1330,9 +1330,13 @@ def allocation_list(series: str):
         t = taken.get(n)
         status = t["status"] if t else "available"
         notes  = t["notes"] if t else ("Ready to Claim" if status == "available" else "")
+        num = str(n).zfill(pad)
+        # Pioneer uses "#01 of 50"; other series use "No. 01 of 50"
+        serial = (f"{prefix} #{num} of {total}" if series == "pioneer"
+                  else f"{prefix} No. {num} of {total}")
         units.append({
             "number": n,
-            "serial": f"{prefix} #{str(n).zfill(pad)} of #{total}",
+            "serial": serial,
             "status": status,
             "notes": notes or ("Ready to Claim" if status == "available" else "Reserved"),
         })
@@ -1373,7 +1377,8 @@ async def allocation_checkout(request: Request):
         raise HTTPException(503, "Stripe not configured")
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
-    label = f"Lajtner {series.title()} #{number:02d} of {50}"
+    label = (f"Lajtner {series.title()} #{number:02d} of {50}" if series == "pioneer"
+             else f"Lajtner {series.title()} No. {number:02d} of {50}")
     session = stripe.checkout.Session.create(
         payment_method_types=["card"], mode="payment", customer_email=email,
         line_items=[{"price_data": {"currency": "usd",
@@ -1381,7 +1386,7 @@ async def allocation_checkout(request: Request):
             "unit_amount": price * 100}, "quantity": 1}],
         shipping_address_collection={"allowed_countries": ["US","GB","DE","HU","FR","AT","CA","AU"]},
         success_url=body.get("success_url",
-            f"https://mindpw.com/thankyou.html?serial={series.upper()}+%23{number:02d}+of+%2350"),
+            f"https://mindpw.com/thankyou.html?serial={series.upper()}+%23{number:02d}+of+50"),
         cancel_url=body.get("cancel_url", "https://mindpw.com/pioneer.html"),
         metadata={"kind": "unit", "series": series, "number": str(number),
                   "email": email, "name": name},
@@ -1415,7 +1420,7 @@ def _send_pioneer_email(email, name, series, number):
         import smtplib
         from email.mime.text import MIMEText
         from email.mime.multipart import MIMEMultipart
-        label = f"{series.title()} #{number:02d} of 50"
+        label = f"{series.title()} #{number:02d} of 50" if series == "pioneer" else f"{series.title()} No. {number:02d} of 50"
         msg = MIMEMultipart("alternative")
         msg["Subject"] = f"Confirmation of Your Pioneer Order – Lajtner Resonance {label}"
         msg["From"] = f"Lajtner Resonance <{GMAIL_USER}>"
