@@ -1420,8 +1420,13 @@ def _finalize_unit(series, number, email, name):
     """Mark a unit allocated + send confirmation email. Called from the webhook."""
     from app.database import _sb
     sb = _sb()
+    shipping = ""
     if sb:
         try:
+            # grab shipping saved at checkout so we can include it in the admin email
+            ex = sb.table("unit_allocations").select("shipping").eq("series", series).eq("number", number).execute()
+            if ex.data:
+                shipping = ex.data[0].get("shipping") or ""
             sb.table("unit_allocations").upsert({
                 "series": series, "number": number, "status": "allocated",
                 "buyer_email": email, "buyer_name": name,
@@ -1430,6 +1435,44 @@ def _finalize_unit(series, number, email, name):
         except Exception as e:
             log.error(f"[ALLOC] finalize failed: {e}")
     _send_pioneer_email(email, name, series, number)
+    _notify_admin_order(series, number, email, name, shipping)
+
+
+def _notify_admin_order(series, number, email, name, shipping):
+    """Send the admin (lajtnert@) an email whenever a new order is paid."""
+    GMAIL_USER = os.environ.get("GMAIL_USER", "")
+    GMAIL_PASS = os.environ.get("GMAIL_PASS", "")
+    ADMIN_EMAIL = os.environ.get("ORDER_NOTIFY_EMAIL", "lajtnert@gmail.com")
+    if not (GMAIL_USER and GMAIL_PASS):
+        return
+    try:
+        import smtplib
+        from email.mime.text import MIMEText
+        ser = (f"{series.title()} #{number:02d} of 50" if series == "pioneer"
+               else f"{series.title()} No. {number:02d} of 50")
+        ship_txt = shipping
+        try:
+            s = json.loads(shipping) if shipping else {}
+            if s:
+                ship_txt = f"{s.get('address','')}, {s.get('city','')}, {s.get('country','')} {s.get('zip','')}"
+        except Exception:
+            pass
+        body = (f"New order paid!\n\n"
+                f"Unit: Lajtner {ser}\n"
+                f"Name: {name}\n"
+                f"Email: {email}\n"
+                f"Shipping: {ship_txt or '(see Stripe)'}\n\n"
+                f"Full payment details are in your Stripe dashboard.")
+        msg = MIMEText(body, "plain")
+        msg["Subject"] = f"🎉 New Pioneer order — Lajtner {ser}"
+        msg["From"] = f"Lajtner Orders <{GMAIL_USER}>"
+        msg["To"] = ADMIN_EMAIL
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as srv:
+            srv.login(GMAIL_USER, GMAIL_PASS)
+            srv.sendmail(GMAIL_USER, ADMIN_EMAIL, msg.as_string())
+        log.info(f"[ALLOC] admin notified of order {ser}")
+    except Exception as e:
+        log.error(f"[ALLOC] admin notify failed: {e}")
 
 
 def _send_pioneer_email(email, name, series, number):
