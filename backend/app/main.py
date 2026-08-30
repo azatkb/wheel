@@ -1317,10 +1317,20 @@ def allocation_list(series: str):
     sb = _sb()
     if sb:
         try:
-            r = sb.table("unit_allocations").select("number, status, notes").eq("series", series).execute()
+            r = sb.table("unit_allocations").select("number, status, notes, created_at").eq("series", series).execute()
+            now = datetime.datetime.utcnow()
             for row in (r.data or []):
-                taken[int(row["number"])] = {"status": row.get("status", "allocated"),
-                                             "notes": row.get("notes") or ""}
+                st = row.get("status", "allocated")
+                # a 'pending' (unpaid) hold older than 30 min is released back to available
+                if st == "pending":
+                    try:
+                        ca = row.get("created_at") or ""
+                        ct = datetime.datetime.fromisoformat(ca.replace("Z", "").split("+")[0])
+                        if (now - ct).total_seconds() > 1800:
+                            continue  # treat as available
+                    except Exception:
+                        pass
+                taken[int(row["number"])] = {"status": st, "notes": row.get("notes") or ""}
         except Exception as e:
             log.warning(f"[ALLOC] read failed: {e}")
     prefix = {"pioneer": "PIONEER", "founder": "FOUNDER", "alpha": "ALPHA"}[series]
@@ -1363,10 +1373,22 @@ async def allocation_checkout(request: Request):
     from app.database import _sb
     sb = _sb()
     if sb:
-        # reject if already taken
-        ex = sb.table("unit_allocations").select("status").eq("series", series).eq("number", number).execute()
-        if ex.data and ex.data[0].get("status") in ("allocated", "pending"):
-            raise HTTPException(409, f"#{number:02d} is no longer available")
+        # reject only if allocated (paid) or a FRESH pending hold exists
+        ex = sb.table("unit_allocations").select("status, created_at").eq("series", series).eq("number", number).execute()
+        if ex.data:
+            st = ex.data[0].get("status")
+            if st == "allocated":
+                raise HTTPException(409, f"#{number:02d} is no longer available")
+            if st == "pending":
+                try:
+                    ca = ex.data[0].get("created_at") or ""
+                    ct = datetime.datetime.fromisoformat(ca.replace("Z", "").split("+")[0])
+                    if (datetime.datetime.utcnow() - ct).total_seconds() < 1800:
+                        raise HTTPException(409, f"#{number:02d} is being reserved by someone else — try again in a few minutes")
+                except HTTPException:
+                    raise
+                except Exception:
+                    pass  # unparseable timestamp → allow overwrite
         sb.table("unit_allocations").upsert({
             "series": series, "number": number, "status": "pending",
             "buyer_email": email, "buyer_name": name,
