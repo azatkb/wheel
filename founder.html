@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="icon" href="https://mindpw.com/favicon.ico" />
-<title>Pioneer Series — Live Allocation Status</title>
+<title>Founder Series — Live Allocation Status</title>
 <style>
   :root{
     --bg:#0d1117; --card:#161b22; --border:#26303c; --text:#e6edf3;
@@ -92,48 +92,15 @@
   </div>
 
   <!-- PART 1: HERO -->
-  <h1>Pioneer Series — Live Allocation Status</h1>
-  <div class="hero-sub">BECOME PART OF HISTORY: JOIN THE PIONEER ELITE</div>
-  <div class="claim">Claim One of Only 50 Individually Numbered Core Units (<b>$249 USD</b>)</div>
-  <p>Test the technology, shape the app, and secure your place in a groundbreaking movement.</p>
-  <p class="muted">By securing a Pioneer unit, you are not merely purchasing hardware—you are stepping into an
-    exclusive elite of early adopters who are laying the foundation for a new historical milestone in
-    measurement technology.</p>
-
-  <!-- WHAT IS INCLUDED -->
-  <div class="included">
-    <h2>WHAT IS INCLUDED WITH YOUR PIONEER UNIT ($210 TOTAL ADDED VALUE)</h2>
-    <ul class="inc-list">
-      <li>✅ <strong>6 Months Free Access to Lajtner Code Ultimate</strong> — full platform access included <span class="v">($249/year value)</span></li>
-      <li>🎬 <strong>FREE App Setup Video Guide</strong> — master the app interface step-by-step <span class="v">($10 value)</span></li>
-      <li>🎬 <strong>FREE Scope Operation Video Guide</strong> — learn how to calibrate and handle the Lajtner Scope <span class="v">($25 value)</span></li>
-      <li>📄 <strong>FREE Lajtner Resonance Phenomenon PDF Guide</strong> — comprehensive documentation of the theory and practical applications with real-world examples <span class="v">($50 value)</span></li>
-      <li>💳 <strong>$125 USD Credit</strong> — applied directly toward your next numbered Collector Edition series</li>
-    </ul>
-    <div class="value-offer">
-      <strong>THE PIONEER VALUE OFFER:</strong> <span class="hl">For your $249 USD</span> investment, <span class="hl">you receive</span> the core hardware ($249)
-      plus $210 in combined bonuses and future credits ($125 credit + $10 video + $25 video + $50 PDF = $210).
-      By securing your numbered Pioneer Series unit for just $249 USD, <span class="hl">you receive</span>
-      <span class="big">$459 in total value.</span>
-    </div>
-  </div>
-
-  <p class="muted">To accelerate our development and share real-world data, we invite our Pioneers to share their
-    weekly insights, raw measurements, or user feedback at least once a week on any of the following platforms:</p>
-  <ul class="platforms muted">
-    <li>r/Biohacking (Reddit)</li>
-    <li>r/QuantifiedSelf (Reddit)</li>
-    <li>Biohacking &amp; Longevity (Facebook Group)</li>
-    <li>Biohacking Collective (Discord Server)</li>
-  </ul>
-  <p class="muted">While public posting is strictly voluntary, your active participation is invaluable to us.
-    As a token of our gratitude, Pioneers who actively share their experiences receive the
-    <strong>$125 USD credit</strong> toward their next Collector Edition.</p>
+  <h1>Founder Series — Live Allocation Status</h1>
+  <div class="claim">Claim one of the individually numbered Founder Series units (<b>$4,999 USD</b>)</div>
+  <p class="muted">Secure your numbered Founder Series unit. Each unit is individually numbered and reserved to you.
+    Full description and bonuses will be shown here.</p>
 
   <!-- PROGRESS BAR -->
   <div class="progress-card">
     <div class="progress-label">Plaintext</div>
-    <div class="progress-mono" id="progress">[ ................................................ ] 0 / 50 PIONEER UNITS ALLOCATED</div>
+    <div class="progress-mono" id="progress">[ ................................................ ] 0 / 50 FOUNDER UNITS ALLOCATED</div>
   </div>
 
   <!-- LONG TABLE -->
@@ -152,7 +119,8 @@
     <label class="fl">Full name (billing) *</label>
     <input id="name" placeholder="Your full name" autocomplete="name" />
     <label class="fl">Email *</label>
-    <input id="email" type="email" placeholder="you@example.com" autocomplete="email" />
+    <input id="email" type="email" placeholder="you@example.com" autocomplete="email" oninput="checkCredit()" />
+    <div id="creditNote" style="display:none;margin-top:.5rem;padding:.5rem .7rem;border-radius:8px;background:rgba(0,194,113,.12);border:1px solid rgba(0,194,113,.4);color:var(--green);font-size:.85rem"></div>
     <div class="row2">
       <div><label class="fl">Shipping address *</label><input id="s_addr" placeholder="Street, number" autocomplete="street-address" /></div>
       <div><label class="fl">City *</label><input id="s_city" placeholder="City" /></div>
@@ -164,27 +132,13 @@
 
     <!-- PART 2: TERMS -->
     <div class="terms">
-      <h3>Pioneer Elite Membership &amp; Terms</h3>
-      <p class="muted" style="font-size:.85rem">Please review and confirm the following before proceeding to secure payment.</p>
-      <h3 style="margin-top:.8rem">1 · $125 Credit Eligibility</h3>
-      <p class="muted" style="font-size:.84rem">To unlock your $125 credit toward the upcoming Alpha or Founder Series,
-        you must post your insights or raw data at least <strong>four (4) times</strong> across our recognized channels
-        (r/Biohacking, r/QuantifiedSelf, Biohacking &amp; Longevity, or Biohacking Collective) and email the post links
-        to us so we can track your feedback.</p>
-      <h3 style="margin-top:.8rem">2 · Community Integrity Policy</h3>
+      <h3>Membership &amp; Terms</h3>
+      <p class="muted" style="font-size:.85rem">Please review and confirm before proceeding to secure payment.</p>
+      <h3 style="margin-top:.8rem">Community Integrity Policy</h3>
       <p class="muted" style="font-size:.84rem">Lajtner Resonance reserves the absolute right to terminate app access
         and revoke program benefits for any account engaged in malicious activity, bad-faith trolling, or intentional disruption.</p>
-      <h3 style="margin-top:.8rem">3 · Direct Beta App &amp; Lajtner Scope Feedback</h3>
-      <p class="muted" style="font-size:.84rem">All detailed feedback, bug reports, and suggestions about the beta app
-        and Pioneer unit should be submitted via the “Beta feedback” link in your portal.</p>
     </div>
 
-    <div class="ack">
-      <input type="checkbox" id="ack1" />
-      <label for="ack1">I understand and accept the <strong>$125 Credit Terms</strong>. I acknowledge that public posting
-        is voluntary, but completing at least 4 community posts and emailing the links is strictly required to receive the
-        $125 credit for future series.</label>
-    </div>
     <div class="ack">
       <input type="checkbox" id="ack2" />
       <label for="ack2">I accept the <strong>Community Integrity Policy</strong>. I agree to maintain constructive
@@ -195,31 +149,46 @@
     <button class="pay-btn" id="payBtn" disabled>Proceed to secure payment</button>
     <div id="result" class="msg"></div>
     <p class="muted" style="font-size:.75rem;text-align:center;margin-top:.8rem">
-      $249 USD + shipping cost will be charged securely via Stripe.</p>
+      $4,999 USD + shipping cost will be charged securely via Stripe.</p>
   </div>
 </div>
 
 <script>
   const API = "https://wheelttt.xyz";
-  const SERIES = "pioneer";
+  const SERIES = "founder";
   let selected = null;
 
   const themeBtn = document.getElementById("themeBtn");
   function setTheme(t){
     document.documentElement.setAttribute("data-theme", t==="light"?"light":"dark");
     themeBtn.textContent = t==="light" ? "☀️ Day" : "🌙 Night";
-    try{ localStorage.setItem("pioneer_theme", t) }catch{}
+    try{ localStorage.setItem("founder_theme", t) }catch{}
   }
   themeBtn.onclick=()=>{const c=document.documentElement.getAttribute("data-theme")==="light"?"light":"dark";setTheme(c==="light"?"dark":"light")};
-  setTheme((()=>{try{return localStorage.getItem("pioneer_theme")}catch{return null}})()||"dark");
+  setTheme((()=>{try{return localStorage.getItem("founder_theme")}catch{return null}})()||"dark");
 
   function progressBar(allocated, total){
     const width=48, filled=Math.round(width*allocated/total);
     const bar='█'.repeat(filled), empty='.'.repeat(width-filled);
-    return `[ <span class="fill">${bar}</span><span class="empty">${empty}</span> ] ${allocated} / ${total} PIONEER UNITS ALLOCATED`;
+    return `[ <span class="fill">${bar}</span><span class="empty">${empty}</span> ] ${allocated} / ${total} FOUNDER UNITS ALLOCATED`;
   }
 
-  async function loadUnits(){
+  let creditActive=0;
+async function checkCredit(){
+  const email=document.getElementById("email").value.trim();
+  const note=document.getElementById("creditNote");
+  if(!email||!email.includes("@")){note.style.display="none";creditActive=0;return;}
+  try{
+    const r=await fetch(`${API}/allocation/credit-check?email=${encodeURIComponent(email)}&series=founder`);
+    const d=await r.json();
+    if(d.has_credit){
+      creditActive=d.credit;
+      note.style.display="block";
+      note.textContent=`🎉 You have a $${d.credit} Pioneer credit — it will be applied at checkout.`;
+    }else{note.style.display="none";creditActive=0;}
+  }catch{note.style.display="none";}
+}
+async function loadUnits(){
     const tb=document.getElementById("tbody");
     try{
       const r=await fetch(`${API}/allocation/${SERIES}`);
@@ -253,11 +222,11 @@
 
   const fields=["name","email","s_addr","s_city","s_country","s_zip"];
   function updatePayBtn(){
-    const a1=document.getElementById("ack1").checked, a2=document.getElementById("ack2").checked;
+    const a2=document.getElementById("ack2").checked;
     const filled=fields.every(f=>document.getElementById(f).value.trim());
-    document.getElementById("payBtn").disabled=!(a1&&a2&&filled&&selected);
+    document.getElementById("payBtn").disabled=!(a2&&filled&&selected);
   }
-  ["ack1","ack2",...fields].forEach(id=>document.getElementById(id).addEventListener("input",updatePayBtn));
+  ["ack2",...fields].forEach(id=>document.getElementById(id).addEventListener("input",updatePayBtn));
 
   document.getElementById("payBtn").onclick=async()=>{
     const btn=document.getElementById("payBtn"), result=document.getElementById("result");

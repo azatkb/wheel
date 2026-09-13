@@ -1302,7 +1302,37 @@ _MASTER_EMAILS = ["azatkb22@gmail.com", "lajtnert@gmail.com"]
 def _master_ok(email="", token=""):
     return (email or "").lower() in _MASTER_EMAILS or token == MASTER_TOKEN
 
+# ── Total measurement count (used by Focus Test to warn if < 50 results) ─────
+@app.get("/api/measurement-count")
+def measurement_count():
+    """Public: how many physics results are stored (for the 'need 50' notice)."""
+    n = 0
+    from app.database import _sb
+    sb = _sb()
+    if sb:
+        try:
+            r = sb.table("physics_results").select("id", count="exact").execute()
+            n = r.count if r.count is not None else len(r.data or [])
+        except Exception as e:
+            log.warning(f"[COUNT] failed: {e}")
+    return {"count": n}
+
 # ── Pioneer / Founder / Alpha unit allocation ───────────────────────────────
+_SERIES_TOTALS = {"pioneer": 50, "founder": 50, "alpha": 500}
+
+def _unit_serial(series, number):
+    """Serial as printed on the unit.
+    Pioneer:  'PIONEER #01 of 50'   (# before number, not before total)
+    Founder:  'FOUNDER No. 01 of 50'
+    Alpha:    'ALPHA No. 001 of 500'
+    """
+    total = _SERIES_TOTALS.get(series, 50)
+    pad = 3 if series == "alpha" else 2
+    num = str(number).zfill(pad)
+    prefix = series.upper()
+    return (f"{prefix} #{num} of {total}" if series == "pioneer"
+            else f"{prefix} No. {num} of {total}")
+
 @app.get("/allocation/{series}")
 def allocation_list(series: str):
     """Public: list all units of a series with status available/allocated.
@@ -1340,13 +1370,9 @@ def allocation_list(series: str):
         t = taken.get(n)
         status = t["status"] if t else "available"
         notes  = t["notes"] if t else ("Ready to Claim" if status == "available" else "")
-        num = str(n).zfill(pad)
-        # Pioneer uses "#01 of 50"; other series use "No. 01 of 50"
-        serial = (f"{prefix} #{num} of {total}" if series == "pioneer"
-                  else f"{prefix} No. {num} of {total}")
         units.append({
             "number": n,
-            "serial": serial,
+            "serial": _unit_serial(series, n),
             "status": status,
             "notes": notes or ("Ready to Claim" if status == "available" else "Reserved"),
         })
@@ -1364,14 +1390,29 @@ async def allocation_checkout(request: Request):
     email  = (body.get("email") or "").strip().lower()
     name   = (body.get("name") or "").strip()
     ship   = body.get("shipping") or {}
-    price  = {"pioneer": 249, "founder": None, "alpha": None}.get(series)
+    price  = {"pioneer": 249, "founder": 4999, "alpha": 499, "core": 299}.get(series)
     if not email or not name or not number:
         raise HTTPException(400, "Name, email and number are required")
-    if series != "pioneer" or not price:
+    if series not in ("pioneer", "founder", "alpha") or not price:
         raise HTTPException(400, "This series is not open for sale yet")
 
     from app.database import _sb
     sb = _sb()
+
+    # Pioneer trade-in credit: a buyer who owns a paid Pioneer gets a discount on
+    # a Founder/Alpha unit. Amount differs per series (latest client numbers).
+    PIONEER_CREDIT = {"founder": 150, "alpha": 119}
+    credit_applied = 0
+    if series in PIONEER_CREDIT and sb:
+        try:
+            pio = sb.table("unit_allocations").select("number").eq("series", "pioneer") \
+                    .eq("buyer_email", email).eq("status", "allocated").execute()
+            if pio.data:
+                credit_applied = PIONEER_CREDIT[series]
+                price = max(1, price - credit_applied)   # never below $1 for Stripe
+        except Exception as e:
+            log.warning(f"[REFUND] pioneer-credit check failed: {e}")
+
     if sb:
         # reject only if allocated (paid) or a FRESH pending hold exists
         ex = sb.table("unit_allocations").select("status, created_at").eq("series", series).eq("number", number).execute()
@@ -1399,21 +1440,25 @@ async def allocation_checkout(request: Request):
         raise HTTPException(503, "Stripe not configured")
     import stripe
     stripe.api_key = STRIPE_SECRET_KEY
-    label = (f"Lajtner {series.title()} #{number:02d} of {50}" if series == "pioneer"
-             else f"Lajtner {series.title()} No. {number:02d} of {50}")
+    ser = _unit_serial(series, number)
+    import urllib.parse
+    prod_name = f"Lajtner {ser}"
+    if credit_applied:
+        prod_name += f" (−${credit_applied} Pioneer credit)"
     session = stripe.checkout.Session.create(
         payment_method_types=["card"], mode="payment", customer_email=email,
         line_items=[{"price_data": {"currency": "usd",
-            "product_data": {"name": label},
+            "product_data": {"name": prod_name},
             "unit_amount": price * 100}, "quantity": 1}],
         shipping_address_collection={"allowed_countries": ["US","GB","DE","HU","FR","AT","CA","AU"]},
         success_url=body.get("success_url",
-            f"https://mindpw.com/thankyou.html?serial={series.upper()}+%23{number:02d}+of+50"),
-        cancel_url=body.get("cancel_url", "https://mindpw.com/pioneer.html"),
+            f"https://mindpw.com/thankyou.html?serial={urllib.parse.quote(ser)}"),
+        cancel_url=body.get("cancel_url", f"https://mindpw.com/{series}.html"),
         metadata={"kind": "unit", "series": series, "number": str(number),
-                  "email": email, "name": name},
+                  "email": email, "name": name, "credit": str(credit_applied)},
     )
-    return {"url": session.url, "session_id": session.id}
+    return {"url": session.url, "session_id": session.id,
+            "credit_applied": credit_applied, "final_price": price}
 
 
 def _finalize_unit(series, number, email, name):
@@ -1448,8 +1493,7 @@ def _notify_admin_order(series, number, email, name, shipping):
     try:
         import smtplib
         from email.mime.text import MIMEText
-        ser = (f"{series.title()} #{number:02d} of 50" if series == "pioneer"
-               else f"{series.title()} No. {number:02d} of 50")
+        ser = _unit_serial(series, number)
         ship_txt = shipping
         try:
             s = json.loads(shipping) if shipping else {}
@@ -1485,7 +1529,7 @@ def _send_pioneer_email(email, name, series, number):
         import smtplib
         from email.mime.text import MIMEText
         from email.mime.multipart import MIMEMultipart
-        label = f"{series.title()} #{number:02d} of 50" if series == "pioneer" else f"{series.title()} No. {number:02d} of 50"
+        label = _unit_serial(series, number)
         msg = MIMEMultipart("alternative")
         msg["Subject"] = f"Confirmation of Your Pioneer Order – Lajtner Resonance {label}"
         msg["From"] = f"Lajtner Resonance <{GMAIL_USER}>"
@@ -1509,6 +1553,175 @@ def _send_pioneer_email(email, name, series, number):
         log.info(f"[ALLOC] confirmation email sent to {email} for {label}")
     except Exception as e:
         log.error(f"[ALLOC] email failed: {e}")
+
+
+# ── Chip serial ↔ owner email (device registry) ─────────────────────────────
+@app.post("/admin/set-chip-serial")
+async def set_chip_serial(request: Request):
+    """Master: store the unit serial (e.g. 'PIONEER #05 of 50') next to a chip UID
+    and, optionally, the owner's email. Used when programming/registering a device."""
+    body = await request.json()
+    if not _master_ok(body.get("admin_email", ""), body.get("token", "")):
+        raise HTTPException(401, "Unauthorized")
+    uid = (body.get("uid") or "").strip().upper()
+    serial = (body.get("serial") or "").strip()
+    email = (body.get("account_email") or "").strip().lower() or None
+    if not uid:
+        raise HTTPException(400, "uid required")
+    from app.database import _sb
+    sb = _sb()
+    if sb:
+        row = {"uid": uid, "serial": serial}
+        if email:
+            row["account_email"] = email
+        sb.table("tags").upsert(row, on_conflict="uid").execute()
+    return {"ok": True, "uid": uid, "serial": serial, "account_email": email}
+
+
+@app.get("/allocation/credit-check")
+def allocation_credit_check(email: str = "", series: str = ""):
+    """Does this email own a paid Pioneer? Returns the credit for the given series
+    (Founder -$150, Alpha -$119). If no series is passed, returns Founder's amount."""
+    email = (email or "").strip().lower()
+    amounts = {"founder": 150, "alpha": 119}
+    amt = amounts.get((series or "").lower(), 150)
+    if not email:
+        return {"has_credit": False, "credit": 0}
+    from app.database import _sb
+    sb = _sb()
+    if sb:
+        try:
+            pio = sb.table("unit_allocations").select("number").eq("series", "pioneer") \
+                    .eq("buyer_email", email).eq("status", "allocated").execute()
+            if pio.data:
+                return {"has_credit": True, "credit": amt}
+        except Exception as e:
+            log.warning(f"[REFUND] credit-check failed: {e}")
+    return {"has_credit": False, "credit": 0}
+
+
+@app.post("/admin/set-unit-notes")
+async def set_unit_notes(request: Request):
+    """Master: set the Notes text (and optionally status) of a numbered unit,
+    for the admin Notes mini-panel (In Production / Delivered / etc.)."""
+    body = await request.json()
+    if not _master_ok(body.get("admin_email", ""), body.get("token", "")):
+        raise HTTPException(401, "Unauthorized")
+    series = (body.get("series") or "").lower()
+    number = int(body.get("number") or 0)
+    notes  = (body.get("notes") or "").strip()
+    status = body.get("status")  # optional override
+    if series not in _SERIES_TOTALS or not number:
+        raise HTTPException(400, "series and number required")
+    from app.database import _sb
+    sb = _sb()
+    if sb:
+        row = {"series": series, "number": number, "notes": notes}
+        if status:
+            row["status"] = status
+        # upsert so a free unit can get a note even before purchase
+        sb.table("unit_allocations").upsert(row, on_conflict="series,number").execute()
+    return {"ok": True, "series": series, "number": number, "notes": notes}
+
+
+@app.get("/master/chips")
+def master_chips(email: str = "", token: str = ""):
+    """Master: list all chips with their serial and bound owner email."""
+    if not _master_ok(email, token):
+        raise HTTPException(401, "Unauthorized")
+    from app.database import _sb
+    sb = _sb()
+    chips = []
+    if sb:
+        try:
+            r = sb.table("tags").select("uid, serial, account_email, last_counter, activated_at").execute()
+            chips = r.data or []
+        except Exception as e:
+            log.warning(f"[CHIPS] read failed: {e}")
+    return {"chips": chips}
+
+
+# ── Laptop authorization via QR (phone taps chip, then authorizes laptop) ────
+# Flow:
+#   1. Laptop calls /pair/new  → gets pair_id, shows QR of /pair?pid=<pair_id>
+#   2. Phone (already chip-authorized) scans QR, opens the URL, taps "Authorize
+#      this laptop" → POST /pair/authorize {pair_id, email}
+#   3. Laptop polls /pair/status?pid=<pair_id> → {authorized, token, email}
+#   4. Only ONE laptop per account: authorizing a new laptop clears the old one.
+import time as _time
+PAIR_TTL = 300  # QR valid 5 min
+
+def _pair_table():
+    from app.database import _sb
+    return _sb()
+
+@app.post("/pair/new")
+async def pair_new():
+    """Laptop: create a pairing session, returns pair_id to encode in the QR."""
+    pair_id = secrets.token_urlsafe(12)
+    sb = _pair_table()
+    if sb:
+        sb.table("laptop_pairings").upsert({
+            "pair_id": pair_id, "authorized": False, "token": None,
+            "account_email": None, "created_at": int(_time.time()),
+        }, on_conflict="pair_id").execute()
+    return {"pair_id": pair_id, "expires_in": PAIR_TTL}
+
+@app.post("/pair/authorize")
+async def pair_authorize(request: Request):
+    """Phone: authorize the laptop identified by pair_id (after chip auth)."""
+    body = await request.json()
+    pair_id = (body.get("pair_id") or "").strip()
+    email   = (body.get("email") or "").strip().lower()
+    if not pair_id or not email:
+        raise HTTPException(400, "pair_id and email required")
+    sb = _pair_table()
+    if not sb:
+        raise HTTPException(503, "storage unavailable")
+    row = sb.table("laptop_pairings").select("created_at").eq("pair_id", pair_id).execute()
+    if not row.data:
+        raise HTTPException(404, "Pairing not found — regenerate the QR on your laptop")
+    if int(_time.time()) - int(row.data[0].get("created_at") or 0) > PAIR_TTL:
+        raise HTTPException(410, "QR expired — regenerate it on your laptop")
+    # ONE laptop per account: drop any previous authorized pairings for this email
+    try:
+        sb.table("laptop_pairings").delete().eq("account_email", email).eq("authorized", True).execute()
+    except Exception as e:
+        log.warning(f"[PAIR] clear old failed: {e}")
+    token = secrets.token_hex(24)
+    sb.table("laptop_pairings").update({
+        "authorized": True, "token": token, "account_email": email,
+    }).eq("pair_id", pair_id).execute()
+    return {"ok": True}
+
+@app.get("/pair/status")
+def pair_status(pid: str = ""):
+    """Laptop: poll until the phone authorizes. Returns token when ready."""
+    if not pid:
+        raise HTTPException(400, "pid required")
+    sb = _pair_table()
+    if not sb:
+        return {"authorized": False}
+    r = sb.table("laptop_pairings").select("authorized, token, account_email, created_at").eq("pair_id", pid).execute()
+    if not r.data:
+        return {"authorized": False, "expired": True}
+    row = r.data[0]
+    if int(_time.time()) - int(row.get("created_at") or 0) > PAIR_TTL and not row.get("authorized"):
+        return {"authorized": False, "expired": True}
+    return {"authorized": bool(row.get("authorized")),
+            "token": row.get("token"), "email": row.get("account_email")}
+
+@app.get("/pair/check")
+def pair_check(token: str = ""):
+    """Laptop app: is this stored laptop-token still the active one for its account?
+    Returns false if a newer laptop was authorized (one-laptop rule)."""
+    if not token:
+        return {"valid": False}
+    sb = _pair_table()
+    if not sb:
+        return {"valid": False}
+    r = sb.table("laptop_pairings").select("authorized").eq("token", token).eq("authorized", True).execute()
+    return {"valid": bool(r.data)}
 
 
 # ── Block / unblock users (admin) ───────────────────────────────────────────

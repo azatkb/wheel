@@ -432,6 +432,101 @@ function BundleBuilder({ user, products, showMsg }) {
   )
 }
 
+// ── Allocations: view units + edit Notes/status per series ──────────────────
+const NOTE_OPTIONS = ['Ready to Claim', 'Reserved', 'In Production',
+                      'Preparing for Dispatch', 'Delivered']
+
+function AllocationPanel({ user, showMsg }) {
+  const [series, setSeries] = useState('pioneer')
+  const [units, setUnits] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [q, setQ] = useState('')
+  const [saving, setSaving] = useState(null)
+
+  const load = async (s) => {
+    setLoading(true)
+    try {
+      const r = await fetch(`${API}/allocation/${s}`)
+      const d = await r.json()
+      setUnits(d.units || [])
+    } catch { setUnits([]) }
+    setLoading(false)
+  }
+  useEffect(() => { load(series) }, [series])
+
+  const saveNotes = async (number, notes) => {
+    setSaving(number)
+    try {
+      const r = await fetch(`${API}/admin/set-unit-notes`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_email: user.email, series, number, notes })
+      })
+      if (r.ok) {
+        setUnits(us => us.map(u => u.number === number ? { ...u, notes } : u))
+        showMsg('✓ Notes updated')
+      } else showMsg('Error updating notes')
+    } catch { showMsg('Network error') }
+    setSaving(null)
+  }
+
+  const shown = units.filter(u => !q || String(u.number).includes(q.trim()))
+
+  return (
+    <div className="card">
+      <div className="card-title">Allocations — Notes &amp; Status</div>
+      <div style={{display:'flex',gap:'.5rem',marginBottom:'1rem',flexWrap:'wrap',alignItems:'center'}}>
+        {['pioneer','founder','alpha'].map(s => (
+          <button key={s} onClick={() => setSeries(s)}
+            className={`btn btn-sm ${series===s ? 'btn-primary' : 'btn-secondary'}`}>
+            {s.charAt(0).toUpperCase()+s.slice(1)}
+          </button>
+        ))}
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="🔍 number…"
+          className="form-input" style={{maxWidth:140,marginLeft:'auto'}} />
+      </div>
+
+      {loading ? (
+        <div style={{color:'var(--muted)',padding:'1rem 0'}}>Loading…</div>
+      ) : (
+        <div className="tbl-wrap" style={{maxHeight:520}}>
+          <table>
+            <thead><tr><th>Serial</th><th>Status</th><th>Buyer</th><th>Notes</th></tr></thead>
+            <tbody>
+              {shown.map(u => (
+                <tr key={u.number}>
+                  <td style={{color:'var(--text)',fontWeight:500,whiteSpace:'nowrap'}}>{u.serial}</td>
+                  <td>
+                    <span style={{fontSize:'.72rem',padding:'.15rem .5rem',borderRadius:4,fontWeight:600,
+                      background: u.status==='allocated' ? 'rgba(255,68,68,.15)'
+                               : u.status==='pending' ? 'rgba(255,136,0,.15)' : 'rgba(0,255,136,.12)',
+                      color: u.status==='allocated' ? 'var(--red)'
+                           : u.status==='pending' ? 'var(--amber)' : 'var(--green)'}}>
+                      {u.status}
+                    </span>
+                  </td>
+                  <td style={{color:'var(--muted)',fontSize:'.72rem'}}>{u.buyer_email || '—'}</td>
+                  <td>
+                    <select value={NOTE_OPTIONS.includes(u.notes) ? u.notes : ''}
+                      onChange={e => saveNotes(u.number, e.target.value)}
+                      disabled={saving === u.number}
+                      className="form-input" style={{padding:'.3rem .5rem',minWidth:180}}>
+                      <option value="">{u.notes || '— set note —'}</option>
+                      {NOTE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p style={{fontSize:'.75rem',color:'var(--muted)',marginTop:'.6rem'}}>
+        Pick a note to update what buyers see in the allocation table (In Production, Delivered, etc.).
+      </p>
+    </div>
+  )
+}
+
 export default function StoreAdmin() {
   const { user } = useAuth()
   if (!user) return null
@@ -503,6 +598,7 @@ export default function StoreAdmin() {
     { id:'coupons',     label:'🏷 Coupons' },
     { id:'add_coupon',  label:'+ Coupon' },
     { id:'bundles',     label:'🎁 Bundles' },
+    { id:'allocations', label:'🔢 Allocations' },
   ]
 
   return (
@@ -724,6 +820,11 @@ export default function StoreAdmin() {
       {/* ── Bundles (visual builder) ── */}
       {tab === 'bundles' && (
         <BundleBuilder user={user} products={products} showMsg={showMsg} />
+      )}
+
+      {/* ── Allocations (Notes / status mini-panel) ── */}
+      {tab === 'allocations' && (
+        <AllocationPanel user={user} showMsg={showMsg} />
       )}
 
       {/* Product Add/Edit Modal */}

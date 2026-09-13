@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth.jsx'
 import { API } from '../config'
 
@@ -113,6 +113,14 @@ export default function Questionnaire() {
   const [info, setInfo] = useState(null)         // question shown in popup
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
+  const [dbCount, setDbCount] = useState(null)   // total measurements in DB
+
+  useEffect(() => {
+    fetch(`${API}/api/measurement-count`)
+      .then(r => r.json())
+      .then(d => setDbCount(d.count ?? null))
+      .catch(() => setDbCount(null))
+  }, [])
 
   if (!user) return null
 
@@ -149,6 +157,19 @@ export default function Questionnaire() {
         <h1>The 8 Primary Factors Governing Mental Focus</h1>
         <p>Answer all 8, or at least 2. Tap the <b>?</b> for an explanation of each factor.</p>
       </div>
+
+      {/* Notice shown while the DB has fewer than 50 measurements */}
+      {dbCount != null && dbCount < 50 && (
+        <div className="card" style={{
+          borderColor:'rgba(255,149,0,.4)', background:'rgba(255,149,0,.08)',
+          marginBottom:'1rem'
+        }}>
+          <p style={{margin:0, color:'var(--text)', fontSize:'.92rem', lineHeight:1.6}}>
+            Reliable results require at least <strong>50 measurements</strong> in our database.
+            Please use this page regularly so we can provide you with meaningful results sooner.
+          </p>
+        </div>
+      )}
 
       {/* Email (essential, read-only from account) */}
       <div className="card">
