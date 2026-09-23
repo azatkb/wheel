@@ -1,81 +1,94 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, createContext, useContext } from 'react'
 import { API } from '../config'
 
-const SS_KEY = 'wt_device_auth'
-let _checkedThisLoad = false   // validate the URL token only once per page load
+const AuthContext = createContext(null)
 
-function readStored() {
-  try { return JSON.parse(sessionStorage.getItem(SS_KEY)) || { authorized: false } }
-  catch { return { authorized: false } }
-}
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('wt_user')) } catch { return null }
+  })
 
-// Call this from the app's logout handler so the NFC gate closes on sign-out
-// (the next visit will then require a fresh tap).
-export function clearDeviceAuth() {
-  try { sessionStorage.removeItem(SS_KEY) } catch {}
-}
-
-/**
- * Device authorization for the NTAG verify flow.
- *
- * When the user taps the wheel's NFC tag, the chip opens
- *   https://wheelttt.xyz/verify?picc=..&cmac=..
- * which (on success) redirects the browser to the web app with ?dev_token=..
- *
- * This hook picks up that token, confirms it with GET /device-session,
- * and remembers the result for the rest of the browser session so the
- * user can run measurements without re-tapping every time.
- */
-export function useDeviceAuth() {
-  const [state, setState] = useState(readStored)
-  const [checking, setChecking] = useState(false)
-
-  useEffect(() => {
-    if (_checkedThisLoad) return
-    _checkedThisLoad = true
-
-    // If this browser was authorized as a laptop (via QR pairing), re-check that
-    // its token is still the active one — a newer laptop revokes older ones.
-    const stored = readStored()
-    if (stored.laptop && stored.token) {
-      fetch(`${API}/pair/check?token=${encodeURIComponent(stored.token)}`)
-        .then(r => r.json())
-        .then(d => {
-          if (!d.valid) { sessionStorage.removeItem(SS_KEY); setState({ authorized: false }) }
-        })
-        .catch(() => {/* keep current state offline */})
-    }
-
-    const url = new URL(window.location.href)
-    const token = url.searchParams.get('dev_token')
-    if (!token) return
-
-    setChecking(true)
-    fetch(`${API}/device-session?token=${encodeURIComponent(token)}`)
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error('invalid'))))
-      .then(d => {
-        const next = { authorized: !!d.authorized, uid: d.uid, ts: Date.now() }
-        sessionStorage.setItem(SS_KEY, JSON.stringify(next))
-        setState(next)
-      })
-      .catch(() => {/* leave unauthorized */})
-      .finally(() => {
-        setChecking(false)
-        // strip dev_token from the address bar
-        url.searchParams.delete('dev_token')
-        window.history.replaceState({}, '', url.pathname + url.search + url.hash)
-      })
-  }, [])
-
-  const reset = useCallback(() => {
-    sessionStorage.removeItem(SS_KEY)
-    setState({ authorized: false })
-  }, [])
-
-  return {
-    deviceAuthorized: !!state.authorized,
-    deviceUid: state.uid || null,
-    checking,
-    reset,
+  const login = async (email, password, recaptcha_token = '') => {
+    const r = await fetch(API + '/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, recaptcha_token })
+    })
+    const data = await r.json()
+    if (!r.ok) throw new Error(data.detail || 'Login failed')
+    const u = { email, token: data.token, plan: data.plan || 'free' }
+    localStorage.setItem('wt_user', JSON.stringify(u))
+    setUser(u)
+    return u
   }
+
+  const register = async (email, password, recaptcha_token = '') => {
+    const r = await fetch(API + '/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, recaptcha_token })
+    })
+    const data = await r.json()
+    if (!r.ok) throw new Error(data.detail || 'Registration failed')
+    return login(email, password, recaptcha_token)
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  // Listen for plan updates from Subscription page
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const u = JSON.parse(localStorage.getItem('wt_user'))
+        if (u) setUser(u)
+      } catch {}
+
+
+
+
+
+
+
+
+    }
+    window.addEventListener('wt_plan_updated', handler)
+    return () => window.removeEventListener('wt_plan_updated', handler)
+  }, [])
+
+  const logout = () => {
+    localStorage.removeItem('wt_user')
+    setUser(null)
+  }
+
+  return (
+    <AuthContext.Provider value={{ user, login, register, logout }}>
+      {children}
+    </AuthContext.Provider>
+  )
 }
+
+
+
+
+
+
+
+
+
+
+
+export const useAuth = () => useContext(AuthContext) 
+

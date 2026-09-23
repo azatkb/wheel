@@ -35,10 +35,11 @@ export default function FeedbackWidget() {
     <>
       <button onClick={() => { setOpen(true); setSent(false); setErr('') }}
         title="Report a bug or send feedback (Beta)"
-        style={{position:'fixed',left:16,bottom:16,zIndex:900,
-          background:'var(--amber)',color:'#111',border:'none',borderRadius:24,
-          padding:'.55rem .9rem',fontWeight:700,fontSize:'.82rem',cursor:'pointer',
-          boxShadow:'0 3px 12px rgba(0,0,0,.3)'}}>
+        style={{position:'fixed',right:8,top:'50%',transform:'translateY(-50%)',
+          zIndex:900,background:'var(--amber)',color:'#111',border:'none',
+          borderRadius:10,padding:'.7rem .5rem',fontWeight:700,
+          fontSize:'.78rem',cursor:'pointer',boxShadow:'0 2px 10px rgba(0,0,0,.3)',
+          writingMode:'vertical-rl',textOrientation:'mixed',letterSpacing:'.03em'}}>
         🐞 Beta feedback
       </button>
 

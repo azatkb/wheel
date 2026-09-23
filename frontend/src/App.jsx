@@ -20,6 +20,7 @@ import StoreAdmin from './pages/StoreAdmin'
 import Statistics from './pages/Statistics'
 import Questionnaire from './pages/Questionnaire'
 import QuestionnaireViewer from './pages/QuestionnaireViewer'
+import PairAuthorize from './pages/PairAuthorize'
 
 const MASTER_EMAILS = ['azatkb22@gmail.com', 'lajtnert@gmail.com']
 
@@ -74,8 +75,6 @@ function Shell() {
 
   return (
     <div className="app-shell">
-      {/* Make the menu scroll when items don't fit (large fonts / short screens).
-          The logo + footer stay pinned; only the nav list scrolls. */}
       <style>{`
         .sidebar {
           display: flex !important;
@@ -100,7 +99,6 @@ function Shell() {
         }
         .nav-section::-webkit-scrollbar-thumb:hover { background: rgba(0,255,136,.6); }
       `}</style>
-      {/* Mobile top bar */}
       <header className="mobile-topbar">
         <span className="mobile-logo" style={{display:'flex',alignItems:'center',gap:'.5rem'}}>
           <div className="wheel-logo-mobile" />
@@ -121,7 +119,6 @@ function Shell() {
 
       {menuOpen && <div className="mobile-overlay" onClick={() => setMenuOpen(false)} />}
 
-      {/* Desktop collapse button */}
       <button onClick={() => setSidebarOpen(o => !o)} style={{
         position:'fixed', top:34, left: sidebarOpen ? 192 : 8,
         zIndex:30, background:'var(--bg2)', border:'1px solid var(--border)',
@@ -133,15 +130,21 @@ function Shell() {
         {sidebarOpen ? '‹' : '›'}
       </button>
 
-      {/* Sidebar */}
       <aside className={`sidebar ${menuOpen ? 'open' : ''} ${!sidebarOpen ? 'collapsed' : ''}`}>
         <div className="sidebar-logo">
           <div className="wheel-logo" />
           <div>
             <div className="logo-text">
               <h3 className="logo">LaJTNeR CoDe <span style={{fontSize:".55em",fontWeight:600,opacity:.9,color:"var(--blue)"}}>kinetic</span> <span style={{fontSize:".5em",fontWeight:700,marginLeft:".35em",padding:".12em .45em",borderRadius:"4px",background:"var(--amber)",color:"#111",verticalAlign:"middle",letterSpacing:".05em"}}>BETA</span></h3>
-              <div style={{fontSize:'.82rem',color:'var(--green)',marginTop:'.15rem',fontWeight:600}}>
-                {master ? 'Ultimate 1.0' : user?.plan === 'pro' ? 'Pro 1.0' : user?.plan === 'ultimate' ? 'Ultimate 1.0' : 'Basic 1.0'}
+              <div style={{display:'flex',alignItems:'center',gap:'.5rem',marginTop:'.15rem'}}>
+                <span style={{fontSize:'.82rem',color:'var(--green)',fontWeight:600}}>
+                  {master ? 'Ultimate 1.0' : user?.plan === 'pro' ? 'Pro 1.0' : user?.plan === 'ultimate' ? 'Ultimate 1.0' : 'Basic 1.0'}
+                </span>
+                <button className="theme-btn" onClick={toggleTheme}
+                  title={theme==='dark'?'Switch to light':'Switch to dark'}
+                  style={{padding:'.1rem .4rem',fontSize:'.8rem',lineHeight:1}}>
+                  {theme==='dark'?'☀':'◑'}
+                </button>
               </div>
             </div>
           </div>
@@ -175,12 +178,6 @@ function Shell() {
             onMouseLeave={e=>e.target.style.color='var(--dim)'}>
             🌐 lajtnerresonance.com
           </a>
-          <div style={{padding:'.2rem .75rem .5rem',display:'flex',justifyContent:'flex-start'}}>
-            <button className="theme-btn" onClick={toggleTheme}
-              title={theme==='dark'?'Switch to light':'Switch to dark'}>
-              {theme==='dark'?'☀':'◑'}
-            </button>
-          </div>
           {master && (
             <div style={{padding:'.3rem .75rem',marginBottom:'.2rem'}}>
               <span style={{fontSize:'.65rem',fontWeight:700,color:'var(--amber)',
@@ -222,6 +219,7 @@ function Shell() {
           <Route path="/focus-db"      element={master ? <QuestionnaireViewer /> : <Navigate to="/upload" replace />} />
           <Route path="/db"           element={master ? <DbViewer /> : <Navigate to="/upload" replace />} />
           <Route path="/users" element={<UserManagement />} />
+          <Route path="/pair"          element={<PairAuthorize />} />
           <Route path="*"             element={<Navigate to="/upload" replace />} />
         </Routes>
       </main>
