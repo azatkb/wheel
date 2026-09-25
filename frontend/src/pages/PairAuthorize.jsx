@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth.jsx'
-import { useDeviceAuth } from '../hooks/useDeviceAuth'
 import { API } from '../config'
 
 /**
@@ -13,15 +12,24 @@ import { API } from '../config'
  */
 export default function PairAuthorize() {
   const { user } = useAuth()
-  const { deviceAuthorized } = useDeviceAuth()
   const [pairId, setPairId] = useState('')
   const [state, setState] = useState('idle')   // idle | working | done | error
   const [error, setError] = useState('')
+  const [chipOk, setChipOk] = useState(null)   // null=checking, true/false
 
   useEffect(() => {
     const p = new URLSearchParams(window.location.search).get('pid')
     setPairId(p || '')
   }, [])
+
+  // Ask the server whether this account is chip-verified (works across tabs).
+  useEffect(() => {
+    if (!user?.email) return
+    fetch(`${API}/chip/status?email=${encodeURIComponent(user.email)}`)
+      .then(r => r.json())
+      .then(d => setChipOk(!!d.chip_verified))
+      .catch(() => setChipOk(false))
+  }, [user])
 
   const authorize = async () => {
     setState('working'); setError('')
@@ -56,11 +64,17 @@ export default function PairAuthorize() {
     </div>
   )
 
-  if (!deviceAuthorized) return (
+  if (chipOk === false) return (
     <div style={box}>
       <h2>Tap your chip first</h2>
       <p style={{ color: 'var(--muted)' }}>To authorize a laptop, first tap your chip on this phone to
         confirm you own the device, then scan the laptop QR again.</p>
+    </div>
+  )
+
+  if (chipOk === null) return (
+    <div style={box}>
+      <p style={{ color: 'var(--muted)' }}>Checking your device…</p>
     </div>
   )
 
@@ -78,8 +92,8 @@ export default function PairAuthorize() {
         </div>
       ) : (
         <div>
-          <p style={{ color: 'var(--muted)' }}>You're signed in as <strong>{user.email}</strong> and your chip is
-            verified on this phone. Tap below to unlock the app on the laptop that showed the QR code.</p>
+          <p style={{ color: 'var(--muted)' }}>You're signed in as <strong>{user.email}</strong> — you can
+            authorize this laptop. Tap below to unlock the app on the laptop that showed the QR code.</p>
           <button onClick={authorize} disabled={state === 'working'}
             className="btn btn-primary" style={{ width: '100%', marginTop: '1rem' }}>
             {state === 'working' ? 'Authorizing…' : 'Authorize this laptop'}

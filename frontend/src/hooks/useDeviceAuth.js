@@ -34,6 +34,18 @@ export function useDeviceAuth() {
     if (_checkedThisLoad) return
     _checkedThisLoad = true
 
+    // If this browser was authorized as a laptop (via QR pairing), re-check that
+    // its token is still the active one — a newer laptop revokes older ones.
+    const stored = readStored()
+    if (stored.laptop && stored.token) {
+      fetch(`${API}/pair/check?token=${encodeURIComponent(stored.token)}`)
+        .then(r => r.json())
+        .then(d => {
+          if (!d.valid) { sessionStorage.removeItem(SS_KEY); setState({ authorized: false }) }
+        })
+        .catch(() => {/* keep current state offline */})
+    }
+
     const url = new URL(window.location.href)
     const token = url.searchParams.get('dev_token')
     if (!token) return
@@ -45,6 +57,16 @@ export function useDeviceAuth() {
         const next = { authorized: !!d.authorized, uid: d.uid, ts: Date.now() }
         sessionStorage.setItem(SS_KEY, JSON.stringify(next))
         setState(next)
+        // Tell the server this logged-in email is chip-verified (for laptop pairing).
+        try {
+          const u = JSON.parse(localStorage.getItem('wt_user') || '{}')
+          if (d.authorized && u.email) {
+            fetch(`${API}/chip/confirm`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: u.email, token })
+            }).catch(() => {})
+          }
+        } catch {}
       })
       .catch(() => {/* leave unauthorized */})
       .finally(() => {

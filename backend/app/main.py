@@ -1658,26 +1658,83 @@ def master_chips(email: str = "", token: str = ""):
 #   4. Only ONE laptop per account: authorizing a new laptop clears the old one.
 import time as _time
 PAIR_TTL = 300  # QR valid 5 min
+CHIP_AUTH_TTL = 1800  # a phone stays "chip-verified" server-side for 30 min after a tap
 
 def _pair_table():
     from app.database import _sb
     return _sb()
 
+@app.post("/chip/confirm")
+async def chip_confirm(request: Request):
+    """Phone: after a successful chip tap, the app calls this with its logged-in
+    email and the dev_token it received, so the server records that THIS email is
+    chip-verified (for the next 30 min). Used to gate laptop authorization."""
+    body = await request.json()
+    email = (body.get("email") or "").strip().lower()
+    token = (body.get("token") or "").strip()
+    if not email or not token:
+        raise HTTPException(400, "email and token required")
+    sb = _pair_table()
+    if not sb:
+        raise HTTPException(503, "storage unavailable")
+    # verify the dev_token is a real, authorized device session
+    ok = False
+    try:
+        ds = sb.table("device_sessions").select("authorized").eq("token", token).execute()
+        ok = bool(ds.data and ds.data[0].get("authorized"))
+    except Exception as e:
+        log.warning(f"[CHIP] confirm session check failed: {e}")
+    if not ok:
+        raise HTTPException(403, "Invalid or unauthorized device token")
+    sb.table("chip_auth").upsert({
+        "email": email, "verified_at": int(_time.time()),
+    }, on_conflict="email").execute()
+    return {"ok": True}
+
+def _is_chip_verified(email):
+    """True if this email tapped a genuine chip within CHIP_AUTH_TTL."""
+    if not email:
+        return False
+    sb = _pair_table()
+    if not sb:
+        return False
+    try:
+        r = sb.table("chip_auth").select("verified_at").eq("email", email).execute()
+        if r.data:
+            return int(_time.time()) - int(r.data[0].get("verified_at") or 0) <= CHIP_AUTH_TTL
+    except Exception as e:
+        log.warning(f"[CHIP] verify check failed: {e}")
+    return False
+
+@app.get("/chip/status")
+def chip_status(email: str = ""):
+    """Frontend: is this email currently chip-verified on the server?"""
+    return {"chip_verified": _is_chip_verified((email or "").strip().lower())}
+
 @app.post("/pair/new")
-async def pair_new():
-    """Laptop: create a pairing session, returns pair_id to encode in the QR."""
+async def pair_new(request: Request):
+    """Laptop: create a pairing session, returns pair_id to encode in the QR.
+    The laptop passes its own logged-in email so only the SAME account can
+    authorize it (closes the 'any phone' hole)."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    laptop_email = (body.get("email") or "").strip().lower() or None
     pair_id = secrets.token_urlsafe(12)
     sb = _pair_table()
     if sb:
         sb.table("laptop_pairings").upsert({
             "pair_id": pair_id, "authorized": False, "token": None,
-            "account_email": None, "created_at": int(_time.time()),
+            "account_email": None, "laptop_email": laptop_email,
+            "created_at": int(_time.time()),
         }, on_conflict="pair_id").execute()
     return {"pair_id": pair_id, "expires_in": PAIR_TTL}
 
 @app.post("/pair/authorize")
 async def pair_authorize(request: Request):
-    """Phone: authorize the laptop identified by pair_id (after chip auth)."""
+    """Phone: authorize the laptop identified by pair_id. The phone's email must
+    match the email the laptop was logged in with (same-account binding)."""
     body = await request.json()
     pair_id = (body.get("pair_id") or "").strip()
     email   = (body.get("email") or "").strip().lower()
@@ -1686,11 +1743,19 @@ async def pair_authorize(request: Request):
     sb = _pair_table()
     if not sb:
         raise HTTPException(503, "storage unavailable")
-    row = sb.table("laptop_pairings").select("created_at").eq("pair_id", pair_id).execute()
+    row = sb.table("laptop_pairings").select("created_at, laptop_email").eq("pair_id", pair_id).execute()
     if not row.data:
         raise HTTPException(404, "Pairing not found — regenerate the QR on your laptop")
     if int(_time.time()) - int(row.data[0].get("created_at") or 0) > PAIR_TTL:
         raise HTTPException(410, "QR expired — regenerate it on your laptop")
+    # Same-account binding: if the laptop was logged in, the phone must match it.
+    laptop_email = (row.data[0].get("laptop_email") or "").strip().lower()
+    if laptop_email and laptop_email != email:
+        raise HTTPException(403, "This laptop is signed in with a different account. "
+                                 "Sign in on the laptop with the same email, or scan its QR.")
+    # Chip binding: the phone must have tapped a genuine chip recently.
+    if not _is_chip_verified(email):
+        raise HTTPException(403, "Please tap your chip on this phone first, then scan the QR again.")
     # ONE laptop per account: drop any previous authorized pairings for this email
     try:
         sb.table("laptop_pairings").delete().eq("account_email", email).eq("authorized", True).execute()

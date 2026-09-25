@@ -40,7 +40,7 @@ export default function DeviceGate({ children }) {
   if (deviceAuthorized) return children
 
   // Laptop / desktop -> QR pairing
-  if (!isPhone()) return <LaptopQR />
+  if (!isPhone()) return <LaptopQR laptopEmail={user?.email || ''} />
 
   // Phone -> tap NFC
   return (
@@ -62,7 +62,7 @@ export default function DeviceGate({ children }) {
 }
 
 // -- Laptop QR panel --------------------------------------------------------
-function LaptopQR() {
+function LaptopQR({ laptopEmail }) {
   const [pairId, setPairId] = useState(null)
   const [status, setStatus] = useState('loading')   // loading | waiting | expired | error
   const [qrUrl, setQrUrl] = useState('')
@@ -70,7 +70,10 @@ function LaptopQR() {
   const start = async () => {
     setStatus('loading')
     try {
-      const r = await fetch(`${API}/pair/new`, { method: 'POST' })
+      const r = await fetch(`${API}/pair/new`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: laptopEmail || '' })
+      })
       const d = await r.json()
       setPairId(d.pair_id)
       const url = `${PAIR_URL_BASE}?pid=${encodeURIComponent(d.pair_id)}`
