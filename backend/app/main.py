@@ -82,14 +82,6 @@ jobs: dict = {}
 _seg  = load_yolo_seg()          # segmentation model (cpica)
 _TMPL = Path(__file__).parent / "templates"
 
-# ── NTAG 424 DNA verification routes (/verify, /device-session, /sim) ────────
-try:
-    from app.ntag_routes import router as ntag_router
-    app.include_router(ntag_router)
-    logging.getLogger("app.main").info("[NTAG] routes mounted")
-except Exception as _e:
-    logging.getLogger("app.main").warning(f"[NTAG] routes NOT mounted: {_e}")
-
 # ── Frontend ───────────────────────────────────────────────────────────────
 def _tmpl(name):
     p = _TMPL / name
@@ -1658,83 +1650,26 @@ def master_chips(email: str = "", token: str = ""):
 #   4. Only ONE laptop per account: authorizing a new laptop clears the old one.
 import time as _time
 PAIR_TTL = 300  # QR valid 5 min
-CHIP_AUTH_TTL = 1800  # a phone stays "chip-verified" server-side for 30 min after a tap
 
 def _pair_table():
     from app.database import _sb
     return _sb()
 
-@app.post("/chip/confirm")
-async def chip_confirm(request: Request):
-    """Phone: after a successful chip tap, the app calls this with its logged-in
-    email and the dev_token it received, so the server records that THIS email is
-    chip-verified (for the next 30 min). Used to gate laptop authorization."""
-    body = await request.json()
-    email = (body.get("email") or "").strip().lower()
-    token = (body.get("token") or "").strip()
-    if not email or not token:
-        raise HTTPException(400, "email and token required")
-    sb = _pair_table()
-    if not sb:
-        raise HTTPException(503, "storage unavailable")
-    # verify the dev_token is a real, authorized device session
-    ok = False
-    try:
-        ds = sb.table("device_sessions").select("authorized").eq("token", token).execute()
-        ok = bool(ds.data and ds.data[0].get("authorized"))
-    except Exception as e:
-        log.warning(f"[CHIP] confirm session check failed: {e}")
-    if not ok:
-        raise HTTPException(403, "Invalid or unauthorized device token")
-    sb.table("chip_auth").upsert({
-        "email": email, "verified_at": int(_time.time()),
-    }, on_conflict="email").execute()
-    return {"ok": True}
-
-def _is_chip_verified(email):
-    """True if this email tapped a genuine chip within CHIP_AUTH_TTL."""
-    if not email:
-        return False
-    sb = _pair_table()
-    if not sb:
-        return False
-    try:
-        r = sb.table("chip_auth").select("verified_at").eq("email", email).execute()
-        if r.data:
-            return int(_time.time()) - int(r.data[0].get("verified_at") or 0) <= CHIP_AUTH_TTL
-    except Exception as e:
-        log.warning(f"[CHIP] verify check failed: {e}")
-    return False
-
-@app.get("/chip/status")
-def chip_status(email: str = ""):
-    """Frontend: is this email currently chip-verified on the server?"""
-    return {"chip_verified": _is_chip_verified((email or "").strip().lower())}
-
 @app.post("/pair/new")
-async def pair_new(request: Request):
-    """Laptop: create a pairing session, returns pair_id to encode in the QR.
-    The laptop passes its own logged-in email so only the SAME account can
-    authorize it (closes the 'any phone' hole)."""
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    laptop_email = (body.get("email") or "").strip().lower() or None
+async def pair_new():
+    """Laptop: create a pairing session, returns pair_id to encode in the QR."""
     pair_id = secrets.token_urlsafe(12)
     sb = _pair_table()
     if sb:
         sb.table("laptop_pairings").upsert({
             "pair_id": pair_id, "authorized": False, "token": None,
-            "account_email": None, "laptop_email": laptop_email,
-            "created_at": int(_time.time()),
+            "account_email": None, "created_at": int(_time.time()),
         }, on_conflict="pair_id").execute()
     return {"pair_id": pair_id, "expires_in": PAIR_TTL}
 
 @app.post("/pair/authorize")
 async def pair_authorize(request: Request):
-    """Phone: authorize the laptop identified by pair_id. The phone's email must
-    match the email the laptop was logged in with (same-account binding)."""
+    """Phone: authorize the laptop identified by pair_id (after chip auth)."""
     body = await request.json()
     pair_id = (body.get("pair_id") or "").strip()
     email   = (body.get("email") or "").strip().lower()
@@ -1743,19 +1678,11 @@ async def pair_authorize(request: Request):
     sb = _pair_table()
     if not sb:
         raise HTTPException(503, "storage unavailable")
-    row = sb.table("laptop_pairings").select("created_at, laptop_email").eq("pair_id", pair_id).execute()
+    row = sb.table("laptop_pairings").select("created_at").eq("pair_id", pair_id).execute()
     if not row.data:
         raise HTTPException(404, "Pairing not found — regenerate the QR on your laptop")
     if int(_time.time()) - int(row.data[0].get("created_at") or 0) > PAIR_TTL:
         raise HTTPException(410, "QR expired — regenerate it on your laptop")
-    # Same-account binding: if the laptop was logged in, the phone must match it.
-    laptop_email = (row.data[0].get("laptop_email") or "").strip().lower()
-    if laptop_email and laptop_email != email:
-        raise HTTPException(403, "This laptop is signed in with a different account. "
-                                 "Sign in on the laptop with the same email, or scan its QR.")
-    # Chip binding: the phone must have tapped a genuine chip recently.
-    if not _is_chip_verified(email):
-        raise HTTPException(403, "Please tap your chip on this phone first, then scan the QR again.")
     # ONE laptop per account: drop any previous authorized pairings for this email
     try:
         sb.table("laptop_pairings").delete().eq("account_email", email).eq("authorized", True).execute()
@@ -2533,13 +2460,45 @@ def store_get_file(folder: str, filename: str, email: str = "", order_id: str = 
 @app.get("/store/products")
 def store_get_products(include_inactive: bool = False, admin_email: str = ""):
     from app.database import _sb
+    import json as _json
     sb = _sb()
     if not sb: raise HTTPException(500, "DB unavailable")
     q = sb.table("store_products").select("*")
     if not include_inactive or not _is_master(admin_email):
         q = q.eq("active", True)
     resp = q.order("created_at").execute()
-    return {"products": resp.data or []}
+    products = resp.data or []
+
+    # Attach bundle "includes" so the storefront can show what comes with a product.
+    try:
+        bundles = sb.table("store_bundle_grants").select("product_id, grants").execute()
+        by_pid = {}
+        for b in (bundles.data or []):
+            g = b.get("grants", [])
+            if isinstance(g, str):
+                try: g = _json.loads(g)
+                except Exception: g = []
+            by_pid[b["product_id"]] = g
+        # resolve product names for "product" grants (so we can show the real name)
+        name_by_id = {p["id"]: p.get("name") for p in products}
+        for p in products:
+            grants = by_pid.get(p["id"]) or []
+            includes = []
+            for gr in grants:
+                t = gr.get("type")
+                if t == "subscription_pro":
+                    includes.append({"kind": "subscription", "label": f"{gr.get('months',1)} months Pro access"})
+                elif t == "subscription_ultimate":
+                    includes.append({"kind": "subscription", "label": f"{gr.get('months',1)} months Ultimate access"})
+                elif t == "product":
+                    nm = name_by_id.get(gr.get("product_id"), "Digital item")
+                    includes.append({"kind": "product", "label": nm})
+            if includes:
+                p["includes"] = includes
+    except Exception as e:
+        log.warning(f"[STORE] includes attach failed: {e}")
+
+    return {"products": products}
 
 
 @app.post("/store/products")
@@ -2802,8 +2761,9 @@ async def store_checkout(req: Request):
 
 
 def _fulfill_order(sb, order_id: str, items: list, user_email: str):
-    """Fulfill order: activate subscriptions, grant digital files."""
+    """Fulfill order: activate subscriptions, grant digital files + bundle grants."""
     import datetime as _dt, json as _json
+    granted_items = []   # free digital products granted by bundles → added to the order
     try:
         for item in items:
             itype = item.get("type","")
@@ -2820,21 +2780,54 @@ def _fulfill_order(sb, order_id: str, items: list, user_email: str):
                     "subscription_granted": True,
                     "subscription_expires": expires.isoformat(),
                 }).eq("id", order_id).execute()
-            # Bundle grants
+            # Bundle grants — a physical product can grant subscriptions + free digital products
             product_id = item.get("product_id")
             if product_id:
-                bundle_resp = sb.table("store_bundle_grants")                    .select("*").eq("product_id", product_id).execute()
+                bundle_resp = sb.table("store_bundle_grants").select("*").eq("product_id", product_id).execute()
                 if bundle_resp.data:
                     grants = bundle_resp.data[0].get("grants", [])
                     if isinstance(grants, str):
                         grants = _json.loads(grants)
                     for g in grants:
-                        if g.get("type") == "subscription_pro":
-                            months = g.get("months", 1)
+                        gtype = g.get("type")
+                        # Subscription grants (pro OR ultimate) for N months
+                        if gtype in ("subscription_pro", "subscription_ultimate"):
+                            plan = "pro" if gtype == "subscription_pro" else "ultimate"
+                            months = int(g.get("months", 1) or 1)
                             expires = _dt.datetime.utcnow() + _dt.timedelta(days=30*months)
-                            sb.table("wt_users").update({"plan": "pro"}).eq("email", user_email).execute()
+                            sb.table("wt_users").update({"plan": plan}).eq("email", user_email).execute()
+                            sb.table("store_orders").update({
+                                "subscription_granted": True,
+                                "subscription_expires": expires.isoformat(),
+                            }).eq("id", order_id).execute()
+                            log.info(f"[STORE] bundle granted {plan} {months}mo to {user_email}")
+                        # Free digital product grant — pull its file_url and attach to the order
+                        # so the buyer can download it via /store/download.
+                        elif gtype == "product":
+                            gpid = g.get("product_id")
+                            if not gpid:
+                                continue
+                            prod = sb.table("store_products").select("id,name,type,file_url").eq("id", gpid).execute()
+                            if prod.data:
+                                p = prod.data[0]
+                                granted_items.append({
+                                    "product_id": p["id"], "name": p.get("name"),
+                                    "type": p.get("type"), "file_url": p.get("file_url"),
+                                    "granted": True,
+                                })
+                                log.info(f"[STORE] bundle granted digital '{p.get('name')}' to {user_email}")
+        # Append any granted digital products into the order's items so they're downloadable
+        if granted_items:
+            try:
+                cur = sb.table("store_orders").select("items").eq("id", order_id).execute()
+                existing = _json.loads(cur.data[0].get("items", "[]")) if cur.data else []
+                sb.table("store_orders").update({
+                    "items": _json.dumps(existing + granted_items)
+                }).eq("id", order_id).execute()
+            except Exception as e:
+                log.error(f"[STORE] attach granted items failed: {e}")
         # Mark fulfilled
-        sb.table("store_orders").update({"status": "fulfilled"})            .eq("id", order_id).execute()
+        sb.table("store_orders").update({"status": "fulfilled"}).eq("id", order_id).execute()
         log.info(f"[STORE] Order {order_id} fulfilled for {user_email}")
     except Exception as e:
         log.error(f"[STORE] fulfill error: {e}")

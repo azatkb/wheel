@@ -81,6 +81,27 @@ function ProductCard({ product, onAdd }) {
           </div>
         )}
 
+        {/* What's included (bundle grants) */}
+        {Array.isArray(product.includes) && product.includes.length > 0 && (
+          <div style={{marginBottom:'.75rem',padding:'.6rem .7rem',borderRadius:8,
+            background:'rgba(0,194,113,.07)',border:'1px solid rgba(0,194,113,.25)'}}>
+            <div style={{fontSize:'.72rem',fontWeight:700,color:'var(--green)',
+              textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'.4rem'}}>
+              ✅ Included with this product
+            </div>
+            <ul style={{margin:0,padding:0,listStyle:'none',display:'flex',
+              flexDirection:'column',gap:'.25rem'}}>
+              {product.includes.map((inc, i) => (
+                <li key={i} style={{fontSize:'.78rem',color:'var(--text)',
+                  display:'flex',alignItems:'center',gap:'.4rem'}}>
+                  <span>{inc.kind === 'subscription' ? '⚡' : '🎁'}</span>
+                  <span>{inc.label}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Billing toggle for subscriptions */}
         {isSubscription && product.price_annual && (
           <div style={{display:'flex',gap:'.3rem',marginBottom:'.75rem'}}>
