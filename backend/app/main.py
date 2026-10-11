@@ -773,7 +773,7 @@ async def stripe_webhook(request: Request):
     if evt in ("checkout.session.completed", "customer.subscription.created",
                "invoice.paid"):
         obj = event["data"]["object"]
-        # Numbered-unit purchase (Pioneer/Founder/Alpha) → finalize allocation
+        # Numbered-unit purchase (Pioneer/Founder/Spectrum) → finalize allocation
         try:
             meta = getattr(obj, "metadata", {}) or {}
             mget = (lambda k: meta.get(k) if isinstance(meta, dict) else getattr(meta, k, None))
@@ -1302,6 +1302,341 @@ _MASTER_EMAILS = ["azatkb22@gmail.com", "lajtnert@gmail.com"]
 def _master_ok(email="", token=""):
     return (email or "").lower() in _MASTER_EMAILS or token == MASTER_TOKEN
 
+# ── Configurable catalog / hardware value system (admin-editable) ────────────
+# Everything (prices, included items, discounts, config) lives in the DB and is
+# edited from the admin panel, so pricing/legal changes need NO redeploy.
+
+@app.get("/catalog")
+def catalog_list():
+    """Public: active catalog items (videos, PDF, pin) with retail prices."""
+    from app.database import _sb
+    sb = _sb()
+    if not sb: return {"items": []}
+    r = sb.table("laj_catalog").select("*").eq("active", True).order("sort_order").execute()
+    return {"items": r.data or []}
+
+@app.get("/catalog/value-summary")
+def catalog_value_summary():
+    """Public: per-series hardware price + benefits (A included, B discounts) +
+    totals + value-vs-price ratio. Computed live from the editable tables."""
+    from app.database import _sb
+    sb = _sb()
+    if not sb: return {"series": []}
+    series = (sb.table("laj_series").select("*").order("sort_order").execute().data) or []
+    bens   = (sb.table("laj_series_benefit").select("*").execute().data) or []
+    cat    = {f"item{c['n']}": c for c in ((sb.table("laj_catalog").select("*").execute().data) or [])}
+    out = []
+    for s in series:
+        sid = s["id"]
+        rows = [b for b in bens if b["series_id"] == sid]
+        incl, disc = [], []
+        A = B = 0.0
+        for b in rows:
+            inc = float(b.get("included") or 0); dis = float(b.get("discount") or 0)
+            label = cat.get(b["item_key"], {}).get("title") or {
+                "sw_ultimate": "Software: Ultimate plan (free period)",
+                "sw_pro": "Software: Pro plan (rest of first year)",
+                "one_more_unit": "Discount on one more numbered unit",
+            }.get(b["item_key"], b["item_key"])
+            if inc: incl.append({"label": label, "value": inc}); A += inc
+            if dis: disc.append({"label": label, "value": dis}); B += dis
+        price = float(s.get("price") or 0)
+        out.append({
+            "id": sid, "name": s["name"], "price": price,
+            "units": s.get("units"), "build": s.get("build"), "numbering": s.get("numbering"),
+            "included": incl, "discounts": disc,
+            "subtotal_included": round(A, 2), "subtotal_discounts": round(B, 2),
+            "total_benefits": round(A + B, 2),
+            "included_pct": round(A / price, 4) if price else None,
+            "total_pct": round((A + B) / price, 4) if price else None,
+        })
+    return {"series": out}
+
+@app.get("/admin/catalog/all")
+def admin_catalog_all(email: str = "", token: str = ""):
+    if not _master_ok(email, token): raise HTTPException(401, "Unauthorized")
+    from app.database import _sb
+    sb = _sb()
+    if not sb: return {}
+    return {
+        "catalog":  (sb.table("laj_catalog").select("*").order("sort_order").execute().data) or [],
+        "series":   (sb.table("laj_series").select("*").order("sort_order").execute().data) or [],
+        "benefits": (sb.table("laj_series_benefit").select("*").execute().data) or [],
+        "config":   (sb.table("laj_config").select("*").execute().data) or [],
+    }
+
+@app.post("/admin/catalog/item")
+async def admin_catalog_item(request: Request):
+    body = await request.json()
+    if not _master_ok(body.get("admin_email",""), body.get("token","")): raise HTTPException(401,"Unauthorized")
+    from app.database import _sb
+    sb = _sb()
+    row = {k: body[k] for k in ("id","n","title","description","type","retail_price","active","sort_order") if k in body}
+    if sb: sb.table("laj_catalog").upsert(row).execute()
+    return {"ok": True}
+
+@app.post("/admin/catalog/series")
+async def admin_catalog_series(request: Request):
+    body = await request.json()
+    if not _master_ok(body.get("admin_email",""), body.get("token","")): raise HTTPException(401,"Unauthorized")
+    from app.database import _sb
+    sb = _sb()
+    row = {k: body[k] for k in ("id","name","price","units","build","numbering","sort_order") if k in body}
+    if sb: sb.table("laj_series").upsert(row).execute()
+    return {"ok": True}
+
+@app.post("/admin/catalog/benefit")
+async def admin_catalog_benefit(request: Request):
+    body = await request.json()
+    if not _master_ok(body.get("admin_email",""), body.get("token","")): raise HTTPException(401,"Unauthorized")
+    from app.database import _sb
+    sb = _sb()
+    row = {"series_id": body["series_id"], "item_key": body["item_key"],
+           "included": float(body.get("included") or 0), "discount": float(body.get("discount") or 0)}
+    if sb: sb.table("laj_series_benefit").upsert(row, on_conflict="series_id,item_key").execute()
+    return {"ok": True}
+
+@app.post("/admin/catalog/config")
+async def admin_catalog_config(request: Request):
+    body = await request.json()
+    if not _master_ok(body.get("admin_email",""), body.get("token","")): raise HTTPException(401,"Unauthorized")
+    from app.database import _sb
+    sb = _sb()
+    if sb: sb.table("laj_config").upsert({"key": body["key"], "value": str(body.get("value","")),
+                                          "note": body.get("note","")}).execute()
+    return {"ok": True}
+
+# ── Subscription-timing engine (free Ultimate period → auto Pro → expiry) ───
+# Runs inside the app (background task started on startup), so no external cron
+# is needed. All durations/discounts are config-editable in laj_config.
+def _cfg(sb, key, default=None):
+    try:
+        r = sb.table("laj_config").select("value").eq("key", key).execute()
+        if r.data: return r.data[0]["value"]
+    except Exception: pass
+    return default
+
+# ── Shipping — editable per-region flat rates (laj_config) ───────────────────
+# Client sets ship_eu / ship_usa / ship_asia / ship_other (USD) in the admin
+# panel (Config tab). Country→region is resolved here; the fee is added to
+# checkout ONLY when the region's rate is > 0, so until the client fills in the
+# numbers nothing extra is charged.
+_SHIP_EU = {"AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE",
+            "IT","LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE",
+            "GB","CH","NO","IS"}
+_SHIP_ASIA = {"CN","JP","KR","IN","ID","TH","VN","PH","MY","SG","HK","TW","KZ",
+              "KG","UZ","AE","SA","IL","PK","BD","LK","MN","GE","AM","AZ","TR"}
+def _ship_region(country):
+    c = (country or "").strip().upper()
+    if c in ("US","USA"):           return "usa"
+    if c in _SHIP_EU:               return "eu"
+    if c in _SHIP_ASIA:             return "asia"
+    return "other"
+def _ship_cost(sb, country):
+    """Flat shipping fee (USD) for a destination country, from editable config."""
+    try:
+        return max(0.0, float(_cfg(sb, f"ship_{_ship_region(country)}", 0) or 0))
+    except Exception:
+        return 0.0
+
+def _grant_hw_subscription(email, series):
+    """When a hardware unit is paid: give the free Ultimate period for its series,
+    then Pro for the rest of the first year (config-driven)."""
+    from app.database import _sb
+    sb = _sb()
+    if not sb or not email: return
+    try:
+        months = int(float(_cfg(sb, f"free_ultimate_months_{series}", 0) or 0))
+    except Exception:
+        months = 0
+    now = datetime.datetime.utcnow()
+    if months > 0:
+        ult_until = (now + datetime.timedelta(days=30*months)).isoformat()
+        plan = "ultimate"
+    else:
+        ult_until = None
+        plan = "basic" if series == "core" else "pro"
+    pro_until = None if series == "core" else (now + datetime.timedelta(days=365)).isoformat()
+    try:
+        sb.table("wt_users").update({
+            "plan": plan, "sub_series": series, "sub_started": now.isoformat(),
+            "ultimate_until": ult_until, "pro_until": pro_until,
+        }).eq("email", email.lower()).execute()
+        log.info(f"[SUB] granted {series} → {email}: plan={plan} ult_until={ult_until} pro_until={pro_until}")
+    except Exception as e:
+        log.error(f"[SUB] grant failed: {e}")
+
+def _subscription_sweep():
+    """Move expired free-Ultimate users to Pro; expire Pro after the first year."""
+    from app.database import _sb
+    sb = _sb()
+    if not sb: return
+    now_iso = datetime.datetime.utcnow().isoformat()
+    try:
+        for u in (sb.table("wt_users").select("email,ultimate_until,pro_until").eq("plan","ultimate").execute().data or []):
+            uu = u.get("ultimate_until")
+            if uu and uu < now_iso:
+                po = u.get("pro_until")
+                new_plan = "pro" if (po and po > now_iso) else "basic"
+                sb.table("wt_users").update({"plan": new_plan, "ultimate_until": None}).eq("email", u["email"]).execute()
+                log.info(f"[SUB] {u['email']} Ultimate period ended → {new_plan}")
+        for u in (sb.table("wt_users").select("email,pro_until").eq("plan","pro").execute().data or []):
+            po = u.get("pro_until")
+            if po and po < now_iso:
+                sb.table("wt_users").update({"plan": "basic", "pro_until": None}).eq("email", u["email"]).execute()
+                log.info(f"[SUB] {u['email']} Pro first-year ended → basic")
+    except Exception as e:
+        log.error(f"[SUB] sweep failed: {e}")
+
+async def _subscription_loop():
+    while True:
+        _subscription_sweep()
+        await asyncio.sleep(6 * 3600)   # re-check every 6 hours
+
+@app.on_event("startup")
+async def _start_subscription_engine():
+    try:
+        asyncio.create_task(_subscription_loop())
+        log.info("[SUB] subscription-timing engine started")
+    except Exception as e:
+        log.error(f"[SUB] engine start failed: {e}")
+
+@app.post("/admin/grant-subscription")
+async def admin_grant_subscription(request: Request):
+    body = await request.json()
+    if not _master_ok(body.get("admin_email",""), body.get("token","")): raise HTTPException(401,"Unauthorized")
+    _grant_hw_subscription((body.get("email") or "").strip().lower(), (body.get("series") or "").strip().lower())
+    return {"ok": True}
+
+@app.get("/subscription/status")
+def subscription_status(email: str = ""):
+    from app.database import _sb
+    sb = _sb()
+    if not sb: return {}
+    r = sb.table("wt_users").select("plan,sub_series,ultimate_until,pro_until,sub_started") \
+          .eq("email", (email or "").strip().lower()).execute()
+    return r.data[0] if r.data else {}
+
+# ── M3: owner discounts + Pioneer Program (review → Keynote unlock) ──────────
+def _owner_series(sb, email):
+    try:
+        r = sb.table("wt_users").select("sub_series").eq("email", (email or "").lower()).execute()
+        if r.data: return r.data[0].get("sub_series")
+    except Exception: pass
+    return None
+
+@app.get("/catalog/owner-price")
+def catalog_owner_price(email: str = "", item_key: str = ""):
+    """Owner price for a catalog item: retail minus the editable per-series discount.
+    item_key like 'item7' (catalog) or 'one_more_unit' (another numbered unit)."""
+    from app.database import _sb
+    sb = _sb()
+    if not sb: return {"retail": None, "discount": 0, "final": None}
+    series = _owner_series(sb, email)
+    # retail price
+    retail = None
+    if item_key.startswith("item"):
+        try:
+            n = int(item_key[4:])
+            r = sb.table("laj_catalog").select("retail_price").eq("n", n).execute()
+            if r.data: retail = float(r.data[0]["retail_price"])
+        except Exception: pass
+    # discount for this owner's series
+    disc = 0.0
+    if series:
+        try:
+            b = sb.table("laj_series_benefit").select("discount").eq("series_id", series).eq("item_key", item_key).execute()
+            if b.data: disc = float(b.data[0].get("discount") or 0)
+        except Exception: pass
+    # already unlocked free?
+    unlocked = False
+    try:
+        e = sb.table("laj_entitlements").select("item_key").eq("email", (email or "").lower()).eq("item_key", item_key).execute()
+        unlocked = bool(e.data)
+    except Exception: pass
+    final = 0.0 if unlocked else (max(0.0, retail - disc) if retail is not None else None)
+    return {"retail": retail, "discount": disc, "final": final, "series": series, "unlocked": unlocked}
+
+@app.get("/entitlements")
+def entitlements_list(email: str = ""):
+    from app.database import _sb
+    sb = _sb()
+    if not sb: return {"items": []}
+    r = sb.table("laj_entitlements").select("item_key,source,granted_at").eq("email", (email or "").lower()).execute()
+    return {"items": r.data or []}
+
+# --- Pioneer Program ---
+@app.post("/pioneer/review")
+async def pioneer_review(request: Request):
+    """Pioneer owner submits one honest experience-report link (within 30 days)."""
+    body = await request.json()
+    email = (body.get("email") or "").strip().lower()
+    link  = (body.get("link") or "").strip()
+    platform = (body.get("platform") or "").strip()
+    if not email or not link:
+        raise HTTPException(400, "email and link required")
+    from app.database import _sb
+    sb = _sb()
+    if sb:
+        sb.table("laj_reviews").insert({
+            "email": email, "link": link, "platform": platform, "status": "pending",
+        }).execute()
+    return {"ok": True, "status": "pending"}
+
+@app.get("/pioneer/status")
+def pioneer_status(email: str = ""):
+    from app.database import _sb
+    sb = _sb()
+    if not sb: return {"reviews": [], "keynote_unlocked": False}
+    email = (email or "").strip().lower()
+    revs = (sb.table("laj_reviews").select("link,platform,status,submitted_at").eq("email", email).execute().data) or []
+    ent  = (sb.table("laj_entitlements").select("item_key").eq("email", email).eq("item_key", "item7").execute().data) or []
+    return {"reviews": revs, "keynote_unlocked": bool(ent)}
+
+@app.get("/admin/pioneer/reviews")
+def admin_pioneer_reviews(email: str = "", token: str = ""):
+    if not _master_ok(email, token): raise HTTPException(401, "Unauthorized")
+    from app.database import _sb
+    sb = _sb()
+    if not sb: return {"reviews": []}
+    r = sb.table("laj_reviews").select("*").order("submitted_at", desc=True).execute()
+    return {"reviews": r.data or []}
+
+@app.post("/admin/pioneer/decide")
+async def admin_pioneer_decide(request: Request):
+    """Master approves/rejects a review. Approve → unlock the Keynote (item7) free."""
+    body = await request.json()
+    if not _master_ok(body.get("admin_email",""), body.get("token","")): raise HTTPException(401,"Unauthorized")
+    rid = body.get("id"); decision = (body.get("decision") or "").lower()
+    from app.database import _sb
+    sb = _sb()
+    if not sb: raise HTTPException(503, "storage unavailable")
+    row = sb.table("laj_reviews").select("email").eq("id", rid).execute()
+    if not row.data: raise HTTPException(404, "review not found")
+    email = row.data[0]["email"]
+    sb.table("laj_reviews").update({"status": "approved" if decision=="approve" else "rejected",
+                                    "decided_at": datetime.datetime.utcnow().isoformat()}).eq("id", rid).execute()
+    if decision == "approve":
+        sb.table("laj_entitlements").upsert({"email": email, "item_key": "item7",
+                                             "source": "pioneer_program"}, on_conflict="email,item_key").execute()
+        try: _send_keynote_email(email)
+        except Exception as e: log.warning(f"[PIONEER] keynote email failed: {e}")
+    return {"ok": True}
+
+def _send_keynote_email(email):
+    GMAIL_USER = os.environ.get("GMAIL_USER",""); GMAIL_PASS = os.environ.get("GMAIL_PASS","")
+    if not (GMAIL_USER and GMAIL_PASS): return
+    import smtplib
+    from email.mime.text import MIMEText
+    body = ("Thank you for sharing your honest Pioneer experience!\n\n"
+            "As promised, the Keynote \"Thought Force: The Gentlest Coercion\" is now unlocked "
+            "free of charge in your account.\n\nWarm regards,\nDr. Tamás Lajtner\nLajtner Resonance")
+    msg = MIMEText(body, "plain")
+    msg["Subject"] = "Your Keynote is unlocked — thank you for sharing"
+    msg["From"] = f"Lajtner Resonance <{GMAIL_USER}>"; msg["To"] = email
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+        s.login(GMAIL_USER, GMAIL_PASS); s.sendmail(GMAIL_USER, email, msg.as_string())
+
 # ── Total measurement count (used by Focus Test to warn if < 50 results) ─────
 @app.get("/api/measurement-count")
 def measurement_count():
@@ -1317,17 +1652,17 @@ def measurement_count():
             log.warning(f"[COUNT] failed: {e}")
     return {"count": n}
 
-# ── Pioneer / Founder / Alpha unit allocation ───────────────────────────────
-_SERIES_TOTALS = {"pioneer": 50, "founder": 50, "alpha": 500}
+# ── Pioneer / Founder / Spectrum unit allocation ───────────────────────────────
+_SERIES_TOTALS = {"pioneer": 50, "founder": 50, "spectrum": 500}
 
 def _unit_serial(series, number):
     """Serial as printed on the unit.
     Pioneer:  'PIONEER #01 of 50'   (# before number, not before total)
     Founder:  'FOUNDER No. 01 of 50'
-    Alpha:    'ALPHA No. 001 of 500'
+    Spectrum: 'SPECTRUM No. 001 of 500'
     """
     total = _SERIES_TOTALS.get(series, 50)
-    pad = 3 if series == "alpha" else 2
+    pad = 3 if series == "spectrum" else 2
     num = str(number).zfill(pad)
     prefix = series.upper()
     return (f"{prefix} #{num} of {total}" if series == "pioneer"
@@ -1336,9 +1671,9 @@ def _unit_serial(series, number):
 @app.get("/allocation/{series}")
 def allocation_list(series: str):
     """Public: list all units of a series with status available/allocated.
-    series ∈ pioneer(50) | founder(50) | alpha(500)."""
+    series ∈ pioneer(50) | founder(50) | spectrum(500)."""
     series = series.lower()
-    totals = {"pioneer": 50, "founder": 50, "alpha": 500}
+    totals = {"pioneer": 50, "founder": 50, "spectrum": 500}
     if series not in totals:
         raise HTTPException(404, "Unknown series")
     total = totals[series]
@@ -1363,8 +1698,8 @@ def allocation_list(series: str):
                 taken[int(row["number"])] = {"status": st, "notes": row.get("notes") or ""}
         except Exception as e:
             log.warning(f"[ALLOC] read failed: {e}")
-    prefix = {"pioneer": "PIONEER", "founder": "FOUNDER", "alpha": "ALPHA"}[series]
-    pad = 3 if series == "alpha" else 2
+    prefix = {"pioneer": "PIONEER", "founder": "FOUNDER", "spectrum": "SPECTRUM"}[series]
+    pad = 3 if series == "spectrum" else 2
     units = []
     for n in range(1, total + 1):
         t = taken.get(n)
@@ -1390,18 +1725,18 @@ async def allocation_checkout(request: Request):
     email  = (body.get("email") or "").strip().lower()
     name   = (body.get("name") or "").strip()
     ship   = body.get("shipping") or {}
-    price  = {"pioneer": 249, "founder": 4999, "alpha": 499, "core": 299}.get(series)
+    price  = {"pioneer": 249, "founder": 4999, "spectrum": 499, "core": 299}.get(series)
     if not email or not name or not number:
         raise HTTPException(400, "Name, email and number are required")
-    if series not in ("pioneer", "founder", "alpha") or not price:
+    if series not in ("pioneer", "founder", "spectrum") or not price:
         raise HTTPException(400, "This series is not open for sale yet")
 
     from app.database import _sb
     sb = _sb()
 
     # Pioneer trade-in credit: a buyer who owns a paid Pioneer gets a discount on
-    # a Founder/Alpha unit. Amount differs per series (latest client numbers).
-    PIONEER_CREDIT = {"founder": 150, "alpha": 119}
+    # a Founder/Spectrum unit. Amount differs per series (latest client numbers).
+    PIONEER_CREDIT = {"founder": 150, "spectrum": 119}
     credit_applied = 0
     if series in PIONEER_CREDIT and sb:
         try:
@@ -1445,20 +1780,35 @@ async def allocation_checkout(request: Request):
     prod_name = f"Lajtner {ser}"
     if credit_applied:
         prod_name += f" (−${credit_applied} Pioneer credit)"
+
+    # Shipping: editable per-region flat rate (see _ship_cost). Added as a Stripe
+    # shipping option only when the client has set a rate > 0 for that region.
+    ship_cost = _ship_cost(sb, ship.get("country")) if sb else 0.0
+    ship_opts = None
+    if ship_cost > 0:
+        ship_opts = [{"shipping_rate_data": {
+            "type": "fixed_amount",
+            "fixed_amount": {"amount": int(round(ship_cost * 100)), "currency": "usd"},
+            "display_name": "Shipping",
+        }}]
+
     session = stripe.checkout.Session.create(
         payment_method_types=["card"], mode="payment", customer_email=email,
         line_items=[{"price_data": {"currency": "usd",
             "product_data": {"name": prod_name},
             "unit_amount": price * 100}, "quantity": 1}],
         shipping_address_collection={"allowed_countries": ["US","GB","DE","HU","FR","AT","CA","AU"]},
+        **({"shipping_options": ship_opts} if ship_opts else {}),
         success_url=body.get("success_url",
             f"https://mindpw.com/thankyou.html?serial={urllib.parse.quote(ser)}"),
         cancel_url=body.get("cancel_url", f"https://mindpw.com/{series}.html"),
         metadata={"kind": "unit", "series": series, "number": str(number),
-                  "email": email, "name": name, "credit": str(credit_applied)},
+                  "email": email, "name": name, "credit": str(credit_applied),
+                  "shipping_usd": str(ship_cost)},
     )
     return {"url": session.url, "session_id": session.id,
-            "credit_applied": credit_applied, "final_price": price}
+            "credit_applied": credit_applied, "final_price": price,
+            "shipping_usd": ship_cost}
 
 
 def _finalize_unit(series, number, email, name):
@@ -1479,6 +1829,7 @@ def _finalize_unit(series, number, email, name):
             }, on_conflict="series,number").execute()
         except Exception as e:
             log.error(f"[ALLOC] finalize failed: {e}")
+    _grant_hw_subscription(email, series)   # free Ultimate period + Pro for the first year
     _send_pioneer_email(email, name, series, number)
     _notify_admin_order(series, number, email, name, shipping)
 
@@ -1581,9 +1932,9 @@ async def set_chip_serial(request: Request):
 @app.get("/allocation/credit-check")
 def allocation_credit_check(email: str = "", series: str = ""):
     """Does this email own a paid Pioneer? Returns the credit for the given series
-    (Founder -$150, Alpha -$119). If no series is passed, returns Founder's amount."""
+    (Founder -$150, Spectrum -$119). If no series is passed, returns Founder's amount."""
     email = (email or "").strip().lower()
-    amounts = {"founder": 150, "alpha": 119}
+    amounts = {"founder": 150, "spectrum": 119}
     amt = amounts.get((series or "").lower(), 150)
     if not email:
         return {"has_credit": False, "credit": 0}
@@ -2460,45 +2811,13 @@ def store_get_file(folder: str, filename: str, email: str = "", order_id: str = 
 @app.get("/store/products")
 def store_get_products(include_inactive: bool = False, admin_email: str = ""):
     from app.database import _sb
-    import json as _json
     sb = _sb()
     if not sb: raise HTTPException(500, "DB unavailable")
     q = sb.table("store_products").select("*")
     if not include_inactive or not _is_master(admin_email):
         q = q.eq("active", True)
     resp = q.order("created_at").execute()
-    products = resp.data or []
-
-    # Attach bundle "includes" so the storefront can show what comes with a product.
-    try:
-        bundles = sb.table("store_bundle_grants").select("product_id, grants").execute()
-        by_pid = {}
-        for b in (bundles.data or []):
-            g = b.get("grants", [])
-            if isinstance(g, str):
-                try: g = _json.loads(g)
-                except Exception: g = []
-            by_pid[b["product_id"]] = g
-        # resolve product names for "product" grants (so we can show the real name)
-        name_by_id = {p["id"]: p.get("name") for p in products}
-        for p in products:
-            grants = by_pid.get(p["id"]) or []
-            includes = []
-            for gr in grants:
-                t = gr.get("type")
-                if t == "subscription_pro":
-                    includes.append({"kind": "subscription", "label": f"{gr.get('months',1)} months Pro access"})
-                elif t == "subscription_ultimate":
-                    includes.append({"kind": "subscription", "label": f"{gr.get('months',1)} months Ultimate access"})
-                elif t == "product":
-                    nm = name_by_id.get(gr.get("product_id"), "Digital item")
-                    includes.append({"kind": "product", "label": nm})
-            if includes:
-                p["includes"] = includes
-    except Exception as e:
-        log.warning(f"[STORE] includes attach failed: {e}")
-
-    return {"products": products}
+    return {"products": resp.data or []}
 
 
 @app.post("/store/products")
@@ -2617,12 +2936,22 @@ def store_shipping_estimate(country: str = "", postal_code: str = "", weight_kg:
     import os
     dhl_key = os.environ.get("DHL_API_KEY","")
     if not dhl_key:
-        # Fallback flat rates if no DHL key
-        rates = {
-            "HU": 5.0, "DE": 8.0, "AT": 8.0, "SK": 8.0,
-            "US": 25.0, "GB": 20.0, "FR": 15.0, "IT": 15.0,
-        }
-        cost = rates.get(country.upper(), 30.0)
+        # No DHL key → use the editable per-region flat rates from the admin panel
+        # (ship_eu / ship_usa / ship_asia / ship_other). Falls back to a legacy
+        # per-country table only if the region rate hasn't been set yet.
+        try:
+            from app.database import _sb
+            region_cost = _ship_cost(_sb(), country)
+        except Exception:
+            region_cost = 0.0
+        if region_cost > 0:
+            cost = region_cost
+        else:
+            rates = {
+                "HU": 5.0, "DE": 8.0, "AT": 8.0, "SK": 8.0,
+                "US": 25.0, "GB": 20.0, "FR": 15.0, "IT": 15.0,
+            }
+            cost = rates.get(country.upper(), 30.0)
         if weight_kg > 1.0: cost += (weight_kg - 1.0) * 8
         return {"cost_usd": round(cost, 2), "source": "flat_rate",
                 "note": "Exact price calculated at order confirmation"}
@@ -2761,9 +3090,8 @@ async def store_checkout(req: Request):
 
 
 def _fulfill_order(sb, order_id: str, items: list, user_email: str):
-    """Fulfill order: activate subscriptions, grant digital files + bundle grants."""
+    """Fulfill order: activate subscriptions, grant digital files."""
     import datetime as _dt, json as _json
-    granted_items = []   # free digital products granted by bundles → added to the order
     try:
         for item in items:
             itype = item.get("type","")
@@ -2780,54 +3108,21 @@ def _fulfill_order(sb, order_id: str, items: list, user_email: str):
                     "subscription_granted": True,
                     "subscription_expires": expires.isoformat(),
                 }).eq("id", order_id).execute()
-            # Bundle grants — a physical product can grant subscriptions + free digital products
+            # Bundle grants
             product_id = item.get("product_id")
             if product_id:
-                bundle_resp = sb.table("store_bundle_grants").select("*").eq("product_id", product_id).execute()
+                bundle_resp = sb.table("store_bundle_grants")                    .select("*").eq("product_id", product_id).execute()
                 if bundle_resp.data:
                     grants = bundle_resp.data[0].get("grants", [])
                     if isinstance(grants, str):
                         grants = _json.loads(grants)
                     for g in grants:
-                        gtype = g.get("type")
-                        # Subscription grants (pro OR ultimate) for N months
-                        if gtype in ("subscription_pro", "subscription_ultimate"):
-                            plan = "pro" if gtype == "subscription_pro" else "ultimate"
-                            months = int(g.get("months", 1) or 1)
+                        if g.get("type") == "subscription_pro":
+                            months = g.get("months", 1)
                             expires = _dt.datetime.utcnow() + _dt.timedelta(days=30*months)
-                            sb.table("wt_users").update({"plan": plan}).eq("email", user_email).execute()
-                            sb.table("store_orders").update({
-                                "subscription_granted": True,
-                                "subscription_expires": expires.isoformat(),
-                            }).eq("id", order_id).execute()
-                            log.info(f"[STORE] bundle granted {plan} {months}mo to {user_email}")
-                        # Free digital product grant — pull its file_url and attach to the order
-                        # so the buyer can download it via /store/download.
-                        elif gtype == "product":
-                            gpid = g.get("product_id")
-                            if not gpid:
-                                continue
-                            prod = sb.table("store_products").select("id,name,type,file_url").eq("id", gpid).execute()
-                            if prod.data:
-                                p = prod.data[0]
-                                granted_items.append({
-                                    "product_id": p["id"], "name": p.get("name"),
-                                    "type": p.get("type"), "file_url": p.get("file_url"),
-                                    "granted": True,
-                                })
-                                log.info(f"[STORE] bundle granted digital '{p.get('name')}' to {user_email}")
-        # Append any granted digital products into the order's items so they're downloadable
-        if granted_items:
-            try:
-                cur = sb.table("store_orders").select("items").eq("id", order_id).execute()
-                existing = _json.loads(cur.data[0].get("items", "[]")) if cur.data else []
-                sb.table("store_orders").update({
-                    "items": _json.dumps(existing + granted_items)
-                }).eq("id", order_id).execute()
-            except Exception as e:
-                log.error(f"[STORE] attach granted items failed: {e}")
+                            sb.table("wt_users").update({"plan": "pro"}).eq("email", user_email).execute()
         # Mark fulfilled
-        sb.table("store_orders").update({"status": "fulfilled"}).eq("id", order_id).execute()
+        sb.table("store_orders").update({"status": "fulfilled"})            .eq("id", order_id).execute()
         log.info(f"[STORE] Order {order_id} fulfilled for {user_email}")
     except Exception as e:
         log.error(f"[STORE] fulfill error: {e}")

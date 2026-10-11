@@ -32,15 +32,15 @@ export function drawChart(canvas, samples) {
   if (vMax > 0) {
     ctx.fillStyle = 'rgba(0,255,136,.06)'
     ctx.fillRect(pad.l, pad.t, cW, Math.max(0, zy - pad.t))
-    ctx.fillStyle = 'rgba(0,255,136,.45)'; ctx.font = 'bold 9px DM Mono'
-    ctx.fillText('+CCW', pad.l + 4, pad.t + 12)
+    ctx.fillStyle = 'rgba(0,255,136,.55)'; ctx.font = 'bold 10px system-ui,sans-serif'
+    ctx.textAlign = 'right'; ctx.fillText('+CCW', W - pad.r - 4, pad.t + 13); ctx.textAlign = 'left'
   }
   // CW zone (negative) — blue tint below zero
   if (vMin < 0) {
     ctx.fillStyle = 'rgba(68,170,255,.07)'
     ctx.fillRect(pad.l, zy, cW, Math.max(0, H - pad.b - zy))
-    ctx.fillStyle = 'rgba(68,170,255,.45)'; ctx.font = 'bold 9px DM Mono'
-    ctx.fillText('CW --', pad.l + 4, H - pad.b - 5)
+    ctx.fillStyle = 'rgba(68,170,255,.55)'; ctx.font = 'bold 10px system-ui,sans-serif'
+    ctx.textAlign = 'right'; ctx.fillText('CW --', W - pad.r - 4, H - pad.b - 5); ctx.textAlign = 'left'
   }
   // Zero line
   ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 1
@@ -59,8 +59,14 @@ export function drawChart(canvas, samples) {
     ctx.beginPath(); ctx.arc(tx(ts[i]), ty(cs[i]), 2.2, 0, Math.PI * 2); ctx.fill()
   })
 
-  ctx.fillStyle = '#00ff88'; ctx.font = '10px Space Mono'
-  ctx.fillText('cumulative rotation (deg)', pad.l + 4, pad.t + 12)
+  // Title with a dark pill behind it so it stays readable over the green line/zone
+  ctx.font = 'bold 11px system-ui,sans-serif'
+  const _title = 'Cumulative rotation (deg)'
+  const _tw = ctx.measureText(_title).width
+  ctx.fillStyle = 'rgba(8,11,15,.82)'
+  ctx.fillRect(pad.l + 2, pad.t + 2, _tw + 10, 16)
+  ctx.fillStyle = '#eafff4'
+  ctx.fillText(_title, pad.l + 7, pad.t + 14)
 }
 
 function drawWave(ctx, W, H) {

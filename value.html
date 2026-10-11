@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="https://mindpw.com/favicon.ico" />
+<title>What You Get — Lajtner Series Value</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--border:#26303c;--text:#e6edf3;--muted:#8b98a5;
+    --green:#00c271;--amber:#ff9500;--blue:#44aaff;--box:#1c2530}
+  [data-theme="light"]{--bg:#f2f4f7;--card:#fff;--border:#d7dde5;--text:#1a2330;--muted:#5a6b7b;--box:#e9edf2}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    background:var(--bg);color:var(--text);line-height:1.6}
+  .wrap{max-width:1100px;margin:0 auto;padding:1.5rem 1.1rem 4rem}
+  .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
+  .toggle{background:var(--box);border:1px solid var(--border);color:var(--text);border-radius:20px;padding:.35rem .8rem;cursor:pointer;font-size:.8rem}
+  h1{font-size:1.9rem;margin:.3rem 0}
+  .sub{color:var(--muted);margin-bottom:1.5rem}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1rem}
+  .series{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.2rem;display:flex;flex-direction:column}
+  .series h2{margin:.1rem 0 .4rem;font-size:1.2rem}
+  .price{font-size:2rem;font-weight:800;color:var(--text)}
+  .price small{font-size:.8rem;color:var(--muted);font-weight:400}
+  .ratio{display:inline-block;margin:.5rem 0;padding:.3rem .7rem;border-radius:20px;font-weight:700;font-size:.82rem;
+    background:rgba(0,194,113,.12);color:var(--green);border:1px solid rgba(0,194,113,.3)}
+  .sect{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:.8rem 0 .3rem}
+  ul{list-style:none;margin:0;padding:0}
+  li{display:flex;justify-content:space-between;font-size:.82rem;padding:.2rem 0;border-bottom:1px solid var(--border)}
+  li .v{color:var(--green);font-weight:600;white-space:nowrap}
+  li.disc .v{color:var(--amber)}
+  .total{margin-top:auto;padding-top:.8rem;border-top:2px solid var(--border)}
+  .total .big{font-size:1.3rem;font-weight:800;color:var(--green)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <img src="https://mindpw.com/black.png" style="height:32px" onerror="this.style.display='none'"/>
+    <button class="toggle" id="themeBtn">🌙 Night</button>
+  </div>
+  <h1>What You Get With Each Series</h1>
+  <p class="sub">Everything is available in the shop — but each device includes gifts and discounts, so the value you receive is higher than the price you pay.</p>
+  <div class="grid" id="grid"><div class="muted">Loading…</div></div>
+</div>
+<script>
+  const API = "https://wheelttt.xyz";
+  const themeBtn = document.getElementById("themeBtn");
+  function setTheme(t){document.documentElement.setAttribute("data-theme",t==="light"?"light":"dark");
+    themeBtn.textContent=t==="light"?"☀️ Day":"🌙 Night";try{localStorage.setItem("laj_theme",t)}catch{}}
+  themeBtn.onclick=()=>{const c=document.documentElement.getAttribute("data-theme")==="light"?"light":"dark";setTheme(c==="light"?"dark":"light")};
+  setTheme((()=>{try{return localStorage.getItem("laj_theme")}catch{return null}})()||"dark");
+
+  const money = v => "$" + (Math.round(v*100)/100).toLocaleString();
+  const pct = v => v==null ? "" : Math.round(v*100) + "%";
+
+  async function load(){
+    const grid=document.getElementById("grid");
+    try{
+      const d=await (await fetch(`${API}/catalog/value-summary`)).json();
+      grid.innerHTML="";
+      (d.series||[]).forEach(s=>{
+        const incl=(s.included||[]).map(x=>`<li><span>${x.label}</span><span class="v">${money(x.value)}</span></li>`).join("");
+        const disc=(s.discounts||[]).map(x=>`<li class="disc"><span>${x.label}</span><span class="v">−${money(x.value)}</span></li>`).join("");
+        const el=document.createElement("div"); el.className="series";
+        el.innerHTML=`
+          <h2>${s.name}</h2>
+          <div class="price">${money(s.price)} <small>hardware</small></div>
+          <div class="ratio">Total value ${pct(s.total_pct)} of price</div>
+          ${incl?`<div class="sect">Included free</div><ul>${incl}</ul>`:""}
+          ${disc?`<div class="sect">Owner discounts</div><ul>${disc}</ul>`:""}
+          <div class="total">
+            <div style="display:flex;justify-content:space-between;font-size:.82rem;color:var(--muted)">
+              <span>Included value</span><span>${money(s.subtotal_included)}</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:.82rem;color:var(--muted)">
+              <span>Available discounts</span><span>${money(s.subtotal_discounts)}</span></div>
+            <div style="display:flex;justify-content:space-between;margin-top:.3rem">
+              <span style="font-weight:700">Total benefits</span><span class="big">${money(s.total_benefits)}</span></div>
+          </div>`;
+        grid.appendChild(el);
+      });
+      if(!(d.series||[]).length) grid.innerHTML='<div class="muted">No data yet.</div>';
+    }catch(e){ grid.innerHTML='<div class="muted">Could not load. Please refresh.</div>'; }
+  }
+  load();
+</script>
+</body>
+</html>

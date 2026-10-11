@@ -21,6 +21,8 @@ import Statistics from './pages/Statistics'
 import Questionnaire from './pages/Questionnaire'
 import QuestionnaireViewer from './pages/QuestionnaireViewer'
 import PairAuthorize from './pages/PairAuthorize'
+import CatalogAdmin from './pages/CatalogAdmin'
+import PioneerProgram from './pages/PioneerProgram'
 
 const MASTER_EMAILS = ['azatkb22@gmail.com', 'lajtnert@gmail.com']
 
@@ -34,8 +36,10 @@ const NAV_ALL = [
   { to: '/store',        icon: '🛒', label: 'Store' },
   { to: '/focus',        icon: '🧠', label: 'Focus Test' },
   { to: '/resonances',   icon: '📈', label: 'LR-LT-LJ' },
+  { to: '/pioneer',      icon: '🚀', label: 'Pioneer Program' },
   { to: 'https://mindpw.com/feedback.html', icon: '✉', label: 'Contact', external: true },
   { to: '/store-admin',   icon: '🏪', label: 'Store Admin', masterOnly: true },
+  { to: '/catalog-admin', icon: '🧾', label: 'Catalog', masterOnly: true },
   { to: '/statistics',    icon: '📊', label: 'Statistics', masterOnly: true, ultimateOk: true },
   { to: '/focus-db',      icon: '🗄', label: 'Focus DB', masterOnly: true },
   { to: '/master',       icon: '⬡', label: 'Master',    masterOnly: true },
@@ -182,7 +186,7 @@ function Shell() {
             <div style={{padding:'.3rem .75rem',marginBottom:'.2rem'}}>
               <span style={{fontSize:'.65rem',fontWeight:700,color:'var(--amber)',
                 background:'rgba(255,136,0,.1)',border:'1px solid rgba(255,136,0,.3)',
-                borderRadius:4,padding:'.15rem .5rem'}}>⬡ MASTER</span>
+                borderRadius:4,padding:'.15rem .5rem'}}>⬡ Ultimate</span>
             </div>
           )}
           {user.plan === 'pro' && (
@@ -220,6 +224,8 @@ function Shell() {
           <Route path="/db"           element={master ? <DbViewer /> : <Navigate to="/upload" replace />} />
           <Route path="/users" element={<UserManagement />} />
           <Route path="/pair"          element={<PairAuthorize />} />
+          <Route path="/catalog-admin" element={master ? <CatalogAdmin /> : <Navigate to="/upload" replace />} />
+          <Route path="/pioneer"       element={<PioneerProgram />} />
           <Route path="*"             element={<Navigate to="/upload" replace />} />
         </Routes>
       </main>

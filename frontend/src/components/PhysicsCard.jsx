@@ -59,13 +59,13 @@ const lrExponent = (v) => {
 }
 
 // Brain-photon impossibility calculation (per the agreed physics).
-//   a = 10^11 neurons, f_source = 2000 Hz (literature max neuron frequency)
+//   a = 10^11 neurons, f_source = 800 Hz (literature max neuron frequency)
 //   f_combined = a * f_source = 2e14 Hz   (simultaneous emission, 1 photon each)
 //   t = 10^k / (a * f_source^2)   seconds to accumulate a 10^k Hz-equivalent
 const A_SOURCES = 1e11
-const F_SOURCE  = 2000
+const F_SOURCE  = 800
 const H_EV      = 4.135667696e-15
-const F_COMBINED = A_SOURCES * F_SOURCE            // 2e14 Hz
+const F_COMBINED = A_SOURCES * F_SOURCE            // 8e13 Hz
 const E_COMBINED_EV = F_COMBINED * H_EV            // ≈ 0.827 eV
 
 const brainPhotonTime = (k) => 10 ** k / (A_SOURCES * F_SOURCE * F_SOURCE)
@@ -196,7 +196,7 @@ const VAR_NAMES = {
   phi_total:        'Angular Displacement (θ)',
   omega_max:        'Final Angular Velocity (ω)',
   omega_avg:        'Average Angular Velocity',
-  M_res:            'Braking Torque (τ_f)',
+  M_res:            'Breaking Torque (τ_f)',
   M_motor_accel:    'Driving Torque (τ_d)',
   M_motor_const:    'Constant Motion Torque',
   M_avg_active:     'Average Torque (active)',
@@ -215,28 +215,33 @@ const VAR_NAMES = {
   t_total:          'Time (t)',
 }
 
+// Each row has a minimum plan tier that unlocks it.
+//   pro      → inertia, kinematics, force, energy, power, work
+//   ultimate → everything above PLUS torque + angular momentum
+// (Master always sees every row.) Easy to re-assign a row by changing its tier.
 const VARS = [
-  ['J','kg·m²'],
-  ['alpha','rad/s²'],
-  ['phi_total','rad'],
-  ['omega_max','rad/s'],
-  ['omega_avg','rad/s'],
-  ['M_res','Nm'],
-  ['M_motor_accel','Nm'],
-  ['M_motor_const','Nm'],
-  ['M_avg_active','Nm'],
-  ['F_accel','N'],
-  ['F_const','N'],
-  ['F_avg_active','N'],
-  ['F_max','N'],
-  ['E_kin_max','J'],
-  ['E_kin_const','J'],
-  ['E_kin_avg_active','J'],
-  ['P_peak','W'],
-  ['P_const','W'],
-  ['P_avg','W'],
-  ['W_total','J'],
-  ['L_ang','kg·m²/s'],
+  ['J','kg·m²','pro'],
+  ['alpha','rad/s²','pro'],
+  ['phi_total','rad','pro'],
+  ['omega_max','rad/s','pro'],
+  ['omega_avg','rad/s','pro'],
+  ['F_accel','N','pro'],
+  ['F_const','N','pro'],
+  ['F_avg_active','N','pro'],
+  ['F_max','N','pro'],
+  ['E_kin_max','J','pro'],
+  ['E_kin_const','J','pro'],
+  ['E_kin_avg_active','J','pro'],
+  ['P_peak','W','pro'],
+  ['P_const','W','pro'],
+  ['P_avg','W','pro'],
+  ['W_total','J','pro'],
+  // Ultimate-only: torque + angular momentum
+  ['M_res','Nm','ultimate'],
+  ['M_motor_accel','Nm','ultimate'],
+  ['M_motor_const','Nm','ultimate'],
+  ['M_avg_active','Nm','ultimate'],
+  ['L_ang','kg·m²/s','ultimate'],
 ]
 
 const LABELS = {
@@ -424,7 +429,7 @@ export default function PhysicsCard({ msg, result, jobId, isPaid, showTable = tr
                 <br/>
                 <span style={{color:'var(--muted)'}}>
                   If all 10<sup>11</sup> neurons emitted one photon at once:{' '}
-                  f<sub>combined</sub> = 10<sup>11</sup> × 2000 Hz = <strong>2×10<sup>14</sup> Hz</strong>.
+                  f<sub>combined</sub> = 10<sup>11</sup> × 800 Hz = <strong>8×10<sup>13</sup> Hz</strong>.
                 </span><br/>
                 <span style={{color:'var(--muted)'}}>
                   Time needed to build your +{k}R:{' '}
@@ -447,7 +452,7 @@ export default function PhysicsCard({ msg, result, jobId, isPaid, showTable = tr
           </strong>{' '}
           <span>— higher is better (example: 1L20R &lt; 2L20R, and 1L20R ≪ 1L21R).</span><br/>
           <em style={{color:'var(--green)'}}>This is a special directed intent energy that you have.</em><br/>
-          The brain&apos;s electromagnetic waves do not exceed <strong>2,000 Hz (2.00×10³)</strong>, according to mainstream science.
+          The brain&apos;s electromagnetic waves do not exceed <strong>800 Hz (8.00×10²)</strong>, according to mainstream science.
         </div>
       )}
 
@@ -482,55 +487,72 @@ export default function PhysicsCard({ msg, result, jobId, isPaid, showTable = tr
         </div>
       )}
 
-      {/* 20 variables table — master (lajtnert) only */}
-      {master && result && (result.air || result.ideal) && (
-        <>
-          <button className="btn btn-secondary btn-sm"
-            style={{marginTop:'.6rem'}}
-            onClick={() => setShowPhysTable(v => !v)}>
-            {showPhysTable ? 'Hide table' : 'Show all variables'}
-          </button>
-          {showPhysTable && (
-            <div className="phys-tbl-wrap">
-              <table className="phys-tbl">
-                <thead>
-                  <tr>
-                    <th>#</th><th>Variable</th><th>Unit</th>
-                    <th className="ideal">Ideal</th>
-                    <th className="air">Air</th>
-                    <th className="water">Water</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {medium && (
-                    <tr style={{background:'rgba(0,255,136,.04)'}}>
-                      <td>—</td>
-                      <td style={{fontWeight:600,color:'var(--text)'}}>Medium</td>
-                      <td>—</td>
-                      <td colSpan={3} style={{
-                        color: medium === 'water' ? '#00bcd4' : 'var(--blue)',
-                        fontWeight:700
-                      }}>
-                        {medium.toUpperCase()}
-                      </td>
+      {/* Physics variables table.
+          - Master  : full table, Ideal / Air / Water columns, every row.
+          - Ultimate: the user's own medium only (air OR water), every row.
+          - Pro     : the user's own medium only, pro rows (no torque / ang. momentum).
+          - Basic   : no advanced table. */}
+      {result && (result.air || result.ideal) && (() => {
+        // effective tier
+        let plan = 'basic'
+        try { plan = (JSON.parse(localStorage.getItem('wt_user') || '{}').plan) || 'basic' } catch {}
+        const tier = master ? 'ultimate' : plan
+        if (tier !== 'pro' && tier !== 'ultimate') return null   // basic: no table
+
+        const rows = VARS.filter(([, , t]) => tier === 'ultimate' ? true : t === 'pro')
+        const med  = (medium === 'water' || medium === 'air') ? medium : 'air'
+        const userCase = result[med] || result.air || result.water || {}
+
+        return (
+          <>
+            <button className="btn btn-secondary btn-sm"
+              style={{marginTop:'.6rem'}}
+              onClick={() => setShowPhysTable(v => !v)}>
+              {showPhysTable ? 'Hide table' : 'Show all variables'}
+            </button>
+            {showPhysTable && (
+              <div className="phys-tbl-wrap">
+                <table className="phys-tbl">
+                  <thead>
+                    <tr>
+                      <th>#</th><th>Variable</th><th>Unit</th>
+                      {master ? (
+                        <>
+                          <th className="ideal">Ideal</th>
+                          <th className="air">Air</th>
+                          <th className="water">Water</th>
+                        </>
+                      ) : (
+                        <th className={med === 'water' ? 'water' : 'air'}>
+                          {med === 'water' ? 'Water' : 'Air'}
+                        </th>
+                      )}
                     </tr>
-                  )}
-                  {VARS.map(([v, u], i) => (
-                    <tr key={v}>
-                      <td style={{color:'#334155'}}>{i+1}</td>
-                      <td>{VAR_NAMES[v] || v}</td>
-                      <td style={{color:'#334155'}}>{u}</td>
-                      <td className="ideal">{sciNote(result.ideal?.[v])}</td>
-                      <td className="air">{sciNote(result.air?.[v])}</td>
-                      <td className="water">{sciNote(result.water?.[v])}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
-      )}
+                  </thead>
+                  <tbody>
+                    {rows.map(([v, u], i) => (
+                      <tr key={v}>
+                        <td style={{color:'#334155'}}>{i+1}</td>
+                        <td>{VAR_NAMES[v] || v}</td>
+                        <td style={{color:'#334155'}}>{u}</td>
+                        {master ? (
+                          <>
+                            <td className="ideal">{sciNote(result.ideal?.[v])}</td>
+                            <td className="air">{sciNote(result.air?.[v])}</td>
+                            <td className="water">{sciNote(result.water?.[v])}</td>
+                          </>
+                        ) : (
+                          <td className={med === 'water' ? 'water' : 'air'}>{sciNote(userCase[v])}</td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )
+      })()}
 
       {/* Brain-photon impossibility — explanation popup */}
       {showBrainInfo && (() => {
@@ -549,14 +571,14 @@ export default function PhysicsCard({ msg, result, jobId, isPaid, showTable = tr
                 <p style={{marginBottom:'.6rem'}}>
                   The human brain has about <strong>10<sup>11</sup> neurons</strong>. According to the
                   literature, the highest frequency a single neuron can emit is about{' '}
-                  <strong>2000 Hz</strong>.
+                  <strong>800 Hz</strong>.
                 </p>
                 <p style={{marginBottom:'.6rem'}}>
                   <strong>Simultaneous emission</strong> — if every neuron emitted one photon at the same instant:
                 </p>
                 <div style={{background:'var(--bg3)',borderRadius:8,padding:'.6rem .8rem',
                   fontFamily:'var(--font-mono)',fontSize:'.82rem',marginBottom:'.6rem'}}>
-                  f<sub>combined</sub> = a × f<sub>source</sub> = 10<sup>11</sup> × 2000 Hz = <strong>2×10<sup>14</sup> Hz</strong><br/>
+                  f<sub>combined</sub> = a × f<sub>source</sub> = 10<sup>11</sup> × 800 Hz = <strong>8×10<sup>13</sup> Hz</strong><br/>
                   E<sub>combined</sub> ≈ {E_COMBINED_EV.toFixed(4)} eV
                 </div>
                 <p style={{marginBottom:'.6rem'}}>
@@ -567,7 +589,7 @@ export default function PhysicsCard({ msg, result, jobId, isPaid, showTable = tr
                 <div style={{background:'var(--bg3)',borderRadius:8,padding:'.6rem .8rem',
                   fontFamily:'var(--font-mono)',fontSize:'.82rem',marginBottom:'.6rem'}}>
                   t = 10<sup>{k}</sup> / (a × f<sub>source</sub><sup>2</sup>)
-                  {' '}= 10<sup>{k}</sup> / (10<sup>11</sup> × 2000<sup>2</sup>)<br/>
+                  {' '}= 10<sup>{k}</sup> / (10<sup>11</sup> × 800<sup>2</sup>)<br/>
                   = <strong style={{color:'var(--amber)'}}>{t != null ? fmtDuration(t) : '—'}</strong>
                 </div>
                 <p style={{color:'var(--muted)',fontSize:'.8rem'}}>

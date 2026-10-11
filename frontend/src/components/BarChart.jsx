@@ -28,7 +28,7 @@ export default function BarChart({ barData, isPaid }) {
     ]
 
     const nMetrics = METRICS.length
-    const pad = { l: 48, r: 12, t: 24, b: 40 }
+    const pad = { l: 48, r: 12, t: 32, b: 40 }
     const groupW = (W - pad.l - pad.r) / nMetrics
     const barCount = 2 + 1 + (isPaid ? 1 : 0) // last2 + user_avg + group_avg
     const barW = Math.max(4, (groupW * 0.75) / barCount)
@@ -54,9 +54,9 @@ export default function BarChart({ barData, isPaid }) {
       const cH = H - pad.t - pad.b
       const x0  = pad.l + mi * groupW
 
-      // Grid line + metric label
-      ctx.fillStyle = '#334155'; ctx.font = '11px DM Mono'
-      ctx.fillText(m.label, x0 + 2, pad.t - 6)
+      // Grid line + metric label (bright + bold so it's clearly readable)
+      ctx.fillStyle = '#eaf1f8'; ctx.font = 'bold 14px system-ui,sans-serif'
+      ctx.fillText(m.label, x0 + 2, pad.t - 8)
       ctx.strokeStyle = '#1e2a38'; ctx.lineWidth = 1
       ctx.beginPath(); ctx.moveTo(x0, pad.t); ctx.lineTo(x0, H - pad.b); ctx.stroke()
 
@@ -106,7 +106,7 @@ export default function BarChart({ barData, isPaid }) {
     legendItems.forEach(item => {
       ctx.fillStyle = COLORS[item.key]
       ctx.fillRect(lx, H - 18, 10, 10)
-      ctx.fillStyle = '#8a9bb0'; ctx.font = '11px system-ui,sans-serif'
+      ctx.fillStyle = '#d6e0ea'; ctx.font = 'bold 12px system-ui,sans-serif'
       ctx.fillText(item.label, lx + 13, H - 9)
       lx += 70
     })

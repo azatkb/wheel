@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="https://mindpw.com/favicon.ico" />
+<title>Spectrum Series — Live Allocation Status</title>
+<style>
+  :root{
+    --bg:#0d1117; --card:#161b22; --border:#26303c; --text:#e6edf3;
+    --muted:#8b98a5; --green:#00c271; --red:#ff5555; --amber:#ff9500;
+    --box:#1c2530; --field:#0d1117; --accent:#44aaff;
+  }
+  [data-theme="light"]{
+    --bg:#f2f4f7; --card:#ffffff; --border:#d7dde5; --text:#1a2330;
+    --muted:#5a6b7b; --box:#e9edf2; --field:#ffffff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--text);transition:background .2s,color .2s;line-height:1.6}
+  .wrap{max-width:860px;margin:0 auto;padding:1.5rem 1.1rem 4rem}
+  .topbar{display:flex;justify-content:space-between;align-items:center;padding:.5rem 0 1rem}
+  .logo{height:34px;object-fit:contain}
+  .toggle{background:var(--box);border:1px solid var(--border);color:var(--text);
+    border-radius:20px;padding:.35rem .8rem;font-size:.8rem;cursor:pointer}
+  h1{font-size:2rem;line-height:1.15;margin:.5rem 0 .3rem;letter-spacing:-.01em}
+  .hero-sub{font-size:1.15rem;font-weight:700;color:var(--amber);margin:.2rem 0 .6rem}
+  .claim{font-size:1.05rem;font-weight:700;margin:.4rem 0}
+  .claim b{color:var(--green)}
+  p{color:var(--text)} .muted{color:var(--muted)}
+  a{color:var(--accent);text-decoration:none}
+
+  .included{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.2rem 1.3rem;margin:1.3rem 0}
+  .included h2{font-size:1.05rem;margin:0 0 .7rem;color:var(--amber)}
+  .inc-list{list-style:none;margin:0;padding:0}
+  .inc-list li{padding:.4rem 0;border-bottom:1px solid var(--border);font-size:.9rem}
+  .inc-list li:last-child{border-bottom:none}
+  .inc-list .v{color:var(--green);font-weight:600}
+  .value-offer{background:var(--box);border-radius:10px;padding:.8rem 1rem;margin-top:.8rem;font-size:.9rem}
+  .value-offer .big{color:var(--green);font-weight:800;font-size:1.05rem}
+  .value-offer .hl{color:var(--accent);font-weight:600;background:rgba(68,170,255,.12);
+    padding:.05em .25em;border-radius:4px}
+
+  .platforms{margin:.4rem 0 1rem;padding-left:1.1rem}
+  .platforms li{margin:.2rem 0}
+
+  /* progress bar */
+  .progress-card{background:#0b0e13;border:1px solid var(--border);border-radius:12px;padding:1rem 1.2rem;margin:1.3rem 0}
+  [data-theme="light"] .progress-card{background:#1a2330}
+  .progress-label{font-size:.72rem;color:var(--muted);margin-bottom:.5rem;font-family:monospace}
+  .progress-mono{font-family:'Courier New',monospace;font-size:.95rem;color:#e6edf3;white-space:nowrap;overflow-x:auto}
+  .progress-mono .fill{color:var(--amber)} .progress-mono .empty{color:#3a4453}
+
+  /* allocation long table */
+  .status-legend{display:flex;gap:1.2rem;margin:.5rem 0 .8rem;font-size:.85rem}
+  .dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:.4rem;vertical-align:middle}
+  .dot.g{background:var(--green)} .dot.r{background:var(--red)}
+  .alloc-table{width:100%;border-collapse:collapse;margin:.5rem 0 1.5rem;font-size:.9rem}
+  .alloc-table th{text-align:left;padding:.6rem .7rem;color:var(--muted);font-size:.72rem;
+    text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid var(--border)}
+  .alloc-table td{padding:.6rem .7rem;border-bottom:1px solid var(--border)}
+  .alloc-table tr.taken{opacity:.65}
+  .alloc-table tr.clickable{cursor:pointer;transition:background .12s}
+  .alloc-table tr.clickable:hover{background:var(--box)}
+  .alloc-table tr.sel{background:rgba(0,194,113,.1)}
+  .serial{font-weight:700}
+  .st-al{color:var(--red)} .st-av{color:var(--green)}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.3rem;margin:1.3rem 0}
+  .card h2{font-size:1.15rem;margin:.1rem 0 .8rem}
+  label.fl{display:block;font-size:.8rem;color:var(--muted);margin:.7rem 0 .25rem}
+  input,textarea{width:100%;background:var(--field);border:1px solid var(--border);color:var(--text);
+    border-radius:9px;padding:.55rem .7rem;font-size:.92rem;font-family:inherit}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:.7rem}
+  .terms{background:var(--box);border:1px solid var(--border);border-radius:10px;padding:1rem;margin:1rem 0;font-size:.9rem}
+  .terms h3{margin:.2rem 0 .4rem;font-size:.98rem}
+  .ack{display:flex;gap:.6rem;align-items:flex-start;margin:.9rem 0;font-size:.86rem}
+  .ack input{width:18px;height:18px;margin-top:2px;accent-color:var(--green);flex-shrink:0}
+  .pay-btn{width:100%;margin-top:1rem;background:var(--green);color:#04140c;border:none;border-radius:11px;
+    padding:.85rem;font-size:1rem;font-weight:800;cursor:pointer;transition:opacity .15s}
+  .pay-btn:disabled{opacity:.45;cursor:not-allowed}
+  .msg{margin-top:1rem;padding:.7rem .85rem;border-radius:9px;font-size:.88rem;display:none}
+  .msg.ok{display:block;background:rgba(0,194,113,.12);border:1px solid rgba(0,194,113,.4);color:var(--green)}
+  .msg.err{display:block;background:rgba(255,80,80,.1);border:1px solid rgba(255,80,80,.35);color:var(--red)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <img class="logo" src="https://mindpw.com/black.png" alt="Lajtner Resonance" onerror="this.style.display='none'"/>
+    <button class="toggle" id="themeBtn">🌙 Night</button>
+  </div>
+
+  <!-- PART 1: HERO -->
+  <h1>Spectrum Series — Live Allocation Status</h1>
+  <div class="hero-sub">LAJTNER Scope — SPECTRUM SERIES</div>
+  <p>Crafted with high-precision 3D-printed polymers in custom colorways and toughened Gorilla Glass or Brass.
+    Strictly limited to 500 numbered pieces worldwide. By acquiring the Spectrum Series of the Lajtner Scope,
+    you do not simply own a masterpiece of modern engineering—you claim your place at the forefront of a new
+    scientific wave. Enjoy and support the next scientific breakthrough. A privilege unlike any before—this is
+    your historic opportunity.</p>
+  <div class="claim">Claim one of the individually numbered Spectrum Series units (<b>$499 USD</b>)</div>
+
+  <!-- WHAT IS INCLUDED -->
+  <div class="included">
+    <h2>WHAT IS INCLUDED WITH YOUR SPECTRUM UNIT ($454 TOTAL ADDED VALUE)</h2>
+    <ul class="inc-list">
+      <li>✅ <strong>6 Months Free Access to Lajtner Code Ultimate</strong> — full platform access included <span class="v">($294 value)</span></li>
+      <li>🎬 <strong>FREE App Setup Video Guide</strong> — master the app interface step-by-step <span class="v">($10 value)</span></li>
+      <li>🎬 <strong>FREE Scope Operation Video Guide</strong> — learn how to calibrate and handle the Lajtner Scope <span class="v">($25 value)</span></li>
+      <li>📄 <strong>FREE Lajtner Resonance Phenomenon PDF Guide</strong> — comprehensive documentation of the theory and practical applications with real-world examples <span class="v">($50 value)</span></li>
+      <li>💳 <strong>15% Credit</strong> — applied directly toward your next Lajtner Scope <span class="v">(~$75 value)</span>. The maximum discount applicable is limited to the retail price of the purchased device.</li>
+    </ul>
+    <div class="value-offer">
+      <strong>THE SPECTRUM VALUE OFFER:</strong> <span class="hl">For your $499 USD</span> investment, <span class="hl">you receive</span> the core hardware ($499)
+      plus $454 in combined bonuses and future credits (~$75 credit + $10 video + $25 video + $50 PDF + $294 Ultimate = $454).
+      By securing your numbered Spectrum Series unit, <span class="hl">you receive</span>
+      <span class="big">$953 in total value.</span>
+    </div>
+
+  <!-- PROGRESS BAR -->
+  <div class="progress-card">
+    <div class="progress-label">Plaintext</div>
+    <div class="progress-mono" id="progress">[ ................................................ ] 0 / 50 SPECTRUM UNITS ALLOCATED</div>
+  </div>
+
+  <!-- LONG TABLE -->
+  <div class="status-legend">
+    <span><span class="dot g"></span>Available</span>
+    <span><span class="dot r"></span>Allocated</span>
+  </div>
+  <input id="unitSearch" placeholder="🔍 Jump to a number (e.g. 123)…" class="form-input"
+    style="max-width:280px;margin:.3rem 0 .8rem" oninput="filterUnits()" />
+  <table class="alloc-table">
+    <thead><tr><th>Unit / Serial</th><th>Status</th><th>Notes</th><th></th></tr></thead>
+    <tbody id="tbody"><tr><td colspan="4" class="muted">Loading units…</td></tr></tbody>
+  </table>
+
+  <!-- RESERVE FORM -->
+  <div class="card" id="reserveCard" style="display:none">
+    <h2>Reserve <span id="selLabel" style="color:var(--green)">#—</span></h2>
+    <label class="fl">Full name (billing) *</label>
+    <input id="name" placeholder="Your full name" autocomplete="name" />
+    <label class="fl">Email *</label>
+    <input id="email" type="email" placeholder="you@example.com" autocomplete="email" oninput="checkCredit()" />
+    <div id="creditNote" style="display:none;margin-top:.5rem;padding:.5rem .7rem;border-radius:8px;background:rgba(0,194,113,.12);border:1px solid rgba(0,194,113,.4);color:var(--green);font-size:.85rem"></div>
+    <div class="row2">
+      <div><label class="fl">Shipping address *</label><input id="s_addr" placeholder="Street, number" autocomplete="street-address" /></div>
+      <div><label class="fl">City *</label><input id="s_city" placeholder="City" /></div>
+    </div>
+    <div class="row2">
+      <div><label class="fl">Country *</label><input id="s_country" placeholder="Country" autocomplete="country-name" /></div>
+      <div><label class="fl">ZIP / Postcode *</label><input id="s_zip" placeholder="ZIP" autocomplete="postal-code" /></div>
+    </div>
+
+    <!-- PART 2: TERMS -->
+    <div class="terms">
+      <h3>Membership &amp; Terms</h3>
+      <p class="muted" style="font-size:.85rem">Please review and confirm before proceeding to secure payment.</p>
+      <h3 style="margin-top:.8rem">Community Integrity Policy</h3>
+      <p class="muted" style="font-size:.84rem">Lajtner Resonance reserves the absolute right to terminate app access
+        and revoke program benefits for any account engaged in malicious activity, bad-faith trolling, or intentional disruption.</p>
+    </div>
+
+    <div class="ack">
+      <input type="checkbox" id="ack2" />
+      <label for="ack2">I accept the <strong>Community Integrity Policy</strong>. I agree to maintain constructive
+        engagement and acknowledge that trolling or malicious conduct will result in the immediate revocation of app
+        access and membership privileges.</label>
+    </div>
+
+    <button class="pay-btn" id="payBtn" disabled>Proceed to secure payment</button>
+    <div id="result" class="msg"></div>
+    <p class="muted" style="font-size:.75rem;text-align:center;margin-top:.8rem">
+      $499 USD + shipping cost will be charged securely via Stripe.</p>
+  </div>
+</div>
+
+<script>
+  const API = "https://wheelttt.xyz";
+  const SERIES = "spectrum";
+  let selected = null;
+
+  const themeBtn = document.getElementById("themeBtn");
+  function setTheme(t){
+    document.documentElement.setAttribute("data-theme", t==="light"?"light":"dark");
+    themeBtn.textContent = t==="light" ? "☀️ Day" : "🌙 Night";
+    try{ localStorage.setItem("spectrum_theme", t) }catch{}
+  }
+  themeBtn.onclick=()=>{const c=document.documentElement.getAttribute("data-theme")==="light"?"light":"dark";setTheme(c==="light"?"dark":"light")};
+  setTheme((()=>{try{return localStorage.getItem("spectrum_theme")}catch{return null}})()||"dark");
+
+  function progressBar(allocated, total){
+    const width=48, filled=Math.round(width*allocated/total);
+    const bar='█'.repeat(filled), empty='.'.repeat(width-filled);
+    return `[ <span class="fill">${bar}</span><span class="empty">${empty}</span> ] ${allocated} / ${total} SPECTRUM UNITS ALLOCATED`;
+  }
+
+  let ALL_UNITS=[];
+function filterUnits(){
+  const q=(document.getElementById("unitSearch").value||"").trim();
+  renderUnits(q?ALL_UNITS.filter(u=>String(u.number).includes(q)):ALL_UNITS);
+}
+function renderUnits(units){
+  const tb=document.getElementById("tbody"); tb.innerHTML="";
+  units.forEach(u=>{
+    const taken=u.status!=="available";
+    const tr=document.createElement("tr");
+    tr.className=taken?"taken":"clickable";
+    tr.innerHTML=`
+      <td class="serial">${u.serial}</td>
+      <td class="${taken?'st-al':'st-av'}"><span class="dot ${taken?'r':'g'}"></span>${taken?'Allocated':'Available'}</td>
+      <td class="muted">${u.notes||''}</td>
+      <td>${taken?'':'<span style="color:var(--green);font-size:.8rem">Select →</span>'}</td>`;
+    if(!taken) tr.onclick=()=>selectUnit(u, tr);
+    tb.appendChild(tr);
+  });
+}
+let creditActive=0;
+async function checkCredit(){
+  const email=document.getElementById("email").value.trim();
+  const note=document.getElementById("creditNote");
+  if(!email||!email.includes("@")){note.style.display="none";creditActive=0;return;}
+  try{
+    const r=await fetch(`${API}/allocation/credit-check?email=${encodeURIComponent(email)}&series=spectrum`);
+    const d=await r.json();
+    if(d.has_credit){
+      creditActive=d.credit;
+      note.style.display="block";
+      note.textContent=`🎉 You have a $${d.credit} Pioneer credit — it will be applied at checkout.`;
+    }else{note.style.display="none";creditActive=0;}
+  }catch{note.style.display="none";}
+}
+async function loadUnits(){
+    const tb=document.getElementById("tbody");
+    try{
+      const r=await fetch(`${API}/allocation/${SERIES}`);
+      const d=await r.json();
+      document.getElementById("progress").innerHTML=progressBar(d.allocated||0, d.total);
+      ALL_UNITS=d.units; renderUnits(ALL_UNITS);
+    }catch(e){ tb.innerHTML='<tr><td colspan="4" class="muted">Could not load units. Please refresh.</td></tr>'; }
+  }
+
+  function selectUnit(u, tr){
+    selected=u.number;
+    document.querySelectorAll(".alloc-table tr.sel").forEach(x=>x.classList.remove("sel"));
+    tr.classList.add("sel");
+    document.getElementById("reserveCard").style.display="block";
+    document.getElementById("selLabel").textContent=u.serial;
+    document.getElementById("reserveCard").scrollIntoView({behavior:"smooth"});
+    updatePayBtn();
+  }
+
+  const fields=["name","email","s_addr","s_city","s_country","s_zip"];
+  function updatePayBtn(){
+    const a2=document.getElementById("ack2").checked;
+    const filled=fields.every(f=>document.getElementById(f).value.trim());
+    document.getElementById("payBtn").disabled=!(a2&&filled&&selected);
+  }
+  ["ack2",...fields].forEach(id=>document.getElementById(id).addEventListener("input",updatePayBtn));
+
+  document.getElementById("payBtn").onclick=async()=>{
+    const btn=document.getElementById("payBtn"), result=document.getElementById("result");
+    btn.disabled=true; btn.textContent="Redirecting to payment…";
+    const payload={series:SERIES,number:selected,
+      name:document.getElementById("name").value.trim(),
+      email:document.getElementById("email").value.trim(),
+      shipping:{address:document.getElementById("s_addr").value.trim(),
+        city:document.getElementById("s_city").value.trim(),
+        country:document.getElementById("s_country").value.trim(),
+        zip:document.getElementById("s_zip").value.trim()}};
+    try{
+      const r=await fetch(`${API}/allocation/checkout`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      const d=await r.json();
+      if(r.ok&&d.url){window.location.href=d.url;}
+      else{result.className="msg err";result.textContent=d.detail||"Could not start payment.";btn.disabled=false;btn.textContent="Proceed to secure payment";loadUnits();}
+    }catch(e){result.className="msg err";result.textContent="Payment could not be started. Please try again.";btn.disabled=false;btn.textContent="Proceed to secure payment";}
+  };
+
+  loadUnits();
+</script>
+</body>
+</html>

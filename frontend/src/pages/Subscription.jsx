@@ -70,7 +70,7 @@ const PLANS = [
     monthly_label: '⚡ Upgrade to Ultimate 1.0 — €49.00/mo',
     features: [
       'Everything in Pro 1.0',
-      'Full 20 physics variables',
+      'Full physics set — force, torque & angular momentum',
       'Personal focus analysis',
       'Advanced brain-wave correlation',
       'Priority support',
