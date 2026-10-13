@@ -173,13 +173,13 @@ export default function Subscription() {
         <span style={{fontSize:'.82rem',color:'var(--muted)'}}>Current plan:</span>
         <span style={{
           padding:'.2rem .7rem',borderRadius:20,fontWeight:700,fontSize:'.82rem',
-          background: user.plan==='pro' ? 'rgba(0,255,136,.15)' : 'rgba(100,116,139,.15)',
-          color: user.plan==='pro' ? 'var(--green)' : '#94a3b8',
-          border: `1px solid ${user.plan==='pro' ? 'var(--green)' : '#334155'}`,
+          background: user.plan==='ultimate' ? 'rgba(176,122,12,.18)' : user.plan==='pro' ? 'rgba(0,255,136,.15)' : 'rgba(100,116,139,.15)',
+          color: user.plan==='ultimate' ? '#e0a830' : user.plan==='pro' ? 'var(--green)' : '#94a3b8',
+          border: `1px solid ${user.plan==='ultimate' ? '#B07A0C' : user.plan==='pro' ? 'var(--green)' : '#334155'}`,
         }}>
-          {user.plan==='pro' ? '⭐ Pro' : 'Basic'}
+          {user.plan==='ultimate' ? '◆ Ultimate' : user.plan==='pro' ? '⭐ Pro' : 'Basic'}
         </span>
-        {user.plan==='pro' && (
+        {(user.plan==='pro' || user.plan==='ultimate') && (
           <button className="btn btn-danger btn-sm"
             onClick={cancelSubscription} disabled={cancelling}>
             {cancelling ? 'Cancelling...' : 'Cancel subscription'}

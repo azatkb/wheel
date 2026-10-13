@@ -94,41 +94,41 @@
   <!-- PART 1: HERO -->
   <h1>Pioneer Series — Live Allocation Status</h1>
   <div class="hero-sub">BECOME PART OF HISTORY: JOIN THE PIONEER ELITE</div>
-  <div class="claim">Claim One of Only 50 Individually Numbered Pioneer Units (<b>$249 USD</b>)</div>
+  <div class="claim">Claim One of Only 50 Individually Numbered Pioneer Units (<b id="seriesPrice">$249 USD</b>)</div>
   <p>Test the technology, shape the app, and secure your place in a groundbreaking movement.</p>
   <p class="muted">By securing a Pioneer unit, you are not merely purchasing hardware—you are stepping into an
     exclusive elite of early adopters who are laying the foundation for a new historical milestone in
     measurement technology.</p>
 
-  <!-- WHAT IS INCLUDED -->
-  <div class="included">
-    <h2>WHAT IS INCLUDED WITH YOUR PIONEER UNIT ($210 TOTAL ADDED VALUE)</h2>
-    <ul class="inc-list">
-      <li>✅ <strong>6 Months Free Access to Lajtner Code Ultimate</strong> — full platform access included <span class="v">($249/year value)</span></li>
-      <li>🎬 <strong>FREE App Setup Video Guide</strong> — master the app interface step-by-step <span class="v">($10 value)</span></li>
-      <li>🎬 <strong>FREE Scope Operation Video Guide</strong> — learn how to calibrate and handle the Lajtner Scope <span class="v">($25 value)</span></li>
-      <li>📄 <strong>FREE Lajtner Resonance Phenomenon PDF Guide</strong> — comprehensive documentation of the theory and practical applications with real-world examples <span class="v">($50 value)</span></li>
-      <li>💳 <strong>$125 USD Credit</strong> — applied directly toward your next numbered Collector Edition series</li>
-    </ul>
-    <div class="value-offer">
-      <strong>THE PIONEER VALUE OFFER:</strong> <span class="hl">For your $249 USD</span> investment, <span class="hl">you receive</span> the core hardware ($249)
-      plus $210 in combined bonuses and future credits ($125 credit + $10 video + $25 video + $50 PDF = $210).
-      By securing your numbered Pioneer Series unit for just $249 USD, <span class="hl">you receive</span>
-      <span class="big">$459 in total value.</span>
-    </div>
+  <!-- WHAT IS INCLUDED (live from the editable catalog / Excel) -->
+  <div class="included" id="incCard" style="display:none">
+    <h2 id="incTitle">WHAT IS INCLUDED WITH YOUR PIONEER UNIT</h2>
+    <ul class="inc-list" id="incList"></ul>
   </div>
 
-  <p class="muted">To accelerate our development and share real-world data, we invite our Pioneers to share their
-    weekly insights, raw measurements, or user feedback at least once a week on any of the following platforms:</p>
-  <ul class="platforms muted">
-    <li>r/Biohacking (Reddit)</li>
-    <li>r/QuantifiedSelf (Reddit)</li>
-    <li>Biohacking &amp; Longevity (Facebook Group)</li>
-    <li>Biohacking Collective (Discord Server)</li>
-  </ul>
-  <p class="muted">While public posting is strictly voluntary, your active participation is invaluable to us.
-    As a token of our gratitude, Pioneers who actively share their experiences receive the
-    <strong>$125 USD credit</strong> toward their next Collector Edition.</p>
+  <!-- PIONEER PROGRAM — share & unlock the Keynote -->
+  <div class="included">
+    <h2>THE PIONEER PROGRAM — SHARE &amp; UNLOCK THE KEYNOTE</h2>
+    <p class="muted" style="font-size:.9rem;margin:.2rem 0 .6rem"><strong style="color:var(--text)">The invitation.</strong>
+      Within 30 days of receiving your device, post one honest experience report on any public platform you choose
+      (e.g. a Reddit community, YouTube, your blog, X, a forum). Then email us the link.</p>
+    <p class="muted" style="font-size:.9rem;margin:.2rem 0 .8rem"><strong style="color:var(--text)">Your thank-you.</strong>
+      Once we receive your link, the Keynote “Thought Force: The Gentlest Coercion” is unlocked for you free of charge.
+      It is our gift.</p>
+    <ul class="inc-list">
+      <li><strong>Honesty.</strong> Your report must reflect your genuine experience — positive, negative or mixed.
+        The reward does not depend on what you say.</li>
+      <li><strong>Required disclosure.</strong> Include this line in your post: <em>“Disclosure: I own a Pioneer Series
+        device and received the Keynote as a gift free for sharing my experience.”</em></li>
+      <li><strong>Community rules.</strong> Follow the rules of the community where you post. No duplicate posts,
+        no link spam, no coordinated voting.</li>
+      <li><strong>No claims.</strong> Describe what you personally experienced. No medical or health claims. It is
+        absolutely prohibited to present the product as a medical device, an assistive device, or a medical examination
+        tool. Such a representation is incorrect, and the author bears the legal consequences arising from it.</li>
+      <li><strong>If you don’t post.</strong> Nothing changes. Your device, software, and all Pioneer benefits remain
+        fully yours.</li>
+    </ul>
+  </div>
 
   <!-- PROGRESS BAR -->
   <div class="progress-card">
@@ -164,26 +164,25 @@
 
     <!-- PART 2: TERMS -->
     <div class="terms">
-      <h3>Pioneer Elite Membership &amp; Terms</h3>
+      <h3>Pioneer Membership &amp; Terms</h3>
       <p class="muted" style="font-size:.85rem">Please review and confirm the following before proceeding to secure payment.</p>
-      <h3 style="margin-top:.8rem">1 · $125 Credit Eligibility</h3>
-      <p class="muted" style="font-size:.84rem">To unlock your $125 credit toward the upcoming Spectrum or Founder Series,
-        you must post your insights or raw data at least <strong>four (4) times</strong> across our recognized channels
-        (r/Biohacking, r/QuantifiedSelf, Biohacking &amp; Longevity, or Biohacking Collective) and email the post links
-        to us so we can track your feedback.</p>
-      <h3 style="margin-top:.8rem">2 · Community Integrity Policy</h3>
+      <h3 style="margin-top:.8rem">1 · Pioneer Program (voluntary)</h3>
+      <p class="muted" style="font-size:.84rem">Sharing an experience report is voluntary. If you choose to post one honest
+        report within 30 days and email us the link, the Keynote “Thought Force: The Gentlest Coercion” is unlocked free as
+        our gift. If you don’t post, nothing changes — your device, software and all Pioneer benefits remain fully yours.</p>
+      <h3 style="margin-top:.8rem">2 · No medical claims</h3>
+      <p class="muted" style="font-size:.84rem">The Lajtner Scope is not a medical device, an assistive device, or a medical
+        examination tool, and must not be presented as one. Any such representation is incorrect, and the author bears the
+        legal consequences arising from it.</p>
+      <h3 style="margin-top:.8rem">3 · Community Integrity Policy</h3>
       <p class="muted" style="font-size:.84rem">Lajtner Resonance reserves the absolute right to terminate app access
         and revoke program benefits for any account engaged in malicious activity, bad-faith trolling, or intentional disruption.</p>
-      <h3 style="margin-top:.8rem">3 · Direct Beta App &amp; Lajtner Scope Feedback</h3>
-      <p class="muted" style="font-size:.84rem">All detailed feedback, bug reports, and suggestions about the beta app
-        and Pioneer unit should be submitted via the “Beta feedback” link in your portal.</p>
     </div>
 
     <div class="ack">
       <input type="checkbox" id="ack1" />
-      <label for="ack1">I understand and accept the <strong>$125 Credit Terms</strong>. I acknowledge that public posting
-        is voluntary, but completing at least 4 community posts and emailing the links is strictly required to receive the
-        $125 credit for future series.</label>
+      <label for="ack1">I understand the <strong>Pioneer Program</strong> is voluntary, and I will not present the Lajtner
+        Scope as a medical, assistive, or diagnostic device in any report I choose to share.</label>
     </div>
     <div class="ack">
       <input type="checkbox" id="ack2" />
@@ -195,7 +194,7 @@
     <button class="pay-btn" id="payBtn" disabled>Proceed to secure payment</button>
     <div id="result" class="msg"></div>
     <p class="muted" style="font-size:.75rem;text-align:center;margin-top:.8rem">
-      $249 USD + shipping cost will be charged securely via Stripe.</p>
+      <span id="seriesPriceNote">$249 USD</span> + shipping cost will be charged securely via Stripe.</p>
   </div>
 </div>
 
@@ -225,6 +224,11 @@
       const r=await fetch(`${API}/allocation/${SERIES}`);
       const d=await r.json();
       document.getElementById("progress").innerHTML=progressBar(d.allocated||0, d.total);
+      if(d.price!=null){
+        const p='$'+Number(d.price).toLocaleString('en-US')+' USD';
+        const e1=document.getElementById('seriesPrice'); if(e1) e1.textContent=p;
+        const e2=document.getElementById('seriesPriceNote'); if(e2) e2.textContent=p;
+      }
       tb.innerHTML="";
       d.units.forEach(u=>{
         const taken=u.status!=="available";
@@ -278,6 +282,29 @@
   };
 
   loadUnits();
+
+  // "WHAT IS INCLUDED" is read live from the editable catalog (the Excel/PDF
+  // the client maintains), so it never goes stale against the admin panel.
+  (async function(){
+    try{
+      const r = await fetch(`${API}/catalog/value-summary`);
+      const d = await r.json();
+      const pio = (d.series||[]).find(s => (s.id||s.name||'').toLowerCase().includes('pioneer'));
+      if(pio && Array.isArray(pio.included) && pio.included.length){
+        const ul = document.getElementById('incList');
+        pio.included.forEach(it=>{
+          const li=document.createElement('li');
+          li.innerHTML = `✅ ${it.label} <span class="v">($${Number(it.value).toLocaleString('en-US')} value)</span>`;
+          ul.appendChild(li);
+        });
+        if(pio.total_benefits){
+          document.getElementById('incTitle').textContent =
+            `WHAT IS INCLUDED WITH YOUR PIONEER UNIT ($${Number(pio.total_benefits).toLocaleString('en-US')} TOTAL ADDED VALUE)`;
+        }
+        document.getElementById('incCard').style.display='block';
+      }
+    }catch(e){ /* included card stays hidden if catalog is unavailable */ }
+  })();
 </script>
 </body>
 </html>

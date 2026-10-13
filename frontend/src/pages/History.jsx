@@ -4,9 +4,15 @@ import { API } from '../config'
 import PhysicsCard from '../components/PhysicsCard'
 import * as XLSX from 'xlsx'
 
+const MASTER_EMAILS = ['azatkb22@gmail.com', 'lajtnert@gmail.com']
+const isMaster = e => MASTER_EMAILS.includes((e || '').toLowerCase())
+
 export default function History() {
   const { user } = useAuth()
   if (!user) return null
+  // Video download is an Ultimate (and master) benefit. Pro/Basic can replay &
+  // watch unlimited, but cannot download the video file.
+  const canDownload = isMaster(user?.email) || user?.plan === 'ultimate'
   const [jobs, setJobs] = useState([])
   const [filter, setFilter] = useState('')
   const [expanded, setExpanded] = useState(null)
@@ -191,11 +197,17 @@ function TrackDetail({ id, job, data }) {
       )}
 
       <div style={{display:'flex',gap:'.5rem',flexWrap:'wrap',marginTop:'.5rem'}}>
-        {/* Download only for uploaded videos, not streams */}
-        {job?.source_type !== 'stream' && (
+        {/* Download only for uploaded videos, not streams — and only on Ultimate */}
+        {job?.source_type !== 'stream' && canDownload && (
           <a href={`${API}/download/${id}`}>
             <button className="btn btn-primary btn-sm">↓ Download Video</button>
           </a>
+        )}
+        {job?.source_type !== 'stream' && !canDownload && (
+          <button className="btn btn-secondary btn-sm" disabled
+            title="Video download is available on the Ultimate plan. You can replay and watch unlimited on Pro.">
+            ▶ Watch / Replay only
+          </button>
         )}
         {job?.source_type === 'stream' && (
           <button className="btn btn-secondary btn-sm" disabled

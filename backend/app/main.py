@@ -690,26 +690,58 @@ STRIPE_SECRET_KEY     = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE_ID       = os.environ.get("STRIPE_PRICE_ID", "")  # monthly Pro price
 
+# Subscription prices (editable in laj_config: sub_pro_month/year, sub_ult_month/year,
+# sub_currency). Fallbacks match the current price cards.
+_SUB_PRICE_FALLBACK = {
+    ("pro", "month"): 19.90, ("pro", "year"): 149.90,
+    ("ultimate", "month"): 49.00, ("ultimate", "year"): 499.90,
+}
+def _sub_price(sb, plan, billing):
+    key = f"sub_{'ult' if plan == 'ultimate' else 'pro'}_{'year' if billing == 'year' else 'month'}"
+    try:
+        v = _cfg(sb, key, None)
+        amt = float(v) if v not in (None, "") else _SUB_PRICE_FALLBACK[(plan, billing)]
+    except Exception:
+        amt = _SUB_PRICE_FALLBACK[(plan, billing)]
+    currency = (_cfg(sb, "sub_currency", "eur") or "eur").lower()
+    return amt, currency
+
 @app.post("/stripe/create-checkout")
 async def stripe_create_checkout(request: Request):
-    """Create Stripe checkout session for Pro plan."""
+    """Create a Stripe subscription checkout for the Pro OR Ultimate plan.
+    The chosen plan + billing cycle are carried in metadata (on both the session
+    and the subscription) so the webhook / check-session set the correct plan."""
     if not STRIPE_SECRET_KEY:
         raise HTTPException(503, "Stripe not configured")
     body = await request.json()
-    email = (body.get("email") or "").strip().lower()
+    email   = (body.get("email") or "").strip().lower()
+    plan    = (body.get("plan") or "pro").strip().lower()
+    billing = (body.get("billing") or "month").strip().lower()
+    if plan not in ("pro", "ultimate"):   plan = "pro"
+    if billing not in ("month", "year"):  billing = "month"
     if not email:
         raise HTTPException(400, "Email required")
     try:
+        from app.database import _sb
+        sb = _sb()
+        amount, currency = _sub_price(sb, plan, billing)
+        meta = {"user_email": email, "plan": plan, "billing": billing}
         import stripe
         stripe.api_key = STRIPE_SECRET_KEY
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             mode="subscription",
             customer_email=email,
-            line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
-            success_url=body.get("success_url", "https://enyem.com/subscription?success=1"),
+            line_items=[{"price_data": {
+                "currency": currency,
+                "product_data": {"name": f"Lajtner Code {plan.capitalize()} ({billing}ly)"},
+                "unit_amount": int(round(amount * 100)),
+                "recurring": {"interval": billing},
+            }, "quantity": 1}],
+            success_url=body.get("success_url", "https://enyem.com/subscription?success=1&session_id={CHECKOUT_SESSION_ID}"),
             cancel_url=body.get("cancel_url",  "https://enyem.com/subscription?cancelled=1"),
-            metadata={"user_email": email},
+            metadata=meta,
+            subscription_data={"metadata": meta},
         )
         return {"url": session.url, "session_id": session.id}
     except Exception as e:
@@ -725,16 +757,23 @@ async def stripe_check_session(session_id: str = "", email: str = ""):
         import stripe
         stripe.api_key = STRIPE_SECRET_KEY
         session = stripe.checkout.Session.retrieve(session_id)
-        status = getattr(session, "payment_status", "")
+        pay_status = getattr(session, "payment_status", "")
         sub_status = getattr(session, "status", "")
-        if status == "pro" or sub_status == "complete":
+        meta = getattr(session, "metadata", {}) or {}
+        plan = (meta.get("plan") if isinstance(meta, dict) else getattr(meta, "plan", None)) or "pro"
+        if plan not in ("pro", "ultimate"): plan = "pro"
+        if pay_status == "paid" or sub_status == "complete":
             cust_email = getattr(session, "customer_email", "") or email
             if cust_email:
                 from app.database import _sb
                 sb = _sb()
-                sb.table("wt_users").update({"plan":"pro"}).eq("email", cust_email.lower()).execute()
-                log.info(f"[STRIPE] plan updated via check-session for {cust_email}")
-            return {"ok": True, "plan": "pro", "status": sub_status}
+                # Directly paid subscription → no time-limited free period; clear the
+                # sweep timers so the user keeps the plan until they cancel.
+                upd = {"plan": plan, "pro_until": None}
+                if plan == "ultimate": upd["ultimate_until"] = None
+                sb.table("wt_users").update(upd).eq("email", cust_email.lower()).execute()
+                log.info(f"[STRIPE] plan={plan} via check-session for {cust_email}")
+            return {"ok": True, "plan": plan, "status": sub_status}
         return {"ok": False, "status": sub_status}
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -770,61 +809,97 @@ async def stripe_webhook(request: Request):
     evt = event["type"]
     log.info(f"[STRIPE] event: {evt}")
 
+    # Universal getter — the event object is a Stripe object (verified path) or a
+    # plain dict (dev path with no webhook secret).
+    def _oget(o, k, d=None):
+        if isinstance(o, dict): return o.get(k, d)
+        return getattr(o, k, d)
+
+    import stripe as _stripe
+    _stripe.api_key = STRIPE_SECRET_KEY
+
     if evt in ("checkout.session.completed", "customer.subscription.created",
                "invoice.paid"):
-        obj = event["data"]["object"]
+        obj  = event["data"]["object"]
+        meta = _oget(obj, "metadata", {}) or {}
+        mget = (lambda k: meta.get(k) if isinstance(meta, dict) else getattr(meta, k, None))
+
         # Numbered-unit purchase (Pioneer/Founder/Spectrum) → finalize allocation
-        try:
-            meta = getattr(obj, "metadata", {}) or {}
-            mget = (lambda k: meta.get(k) if isinstance(meta, dict) else getattr(meta, k, None))
-            if mget("kind") == "unit":
+        if mget("kind") == "unit":
+            try:
                 _finalize_unit(mget("series") or "pioneer",
                                int(mget("number") or 0),
                                (mget("email") or "").lower(),
                                mget("name") or "")
-                return {"ok": True}
-        except Exception as e:
-            log.error(f"[STRIPE] unit finalize failed: {e}")
-            email = getattr(obj, "customer_email", None) or ""
-        except Exception:
-            email = ""
+            except Exception as e:
+                log.error(f"[STRIPE] unit finalize failed: {e}")
+            return {"ok": True}
+
+        # Core purchase (unlimited, no number) → grant benefits + notify
+        if mget("kind") == "core":
+            try:
+                _finalize_core((mget("email") or "").lower(),
+                               mget("name") or "", mget("shipping") or "")
+            except Exception as e:
+                log.error(f"[STRIPE] core finalize failed: {e}")
+            return {"ok": True}
+
+        # Subscription purchase/renewal → set the user's plan from metadata.
+        email = (_oget(obj, "customer_email", None) or mget("user_email") or "")
+        plan  = (mget("plan") or "").lower()
+        # invoice.paid: the metadata lives on the subscription, not the invoice.
+        if (not plan) or (not email):
+            try:
+                sub_id = _oget(obj, "subscription", None)
+                if sub_id:
+                    sub   = _stripe.Subscription.retrieve(sub_id)
+                    smeta = getattr(sub, "metadata", {}) or {}
+                    sget  = (lambda k: smeta.get(k) if isinstance(smeta, dict) else getattr(smeta, k, None))
+                    plan  = plan or (sget("plan") or "")
+                    if not email:
+                        cust  = _stripe.Customer.retrieve(getattr(sub, "customer", None))
+                        email = getattr(cust, "email", "") or ""
+            except Exception as e:
+                log.warning(f"[STRIPE] subscription metadata lookup failed: {e}")
         if not email:
             try:
-                meta = getattr(obj, "metadata", {})
-                email = (meta.get("user_email") if isinstance(meta, dict)
-                         else getattr(meta, "user_email", "")) or ""
-            except Exception:
-                email = ""
-        if not email:
-            try:
-                cust_id = getattr(obj, "customer", None)
+                cust_id = _oget(obj, "customer", None)
                 if cust_id:
-                    cust  = stripe.Customer.retrieve(cust_id)
-                    email = getattr(cust, "email", "") or ""
+                    email = getattr(_stripe.Customer.retrieve(cust_id), "email", "") or ""
             except Exception:
                 pass
+        plan = plan.lower()
+        if plan not in ("pro", "ultimate"):
+            plan = "pro"
         if email:
             try:
                 from app.database import _sb
                 sb = _sb()
-                sb.table("wt_users").update({"plan": "pro"}).eq("email", email.lower()).execute()
-                log.info(f"[STRIPE] upgraded {email} to paid")
+                # Directly paid subscription → no time-limited free period; clear the
+                # sweep timers so the plan stays until the user cancels.
+                upd = {"plan": plan, "pro_until": None}
+                if plan == "ultimate": upd["ultimate_until"] = None
+                sb.table("wt_users").update(upd).eq("email", email.lower()).execute()
+                log.info(f"[STRIPE] {email} → plan={plan}")
             except Exception as e:
                 log.error(f"[STRIPE] db update failed: {e}")
 
     elif evt in ("customer.subscription.deleted", "customer.subscription.paused"):
         obj = event["data"]["object"]
-        try:
-            cust_id = getattr(obj, "customer", None)
-            cust  = stripe.Customer.retrieve(cust_id)
-            email = getattr(cust, "email", "") or ""
-        except Exception:
-            email = ""
+        email = _oget(obj, "customer_email", None) or ""
+        if not email:
+            try:
+                cust_id = _oget(obj, "customer", None)
+                if cust_id:
+                    email = getattr(_stripe.Customer.retrieve(cust_id), "email", "") or ""
+            except Exception:
+                email = ""
         if email:
             try:
                 from app.database import _sb
                 sb = _sb()
-                sb.table("wt_users").update({"plan": "basic"}).eq("email", email.lower()).execute()
+                sb.table("wt_users").update({"plan": "basic", "pro_until": None,
+                                             "ultimate_until": None}).eq("email", email.lower()).execute()
                 log.info(f"[STRIPE] downgraded {email} to free")
             except Exception as e:
                 log.error(f"[STRIPE] db update failed: {e}")
@@ -1111,9 +1186,42 @@ async def frames_sse(job_id: str):
         headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no",
                  "Access-Control-Allow-Origin":"*"})
 
+def _plan_of(email: str) -> str:
+    """Current plan for an email. Master accounts count as 'ultimate'."""
+    if not email:
+        return "basic"
+    if _is_master(email):
+        return "ultimate"
+    try:
+        from app.database import _sb
+        sb = _sb()
+        if sb:
+            r = sb.table("wt_users").select("plan").eq("email", email.lower()).limit(1).execute()
+            if r.data:
+                return (r.data[0].get("plan") or "basic").lower()
+    except Exception:
+        pass
+    return "basic"
+
 @app.get("/download/{job_id}")
 def download(job_id: str):
     info = jobs.get(job_id, {})
+    # Video download is an Ultimate (and master) benefit. Pro/Basic can replay &
+    # watch but not download the file. Gate on the JOB OWNER's plan so it can't be
+    # bypassed by hitting the URL directly.
+    owner = (info or {}).get("user_email") or ""
+    if not owner:
+        try:
+            from app.database import _sb
+            sb = _sb()
+            if sb:
+                jr = sb.table("jobs").select("*").eq("job_id", job_id).limit(1).execute()
+                if jr.data:
+                    owner = jr.data[0].get("user_email") or jr.data[0].get("email") or ""
+        except Exception:
+            pass
+    if _plan_of(owner) != "ultimate":
+        raise HTTPException(403, "Video download is available on the Ultimate plan.")
     # Try memory filename first
     if info.get("filename"):
         p = OUTPUTS_DIR / info["filename"]
@@ -1417,20 +1525,25 @@ def _cfg(sb, key, default=None):
     return default
 
 # ── Shipping — editable per-region flat rates (laj_config) ───────────────────
-# Client sets ship_eu / ship_usa / ship_asia / ship_other (USD) in the admin
-# panel (Config tab). Country→region is resolved here; the fee is added to
-# checkout ONLY when the region's rate is > 0, so until the client fills in the
-# numbers nothing extra is charged.
+# Client sets ship_eu / ship_usa / ship_asia / ship_africa / ship_oceania /
+# ship_other (USD) in the admin panel (Config tab). Origin is Hungary.
+# Country→region is resolved here; the fee is added to checkout ONLY when the
+# region's rate is > 0, so a region left at 0 charges nothing until it is set.
 _SHIP_EU = {"AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE",
             "IT","LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE",
-            "GB","CH","NO","IS"}
+            "GB","CH","NO","IS"}   # EU + UK + EFTA (client quoted EU and UK both at 32)
+_SHIP_OCEANIA = {"AU","NZ","FJ","PG","NC","PF","WS","TO","VU","SB"}
+_SHIP_AFRICA  = {"ZA","NG","EG","KE","MA","GH","TZ","ET","DZ","TN","UG","AO","CI",
+                 "CM","SN","ZW","ZM","RW","BW","NA","MU","MZ","MG","LY","SD"}
 _SHIP_ASIA = {"CN","JP","KR","IN","ID","TH","VN","PH","MY","SG","HK","TW","KZ",
               "KG","UZ","AE","SA","IL","PK","BD","LK","MN","GE","AM","AZ","TR"}
 def _ship_region(country):
     c = (country or "").strip().upper()
-    if c in ("US","USA"):           return "usa"
-    if c in _SHIP_EU:               return "eu"
-    if c in _SHIP_ASIA:             return "asia"
+    if c in ("US","USA"):   return "usa"
+    if c in _SHIP_EU:       return "eu"
+    if c in _SHIP_OCEANIA:  return "oceania"
+    if c in _SHIP_AFRICA:   return "africa"
+    if c in _SHIP_ASIA:     return "asia"
     return "other"
 def _ship_cost(sb, country):
     """Flat shipping fee (USD) for a destination country, from editable config."""
@@ -1655,12 +1768,29 @@ def measurement_count():
 # ── Pioneer / Founder / Spectrum unit allocation ───────────────────────────────
 _SERIES_TOTALS = {"pioneer": 50, "founder": 50, "spectrum": 500}
 
+# Unit prices live in the editable laj_series table so the client can change them
+# in the admin panel with no redeploy. The dict below is only a safety fallback if
+# the DB is unreachable.
+_SERIES_PRICE_FALLBACK = {"pioneer": 249, "founder": 4999, "spectrum": 499, "core": 299}
+def _series_price(sb, series):
+    try:
+        if sb:
+            r = sb.table("laj_series").select("price").eq("id", series).execute()
+            if r.data and r.data[0].get("price") is not None:
+                return float(r.data[0]["price"])
+    except Exception as e:
+        log.warning(f"[ALLOC] series-price read failed: {e}")
+    return float(_SERIES_PRICE_FALLBACK.get(series, 0))
+
 def _unit_serial(series, number):
     """Serial as printed on the unit.
     Pioneer:  'PIONEER #01 of 50'   (# before number, not before total)
     Founder:  'FOUNDER No. 01 of 50'
     Spectrum: 'SPECTRUM No. 001 of 500'
+    Core:     'Core Series'         (unlimited, no numbering)
     """
+    if series == "core":
+        return "Core Series"
     total = _SERIES_TOTALS.get(series, 50)
     pad = 3 if series == "spectrum" else 2
     num = str(number).zfill(pad)
@@ -1712,7 +1842,8 @@ def allocation_list(series: str):
             "notes": notes or ("Ready to Claim" if status == "available" else "Reserved"),
         })
     allocated = sum(1 for u in units if u["status"] != "available")
-    return {"series": series, "total": total, "allocated": allocated, "units": units}
+    return {"series": series, "total": total, "allocated": allocated,
+            "price": _series_price(sb, series), "units": units}
 
 
 @app.post("/allocation/checkout")
@@ -1725,14 +1856,17 @@ async def allocation_checkout(request: Request):
     email  = (body.get("email") or "").strip().lower()
     name   = (body.get("name") or "").strip()
     ship   = body.get("shipping") or {}
-    price  = {"pioneer": 249, "founder": 4999, "spectrum": 499, "core": 299}.get(series)
     if not email or not name or not number:
         raise HTTPException(400, "Name, email and number are required")
-    if series not in ("pioneer", "founder", "spectrum") or not price:
+    if series not in ("pioneer", "founder", "spectrum"):
         raise HTTPException(400, "This series is not open for sale yet")
 
     from app.database import _sb
     sb = _sb()
+    price = _series_price(sb, series)        # editable unit price (laj_series)
+    if not price:
+        raise HTTPException(400, "This series is not open for sale yet")
+    price = int(round(price))                # Stripe unit_amount uses whole-dollar cents below
 
     # Pioneer trade-in credit: a buyer who owns a paid Pioneer gets a discount on
     # a Founder/Spectrum unit. Amount differs per series (latest client numbers).
@@ -1809,6 +1943,62 @@ async def allocation_checkout(request: Request):
     return {"url": session.url, "session_id": session.id,
             "credit_applied": credit_applied, "final_price": price,
             "shipping_usd": ship_cost}
+
+
+@app.post("/core/checkout")
+async def core_checkout(request: Request):
+    """Buy a Core unit — unlimited, no numbering. Payment + shipping; the Core
+    subscription benefits are granted on the webhook. Price is the editable
+    laj_series 'core' price; shipping is the editable per-region flat rate."""
+    body = await request.json()
+    email = (body.get("email") or "").strip().lower()
+    name  = (body.get("name") or "").strip()
+    ship  = body.get("shipping") or {}
+    if not email or not name:
+        raise HTTPException(400, "Name and email are required")
+    from app.database import _sb
+    sb = _sb()
+    price = _series_price(sb, "core")
+    if not price:
+        raise HTTPException(400, "Core is not available for sale yet")
+    price = int(round(price))
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(503, "Stripe not configured")
+    import stripe, urllib.parse
+    stripe.api_key = STRIPE_SECRET_KEY
+    ship_cost = _ship_cost(sb, ship.get("country")) if sb else 0.0
+    ship_opts = None
+    if ship_cost > 0:
+        ship_opts = [{"shipping_rate_data": {
+            "type": "fixed_amount",
+            "fixed_amount": {"amount": int(round(ship_cost * 100)), "currency": "usd"},
+            "display_name": "Shipping",
+        }}]
+    session = stripe.checkout.Session.create(
+        payment_method_types=["card"], mode="payment", customer_email=email,
+        line_items=[{"price_data": {"currency": "usd",
+            "product_data": {"name": "Lajtner Scope — Core Series"},
+            "unit_amount": price * 100}, "quantity": 1}],
+        shipping_address_collection={"allowed_countries": ["US","GB","DE","HU","FR","AT","CA","AU"]},
+        **({"shipping_options": ship_opts} if ship_opts else {}),
+        success_url=body.get("success_url", "https://mindpw.com/thankyou.html?serial=Core%20Series"),
+        cancel_url=body.get("cancel_url", "https://mindpw.com/core.html"),
+        metadata={"kind": "core", "series": "core", "email": email, "name": name,
+                  "shipping": json.dumps(ship), "shipping_usd": str(ship_cost)},
+    )
+    return {"url": session.url, "session_id": session.id,
+            "final_price": price, "shipping_usd": ship_cost}
+
+
+def _finalize_core(email, name, shipping=""):
+    """Core purchase paid → grant benefits + notify admin. No allocation row
+    (Core is unlimited / unnumbered)."""
+    _grant_hw_subscription(email, "core")
+    try:
+        _send_pioneer_email(email, name, "core", 0)
+    except Exception as e:
+        log.warning(f"[CORE] confirmation email failed: {e}")
+    _notify_admin_order("core", 0, email, name, shipping)
 
 
 def _finalize_unit(series, number, email, name):
@@ -3117,10 +3307,11 @@ def _fulfill_order(sb, order_id: str, items: list, user_email: str):
                     if isinstance(grants, str):
                         grants = _json.loads(grants)
                     for g in grants:
-                        if g.get("type") == "subscription_pro":
+                        if g.get("type") in ("subscription_pro", "subscription_ultimate"):
+                            g_plan = "ultimate" if g.get("type") == "subscription_ultimate" else "pro"
                             months = g.get("months", 1)
                             expires = _dt.datetime.utcnow() + _dt.timedelta(days=30*months)
-                            sb.table("wt_users").update({"plan": "pro"}).eq("email", user_email).execute()
+                            sb.table("wt_users").update({"plan": g_plan}).eq("email", user_email).execute()
         # Mark fulfilled
         sb.table("store_orders").update({"status": "fulfilled"})            .eq("id", order_id).execute()
         log.info(f"[STORE] Order {order_id} fulfilled for {user_email}")

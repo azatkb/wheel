@@ -97,7 +97,7 @@
   <p>Forged from premium alloy and sapphire crystal. Strictly limited to 50 numbered pieces worldwide.
     By acquiring the Founder Series of the Lajtner Scope, you do not simply own a masterpiece of timeless
     craftsmanship—you claim your place in scientific history at the dawn of the Lajtner Resonance era.</p>
-  <div class="claim">Claim one of the individually numbered Founder Series units (<b>$4,999 USD</b>)</div>
+  <div class="claim">Claim one of the individually numbered Founder Series units (<b id="seriesPrice">$4,999 USD</b>)</div>
 
   <!-- WHAT IS INCLUDED -->
   <div class="included">
@@ -169,7 +169,7 @@
     <button class="pay-btn" id="payBtn" disabled>Proceed to secure payment</button>
     <div id="result" class="msg"></div>
     <p class="muted" style="font-size:.75rem;text-align:center;margin-top:.8rem">
-      $4,999 USD + shipping cost will be charged securely via Stripe.</p>
+      <span id="seriesPriceNote">$4,999 USD</span> + shipping cost will be charged securely via Stripe.</p>
   </div>
 </div>
 
@@ -214,6 +214,11 @@ async function loadUnits(){
       const r=await fetch(`${API}/allocation/${SERIES}`);
       const d=await r.json();
       document.getElementById("progress").innerHTML=progressBar(d.allocated||0, d.total);
+      if(d.price!=null){
+        const p='$'+Number(d.price).toLocaleString('en-US')+' USD';
+        const e1=document.getElementById('seriesPrice'); if(e1) e1.textContent=p;
+        const e2=document.getElementById('seriesPriceNote'); if(e2) e2.textContent=p;
+      }
       tb.innerHTML="";
       d.units.forEach(u=>{
         const taken=u.status!=="available";

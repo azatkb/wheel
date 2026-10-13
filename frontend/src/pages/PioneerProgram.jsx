@@ -46,14 +46,32 @@ export default function PioneerProgram() {
 
       <div className="card" style={{maxWidth:640}}>
         <p style={{color:'var(--muted)',fontSize:'.9rem',lineHeight:1.7}}>
-          Within <strong>30 days</strong> of receiving your device, post one honest experience report on any
-          public platform you choose (Reddit, YouTube, your blog, X, a forum). Then paste the link below.
-          Once we review it, the Keynote <em>“Thought Force: The Gentlest Coercion”</em> is unlocked free in your account.
+          <strong>The invitation.</strong> Within <strong>30 days</strong> of receiving your device, post one honest
+          experience report on any public platform you choose (e.g. a Reddit community, YouTube, your blog, X, a forum).
+          Then paste the link below (or email it to us).
         </p>
-        <p style={{color:'var(--dim)',fontSize:'.82rem',marginBottom:'1rem'}}>
-          Your report must reflect your genuine experience — positive, negative or mixed. The reward does not
-          depend on what you say. Please include a clear disclosure in your post.
+        <p style={{color:'var(--muted)',fontSize:'.9rem',lineHeight:1.7}}>
+          <strong>Your thank-you.</strong> Once we receive your link, the Keynote
+          <em> “Thought Force: The Gentlest Coercion” </em> is unlocked for you free of charge. It is our gift.
         </p>
+
+        <ul style={{color:'var(--muted)',fontSize:'.84rem',lineHeight:1.65,paddingLeft:'1.1rem',margin:'0 0 1rem'}}>
+          <li><strong>Honesty.</strong> Your report must reflect your genuine experience — positive, negative or mixed.
+            The reward does not depend on what you say.</li>
+          <li><strong>Required disclosure.</strong> Please include this line in your post:
+            <span style={{display:'block',marginTop:'.3rem',padding:'.5rem .7rem',borderRadius:8,
+              background:'var(--bg2, rgba(255,255,255,.04))',border:'1px solid var(--border)',
+              color:'var(--text)',fontStyle:'italic'}}>
+              “Disclosure: I own a Pioneer Series device and received the Keynote as a gift free for sharing my experience.”
+            </span></li>
+          <li><strong>Community rules.</strong> Follow the rules of the community where you post. No duplicate posts,
+            no link spam, no coordinated voting.</li>
+          <li><strong>No claims.</strong> Describe what you personally experienced. No medical or health claims. It is
+            absolutely prohibited to present the product as a medical device, an assistive device, or a medical
+            examination tool. Such a representation is incorrect, and the author bears the legal consequences arising from it.</li>
+          <li><strong>If you don’t post.</strong> Nothing changes. Your device, software, and all Pioneer benefits
+            remain fully yours.</li>
+        </ul>
 
         {status?.keynote_unlocked ? (
           <div style={{padding:'1rem',borderRadius:10,background:'rgba(0,194,113,.12)',

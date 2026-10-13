@@ -60,7 +60,7 @@ const lrExponent = (v) => {
 
 // Brain-photon impossibility calculation (per the agreed physics).
 //   a = 10^11 neurons, f_source = 800 Hz (literature max neuron frequency)
-//   f_combined = a * f_source = 2e14 Hz   (simultaneous emission, 1 photon each)
+//   f_combined = a * f_source = 8e13 Hz   (simultaneous emission, 1 photon each)
 //   t = 10^k / (a * f_source^2)   seconds to accumulate a 10^k Hz-equivalent
 const A_SOURCES = 1e11
 const F_SOURCE  = 800
@@ -131,7 +131,11 @@ const StarRatingDouble = ({ pctVsPersonal, pctVsGroup }) => {
             ))}
           </div>
           <span style={{fontSize:'.72rem',color:'#FFD700',fontWeight:500}}>
-            vs your avg {pctVsPersonal > 0 ? `+${pctVsPersonal}%` : `${pctVsPersonal}%`}
+            {pctVsPersonal > 0
+              ? `${pctVsPersonal}% above your avg`
+              : pctVsPersonal < 0
+                ? `${Math.abs(pctVsPersonal)}% below your avg`
+                : 'at your avg'}
           </span>
         </div>
       )}
@@ -144,7 +148,11 @@ const StarRatingDouble = ({ pctVsPersonal, pctVsGroup }) => {
             ))}
           </div>
           <span style={{fontSize:'.72rem',color:'#ff4444',fontWeight:500}}>
-            vs group {pctVsGroup > 0 ? `+${pctVsGroup}%` : `${pctVsGroup}%`}
+            {pctVsGroup > 0
+              ? `${pctVsGroup}% above group avg`
+              : pctVsGroup < 0
+                ? `${Math.abs(pctVsGroup)}% below group avg`
+                : 'at group avg'}
           </span>
         </div>
       )}
@@ -196,7 +204,7 @@ const VAR_NAMES = {
   phi_total:        'Angular Displacement (θ)',
   omega_max:        'Final Angular Velocity (ω)',
   omega_avg:        'Average Angular Velocity',
-  M_res:            'Breaking Torque (τ_f)',
+  M_res:            'Braking Torque (τ_f)',
   M_motor_accel:    'Driving Torque (τ_d)',
   M_motor_const:    'Constant Motion Torque',
   M_avg_active:     'Average Torque (active)',
@@ -499,9 +507,17 @@ export default function PhysicsCard({ msg, result, jobId, isPaid, showTable = tr
         const tier = master ? 'ultimate' : plan
         if (tier !== 'pro' && tier !== 'ultimate') return null   // basic: no table
 
-        const rows = VARS.filter(([, , t]) => tier === 'ultimate' ? true : t === 'pro')
         const med  = (medium === 'water' || medium === 'air') ? medium : 'air'
         const userCase = result[med] || result.air || result.water || {}
+        // A value we don't have a real figure for comes back as 0 — don't show a
+        // misleading "0" row. Hide any row whose shown value(s) are all 0 / empty.
+        const isZero = x => x == null || x === 0
+        const shownVals = v => master
+          ? [result.ideal?.[v], result.air?.[v], result.water?.[v]]
+          : [userCase[v]]
+        const rows = VARS
+          .filter(([, , t]) => tier === 'ultimate' ? true : t === 'pro')
+          .filter(([v]) => !shownVals(v).every(isZero))
 
         return (
           <>

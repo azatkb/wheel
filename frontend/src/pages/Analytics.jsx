@@ -17,7 +17,7 @@ const PHYS_ROWS = [
   { key: 'phi_total',       label: 'Angular Displacement (θ)',        unit: 'rad'     },
   { key: 'omega_max',       label: 'Final Angular Velocity (ω)',      unit: 'rad/s'   },
   { key: 'omega_avg',       label: 'Average Angular Velocity',        unit: 'rad/s'   },
-  { key: 'M_res',           label: 'Breaking Torque (τ_f)',           unit: 'Nm'      },
+  { key: 'M_res',           label: 'Braking Torque (τ_f)',            unit: 'Nm'      },
   { key: 'M_motor_accel',   label: 'Driving Torque (τ_d)',            unit: 'Nm'      },
   { key: 'M_motor_const',   label: 'Constant Motion Torque',         unit: 'Nm'      },
   { key: 'M_avg_active',    label: 'Average Torque (active)',         unit: 'Nm'      },

@@ -94,12 +94,12 @@
   <!-- PART 1: HERO -->
   <h1>Spectrum Series — Live Allocation Status</h1>
   <div class="hero-sub">LAJTNER Scope — SPECTRUM SERIES</div>
-  <p>Crafted with high-precision 3D-printed polymers in custom colorways and toughened Gorilla Glass or Brass.
+  <p>Crafted with high-precision 3D-printed polymers in custom colorways and toughened Gorilla Glass or Metal.
     Strictly limited to 500 numbered pieces worldwide. By acquiring the Spectrum Series of the Lajtner Scope,
     you do not simply own a masterpiece of modern engineering—you claim your place at the forefront of a new
     scientific wave. Enjoy and support the next scientific breakthrough. A privilege unlike any before—this is
     your historic opportunity.</p>
-  <div class="claim">Claim one of the individually numbered Spectrum Series units (<b>$499 USD</b>)</div>
+  <div class="claim">Claim one of the individually numbered Spectrum Series units (<b id="seriesPrice">$499 USD</b>)</div>
 
   <!-- WHAT IS INCLUDED -->
   <div class="included">
@@ -172,7 +172,7 @@
     <button class="pay-btn" id="payBtn" disabled>Proceed to secure payment</button>
     <div id="result" class="msg"></div>
     <p class="muted" style="font-size:.75rem;text-align:center;margin-top:.8rem">
-      $499 USD + shipping cost will be charged securely via Stripe.</p>
+      <span id="seriesPriceNote">$499 USD</span> + shipping cost will be charged securely via Stripe.</p>
   </div>
 </div>
 
@@ -237,6 +237,11 @@ async function loadUnits(){
       const r=await fetch(`${API}/allocation/${SERIES}`);
       const d=await r.json();
       document.getElementById("progress").innerHTML=progressBar(d.allocated||0, d.total);
+      if(d.price!=null){
+        const p='$'+Number(d.price).toLocaleString('en-US')+' USD';
+        const e1=document.getElementById('seriesPrice'); if(e1) e1.textContent=p;
+        const e2=document.getElementById('seriesPriceNote'); if(e2) e2.textContent=p;
+      }
       ALL_UNITS=d.units; renderUnits(ALL_UNITS);
     }catch(e){ tb.innerHTML='<tr><td colspan="4" class="muted">Could not load units. Please refresh.</td></tr>'; }
   }

@@ -165,8 +165,8 @@ export function drawDualChart(canvas, samples) {
     }
 
     // Label
-    ctx.fillStyle = color; ctx.font = 'bold 9px DM Mono'
-    ctx.fillText(label, pad.l + 4, yOff + 12)
+    ctx.fillStyle = color; ctx.font = 'bold 12px DM Mono'
+    ctx.fillText(label, pad.l + 4, yOff + 14)
 
     // Line
     ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath()

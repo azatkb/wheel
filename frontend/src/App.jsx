@@ -182,20 +182,22 @@ function Shell() {
             onMouseLeave={e=>e.target.style.color='var(--dim)'}>
             🌐 lajtnerresonance.com
           </a>
-          {master && (
-            <div style={{padding:'.3rem .75rem',marginBottom:'.2rem'}}>
-              <span style={{fontSize:'.65rem',fontWeight:700,color:'var(--amber)',
-                background:'rgba(255,136,0,.1)',border:'1px solid rgba(255,136,0,.3)',
-                borderRadius:4,padding:'.15rem .5rem'}}>⬡ Ultimate</span>
-            </div>
-          )}
-          {user.plan === 'pro' && (
-            <div style={{padding:'.3rem .75rem',marginBottom:'.4rem'}}>
-              <span style={{fontSize:'.65rem',fontWeight:700,color:'var(--green)',
-                background:'rgba(0,255,136,.1)',border:'1px solid rgba(0,255,136,.3)',
-                borderRadius:4,padding:'.15rem .5rem'}}>PRO</span>
-            </div>
-          )}
+          {(() => {
+            // Single badge for the effective plan (master always counts as Ultimate).
+            const effective = master ? 'ultimate' : (user.plan || 'basic')
+            const b = effective === 'ultimate'
+              ? { t: '⬡ Ultimate', c: 'var(--amber)', bg: 'rgba(255,136,0,.1)', bd: 'rgba(255,136,0,.3)' }
+              : effective === 'pro'
+                ? { t: 'PRO', c: 'var(--green)', bg: 'rgba(0,255,136,.1)', bd: 'rgba(0,255,136,.3)' }
+                : null
+            return b ? (
+              <div style={{padding:'.3rem .75rem',marginBottom:'.4rem'}}>
+                <span style={{fontSize:'.65rem',fontWeight:700,color:b.c,
+                  background:b.bg,border:`1px solid ${b.bd}`,
+                  borderRadius:4,padding:'.15rem .5rem'}}>{b.t}</span>
+              </div>
+            ) : null
+          })()}
           <div className="user-badge">
             <div className="user-avatar">{initials}</div>
             <div className="user-email">{user.email}</div>
