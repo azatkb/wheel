@@ -9,7 +9,7 @@ const TYPE_LABELS = {
   subscription_pro:      { label:'Pro Subscription',      icon:'⚡' },
   subscription_ultimate: { label:'Ultimate Subscription', icon:'🌟' },
   video:    { label:'Video',    icon:'🎬' },
-  pdf:      { label:'PDF',      icon:'📄' },
+  pdf:      { label:'Library',  icon:'📚' },
   physical: { label:'Physical', icon:'📦' },
 }
 
@@ -58,7 +58,7 @@ function ProductModal({ user, product, onClose, onSaved }) {
     subscription_pro: '⚡ Pro Subscription',
     subscription_ultimate: '🌟 Ultimate Subscription',
     video: '💾 Digital Product',
-    pdf: '📄 PDF',
+    pdf: '📚 Library',
     physical: '📦 Physical',
   }
 
@@ -475,7 +475,7 @@ function AllocationPanel({ user, showMsg }) {
     <div className="card">
       <div className="card-title">Allocations — Notes &amp; Status</div>
       <div style={{display:'flex',gap:'.5rem',marginBottom:'1rem',flexWrap:'wrap',alignItems:'center'}}>
-        {['pioneer','founder','alpha'].map(s => (
+        {['pioneer','founder','spectrum'].map(s => (
           <button key={s} onClick={() => setSeries(s)}
             className={`btn btn-sm ${series===s ? 'btn-primary' : 'btn-secondary'}`}>
             {s.charAt(0).toUpperCase()+s.slice(1)}

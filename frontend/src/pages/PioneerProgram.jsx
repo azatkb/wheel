@@ -4,7 +4,7 @@ import { API } from '../config'
 
 /**
  * Pioneer Program — a Pioneer owner submits one honest experience-report link.
- * After the master approves it, the Keynote is unlocked free in their account.
+ * After the master approves it, the guide (Why Thought Moves Matter) is unlocked free.
  */
 export default function PioneerProgram() {
   const { user } = useAuth()
@@ -41,7 +41,7 @@ export default function PioneerProgram() {
     <div>
       <div className="page-header">
         <h1>🚀 Pioneer Program</h1>
-        <p>Share your honest experience — unlock the Keynote free.</p>
+        <p>Share your honest experience — unlock a free guide.</p>
       </div>
 
       <div className="card" style={{maxWidth:640}}>
@@ -51,8 +51,9 @@ export default function PioneerProgram() {
           Then paste the link below (or email it to us).
         </p>
         <p style={{color:'var(--muted)',fontSize:'.9rem',lineHeight:1.7}}>
-          <strong>Your thank-you.</strong> Once we receive your link, the Keynote
-          <em> “Thought Force: The Gentlest Coercion” </em> is unlocked for you free of charge. It is our gift.
+          <strong>Your thank-you.</strong> Once we receive your link, the guide
+          <em> “Why Thought Moves Matter: Theory, Field Physics &amp; Practical Exercises” </em> is unlocked for you
+          free of charge. It is our gift.
         </p>
 
         <ul style={{color:'var(--muted)',fontSize:'.84rem',lineHeight:1.65,paddingLeft:'1.1rem',margin:'0 0 1rem'}}>
@@ -62,7 +63,7 @@ export default function PioneerProgram() {
             <span style={{display:'block',marginTop:'.3rem',padding:'.5rem .7rem',borderRadius:8,
               background:'var(--bg2, rgba(255,255,255,.04))',border:'1px solid var(--border)',
               color:'var(--text)',fontStyle:'italic'}}>
-              “Disclosure: I own a Pioneer Series device and received the Keynote as a gift free for sharing my experience.”
+              “Disclosure: I own a Pioneer Series device and received a free guide as a gift for sharing my experience.”
             </span></li>
           <li><strong>Community rules.</strong> Follow the rules of the community where you post. No duplicate posts,
             no link spam, no coordinated voting.</li>
@@ -73,10 +74,10 @@ export default function PioneerProgram() {
             remain fully yours.</li>
         </ul>
 
-        {status?.keynote_unlocked ? (
+        {status?.reward_unlocked ? (
           <div style={{padding:'1rem',borderRadius:10,background:'rgba(0,194,113,.12)',
             border:'1px solid rgba(0,194,113,.4)',color:'var(--green)',fontWeight:600}}>
-            ✓ Your Keynote is unlocked — thank you for sharing!
+            ✓ Your guide is unlocked — thank you for sharing!
           </div>
         ) : (
           <>
@@ -90,7 +91,7 @@ export default function PioneerProgram() {
             {state === 'done'
               ? <div style={{marginTop:'1rem',padding:'.7rem 1rem',borderRadius:8,
                   background:'rgba(68,170,255,.1)',border:'1px solid rgba(68,170,255,.3)',color:'var(--blue)'}}>
-                  ✓ Submitted! We'll review your link and unlock the Keynote shortly.
+                  ✓ Submitted! We'll review your link and unlock the guide shortly.
                 </div>
               : <button className="btn btn-primary" style={{marginTop:'1rem'}}
                   onClick={submit} disabled={state==='sending'}>

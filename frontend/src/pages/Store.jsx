@@ -9,7 +9,7 @@ const TYPE_LABELS = {
   subscription_pro:      { label:'Pro Subscription', icon:'⚡', color:'var(--green)' },
   subscription_ultimate: { label:'Ultimate Subscription', icon:'🌟', color:'var(--amber)' },
   video:    { label:'Digital Product', icon:'🎬', color:'var(--blue)' },
-  pdf:      { label:'PDF',   icon:'📄', color:'var(--muted)' },
+  pdf:      { label:'Library', icon:'📚', color:'var(--muted)' },
   physical: { label:'Physical', icon:'📦', color:'#00bcd4' },
 }
 

@@ -1630,7 +1630,7 @@ def subscription_status(email: str = ""):
           .eq("email", (email or "").strip().lower()).execute()
     return r.data[0] if r.data else {}
 
-# ── M3: owner discounts + Pioneer Program (review → Keynote unlock) ──────────
+# ── M3: owner discounts + Pioneer Program (review → guide/PDF unlock) ────────
 def _owner_series(sb, email):
     try:
         r = sb.table("wt_users").select("sub_series").eq("email", (email or "").lower()).execute()
@@ -1700,11 +1700,11 @@ async def pioneer_review(request: Request):
 def pioneer_status(email: str = ""):
     from app.database import _sb
     sb = _sb()
-    if not sb: return {"reviews": [], "keynote_unlocked": False}
+    if not sb: return {"reviews": [], "reward_unlocked": False}
     email = (email or "").strip().lower()
     revs = (sb.table("laj_reviews").select("link,platform,status,submitted_at").eq("email", email).execute().data) or []
-    ent  = (sb.table("laj_entitlements").select("item_key").eq("email", email).eq("item_key", "item7").execute().data) or []
-    return {"reviews": revs, "keynote_unlocked": bool(ent)}
+    ent  = (sb.table("laj_entitlements").select("item_key").eq("email", email).eq("item_key", "item9").execute().data) or []
+    return {"reviews": revs, "reward_unlocked": bool(ent)}
 
 @app.get("/admin/pioneer/reviews")
 def admin_pioneer_reviews(email: str = "", token: str = ""):
@@ -1717,7 +1717,8 @@ def admin_pioneer_reviews(email: str = "", token: str = ""):
 
 @app.post("/admin/pioneer/decide")
 async def admin_pioneer_decide(request: Request):
-    """Master approves/rejects a review. Approve → unlock the Keynote (item7) free."""
+    """Master approves/rejects a review. Approve → unlock the guide (item9,
+    'Why Thought Moves Matter') free."""
     body = await request.json()
     if not _master_ok(body.get("admin_email",""), body.get("token","")): raise HTTPException(401,"Unauthorized")
     rid = body.get("id"); decision = (body.get("decision") or "").lower()
@@ -1730,22 +1731,23 @@ async def admin_pioneer_decide(request: Request):
     sb.table("laj_reviews").update({"status": "approved" if decision=="approve" else "rejected",
                                     "decided_at": datetime.datetime.utcnow().isoformat()}).eq("id", rid).execute()
     if decision == "approve":
-        sb.table("laj_entitlements").upsert({"email": email, "item_key": "item7",
+        sb.table("laj_entitlements").upsert({"email": email, "item_key": "item9",
                                              "source": "pioneer_program"}, on_conflict="email,item_key").execute()
-        try: _send_keynote_email(email)
-        except Exception as e: log.warning(f"[PIONEER] keynote email failed: {e}")
+        try: _send_reward_email(email)
+        except Exception as e: log.warning(f"[PIONEER] reward email failed: {e}")
     return {"ok": True}
 
-def _send_keynote_email(email):
+def _send_reward_email(email):
     GMAIL_USER = os.environ.get("GMAIL_USER",""); GMAIL_PASS = os.environ.get("GMAIL_PASS","")
     if not (GMAIL_USER and GMAIL_PASS): return
     import smtplib
     from email.mime.text import MIMEText
     body = ("Thank you for sharing your honest Pioneer experience!\n\n"
-            "As promised, the Keynote \"Thought Force: The Gentlest Coercion\" is now unlocked "
-            "free of charge in your account.\n\nWarm regards,\nDr. Tamás Lajtner\nLajtner Resonance")
+            "As promised, the guide \"Why Thought Moves Matter: Theory, Field Physics & "
+            "Practical Exercises\" is now unlocked free of charge in your account.\n\n"
+            "Warm regards,\nDr. Tamás Lajtner\nLajtner Resonance")
     msg = MIMEText(body, "plain")
-    msg["Subject"] = "Your Keynote is unlocked — thank you for sharing"
+    msg["Subject"] = "Your Pioneer reward is unlocked — thank you for sharing"
     msg["From"] = f"Lajtner Resonance <{GMAIL_USER}>"; msg["To"] = email
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
         s.login(GMAIL_USER, GMAIL_PASS); s.sendmail(GMAIL_USER, email, msg.as_string())

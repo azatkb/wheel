@@ -43,7 +43,7 @@ export default function CatalogAdmin() {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ id, decision, admin_email: user.email })
     })
-    flash(r.ok ? (decision==='approve'?'✓ Approved — Keynote unlocked':'Rejected') : 'Error')
+    flash(r.ok ? (decision==='approve'?'✓ Approved — guide unlocked':'Rejected') : 'Error')
     loadReviews()
   }
 
@@ -179,7 +179,7 @@ export default function CatalogAdmin() {
         <div className="card">
           <div className="card-title">Pioneer Program — review submissions</div>
           <p style={{fontSize:'.8rem',color:'var(--muted)',marginBottom:'.75rem'}}>
-            Approve a review to unlock the Keynote free for that owner.
+            Approve a review to unlock the guide (“Why Thought Moves Matter”) free for that owner.
           </p>
           <div className="tbl-wrap" style={{maxHeight:520}}>
             <table><thead><tr><th>Email</th><th>Link</th><th>Platform</th><th>Status</th><th></th></tr></thead>
