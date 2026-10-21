@@ -2276,6 +2276,52 @@ def pair_check(token: str = ""):
     return {"valid": bool(r.data)}
 
 
+# ── Chip verification state (phone tap → email chip-verified for 30 min) ─────
+# The phone marks itself chip-verified right after a genuine chip tap
+# (useDeviceAuth → /chip/confirm); the laptop-pairing page reads /chip/status to
+# decide whether to show "Authorize this laptop". Backed by the chip_auth table.
+CHIP_AUTH_TTL = 1800  # 30 minutes
+
+@app.post("/chip/confirm")
+async def chip_confirm(request: Request):
+    """Phone: after a genuine chip tap, mark this logged-in email as chip-verified."""
+    body = await request.json()
+    email = (body.get("email") or "").strip().lower()
+    token = (body.get("token") or "").strip()
+    if not email or not token:
+        raise HTTPException(400, "email and token required")
+    from app.database import _sb
+    sb = _sb()
+    if sb:
+        try:
+            sb.table("chip_auth").upsert(
+                {"email": email, "verified_at": int(_time.time())},
+                on_conflict="email").execute()
+        except Exception as e:
+            log.warning(f"[CHIP] confirm failed: {e}")
+    return {"ok": True}
+
+@app.get("/chip/status")
+def chip_status(email: str = ""):
+    """Is this email currently chip-verified (tapped a chip in the last 30 min)?"""
+    email = (email or "").strip().lower()
+    if not email:
+        return {"chip_verified": False}
+    from app.database import _sb
+    sb = _sb()
+    if not sb:
+        return {"chip_verified": False}
+    try:
+        r = sb.table("chip_auth").select("verified_at").eq("email", email).execute()
+        if not r.data:
+            return {"chip_verified": False}
+        ok = int(_time.time()) - int(r.data[0].get("verified_at") or 0) < CHIP_AUTH_TTL
+        return {"chip_verified": ok}
+    except Exception as e:
+        log.warning(f"[CHIP] status failed: {e}")
+        return {"chip_verified": False}
+
+
 # ── Block / unblock users (admin) ───────────────────────────────────────────
 @app.post("/admin/block-user")
 async def admin_block_user(request: Request):
