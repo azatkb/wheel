@@ -13,8 +13,51 @@ const TYPE_LABELS = {
   physical: { label:'Physical', icon:'📦', color:'#00bcd4' },
 }
 
+// Top-level shop categories. The shop is the central hub: Hardware and Software
+// link out to their own dedicated pages; Video and Library are bought here.
+const CATEGORIES = [
+  { key:'all',      label:'All',      icon:'📋' },
+  { key:'hardware', label:'Hardware', icon:'🔩' },
+  { key:'software', label:'Software', icon:'⚡' },
+  { key:'video',    label:'Video',    icon:'🎬' },
+  { key:'library',  label:'Library',  icon:'📚' },
+]
+const APP_BASE = import.meta.env.PROD ? '/kinetic' : ''
+// Each series has its own landing page (numbered allocation / purchase).
+const SERIES_PAGE = { pioneer:'pioneer.html', spectrum:'spectrum.html',
+                      founder:'founder.html', core:'core.html' }
+const SOFTWARE_LINKS = [
+  { key:'sw_pro', icon:'⚡', name:'Pro Plan',
+    blurb:'Full physics set, personal & group rankings, CW/CCW modes, underwater analysis.',
+    href:`${APP_BASE}/subscription`, cta:'View plans →' },
+  { key:'sw_ult', icon:'🌟', name:'Ultimate Plan',
+    blurb:'Everything in Pro, plus torque, angular momentum, brain-wave correlation and video download.',
+    href:`${APP_BASE}/subscription`, cta:'View plans →' },
+]
+
 function fmtPrice(p) {
   return p === 0 ? 'Free' : `$${p.toFixed(2)}`
+}
+
+// ── Link Card (navigates to a dedicated page, not add-to-cart) ──────────
+function LinkCard({ icon, name, blurb, price, href, cta = 'View →', external }) {
+  return (
+    <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:12,
+      overflow:'hidden',display:'flex',flexDirection:'column'}}>
+      <div style={{height:120,background:'var(--bg3)',display:'flex',alignItems:'center',
+        justifyContent:'center',fontSize:'3rem'}}>{icon}</div>
+      <div style={{padding:'1rem',flex:1,display:'flex',flexDirection:'column'}}>
+        <div style={{fontWeight:700,fontSize:'1rem',color:'var(--text)',marginBottom:'.3rem'}}>{name}</div>
+        {blurb && <div style={{fontSize:'.8rem',color:'var(--muted)',marginBottom:'.75rem',
+          flex:1,lineHeight:1.6}}>{blurb}</div>}
+        {price && <div style={{fontSize:'1.3rem',fontWeight:800,color:'var(--green)',marginBottom:'.6rem'}}>{price}</div>}
+        <a href={href} {...(external ? {target:'_blank', rel:'noreferrer'} : {})}
+          style={{textDecoration:'none',marginTop:'auto'}}>
+          <button className="btn btn-primary btn-sm" style={{width:'100%'}}>{cta}</button>
+        </a>
+      </div>
+    </div>
+  )
 }
 
 // ── Product Card ────────────────────────────────────────────────
@@ -715,8 +758,17 @@ export default function Store() {
   const [loading, setLoading]   = useState(false)
   const [checkoutMsg, setCheckoutMsg] = useState('')
   const [filter, setFilter]     = useState('all')
+  const [series, setSeries]     = useState([])   // hardware series (live prices)
 
-  useEffect(() => { loadProducts() }, [])
+  useEffect(() => { loadProducts(); loadSeries() }, [])
+
+  const loadSeries = async () => {
+    try {
+      const r = await fetch(`${API}/catalog/value-summary`)
+      const d = await r.json()
+      setSeries(d.series || [])
+    } catch { setSeries([]) }
+  }
 
   // Check success/cancel from URL
   useEffect(() => {
@@ -765,14 +817,31 @@ export default function Store() {
     }
   }
 
-  const types = ['all', ...new Set(products.map(p => p.type))]
-  const filtered = filter === 'all' ? products : products.filter(p => p.type === filter)
+  // Hardware cards link to each series' own page; prices are live from the
+  // editable catalog so they never drift from the admin panel.
+  const hardwareCards = series.map(s => {
+    const id = (s.id || '').toLowerCase()
+    return {
+      key: 'hw_' + id, icon: '🔩', name: s.name,
+      price: s.price != null ? `$${Number(s.price).toLocaleString('en-US')}` : '',
+      href: `https://mindpw.com/${SERIES_PAGE[id] || id + '.html'}`,
+      external: true, cta: 'View details →',
+    }
+  })
+  const showHardware = filter === 'all' || filter === 'hardware'
+  const showSoftware = filter === 'all' || filter === 'software'
+  const prodList =
+      filter === 'video'   ? products.filter(p => p.type === 'video')
+    : filter === 'library' ? products.filter(p => p.type === 'pdf')
+    : filter === 'all'     ? products.filter(p => !p.type.startsWith('subscription'))
+    : []   // hardware/software categories show link cards only
+  const nothing = !showHardware && !showSoftware && prodList.length === 0
 
   return (
     <div>
       <div className="page-header">
         <h1>🛒 Store</h1>
-        <p>Subscriptions, videos, PDFs and physical products</p>
+        <p>Everything in one place — hardware, software, video and library</p>
       </div>
 
       {checkoutMsg && (
@@ -790,12 +859,10 @@ export default function Store() {
       <div style={{display:'flex',justifyContent:'space-between',
         alignItems:'center',marginBottom:'1.25rem',flexWrap:'wrap',gap:'.75rem'}}>
         <div style={{display:'flex',gap:'.4rem',flexWrap:'wrap'}}>
-          {types.map(t => (
-            <button key={t} onClick={() => setFilter(t)}
-              className={`btn btn-sm ${filter===t?'btn-primary':'btn-secondary'}`}>
-              {t === 'all' ? '📋 All'
-               : TYPE_LABELS[t] ? `${TYPE_LABELS[t].icon} ${TYPE_LABELS[t].label}`
-               : t}
+          {CATEGORIES.map(c => (
+            <button key={c.key} onClick={() => setFilter(c.key)}
+              className={`btn btn-sm ${filter===c.key?'btn-primary':'btn-secondary'}`}>
+              {c.icon} {c.label}
             </button>
           ))}
         </div>
@@ -805,7 +872,7 @@ export default function Store() {
           🛒 Cart
           {cart.length > 0 && (
             <span style={{
-              position:'ultimate',top:-8,right:-8,
+              position:'absolute',top:-8,right:-8,
               background:'var(--green)',color:'#000',
               borderRadius:'50%',width:20,height:20,
               fontSize:'.65rem',display:'flex',alignItems:'center',
@@ -819,11 +886,15 @@ export default function Store() {
         gap:'1rem',marginBottom:'2rem'}}>
         {loading ? (
           <div style={{color:'var(--muted)',padding:'2rem'}}>Loading...</div>
-        ) : filtered.length === 0 ? (
-          <div style={{color:'var(--dim)',padding:'2rem'}}>No products yet</div>
-        ) : filtered.map(p => (
-          <ProductCard key={p.id} product={p} onAdd={addToCart} />
-        ))}
+        ) : nothing ? (
+          <div style={{color:'var(--dim)',padding:'2rem'}}>Nothing here yet.</div>
+        ) : (
+          <>
+            {showHardware && hardwareCards.map(c => <LinkCard key={c.key} {...c} />)}
+            {showSoftware && SOFTWARE_LINKS.map(c => <LinkCard key={c.key} {...c} />)}
+            {prodList.map(p => <ProductCard key={p.id} product={p} onAdd={addToCart} />)}
+          </>
+        )}
       </div>
 
       {/* Cart panel */}

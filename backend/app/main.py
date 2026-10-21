@@ -77,6 +77,15 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"], expose_headers=["*"],
 )
 
+# NTAG 424 DNA SUN verification routes (/verify etc.) live in app/ntag_routes.py.
+# Mount them here — without this, tapping a chip hits /verify and gets 404.
+try:
+    from app.ntag_routes import router as ntag_router
+    app.include_router(ntag_router)
+    log.info("[NTAG] verify router mounted")
+except Exception as e:
+    log.warning(f"[NTAG] router not mounted: {e}")
+
 executor = ThreadPoolExecutor(max_workers=2)
 jobs: dict = {}
 _seg  = load_yolo_seg()          # segmentation model (cpica)

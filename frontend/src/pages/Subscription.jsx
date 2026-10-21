@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth.jsx'
 import { API } from '../config'
 
+const MASTER_EMAILS = ['azatkb22@gmail.com', 'lajtnert@gmail.com']
+const isMaster = e => MASTER_EMAILS.includes((e || '').toLowerCase())
+
 const PLANS = [
   {
     id: 'basic',
@@ -88,6 +91,8 @@ export default function Subscription() {
   const [cancelling, setCancelling] = useState(false)
   const [billing, setBilling] = useState('month')   // 'month' | 'year'
   const isAnnual = billing === 'year'
+  // Effective plan — master always counts as Ultimate, matching the sidebar badge.
+  const effPlan = isMaster(user?.email) ? 'ultimate' : (user?.plan || 'basic')
 
   // Handle Stripe redirect
   useEffect(() => {
@@ -173,13 +178,13 @@ export default function Subscription() {
         <span style={{fontSize:'.82rem',color:'var(--muted)'}}>Current plan:</span>
         <span style={{
           padding:'.2rem .7rem',borderRadius:20,fontWeight:700,fontSize:'.82rem',
-          background: user.plan==='ultimate' ? 'rgba(176,122,12,.18)' : user.plan==='pro' ? 'rgba(0,255,136,.15)' : 'rgba(100,116,139,.15)',
-          color: user.plan==='ultimate' ? '#e0a830' : user.plan==='pro' ? 'var(--green)' : '#94a3b8',
-          border: `1px solid ${user.plan==='ultimate' ? '#B07A0C' : user.plan==='pro' ? 'var(--green)' : '#334155'}`,
+          background: effPlan==='ultimate' ? 'rgba(176,122,12,.18)' : effPlan==='pro' ? 'rgba(0,255,136,.15)' : 'rgba(100,116,139,.15)',
+          color: effPlan==='ultimate' ? '#e0a830' : effPlan==='pro' ? 'var(--green)' : '#94a3b8',
+          border: `1px solid ${effPlan==='ultimate' ? '#B07A0C' : effPlan==='pro' ? 'var(--green)' : '#334155'}`,
         }}>
-          {user.plan==='ultimate' ? '◆ Ultimate' : user.plan==='pro' ? '⭐ Pro' : 'Basic'}
+          {effPlan==='ultimate' ? '◆ Ultimate' : effPlan==='pro' ? '⭐ Pro' : 'Basic'}
         </span>
-        {(user.plan==='pro' || user.plan==='ultimate') && (
+        {!isMaster(user?.email) && (user.plan==='pro' || user.plan==='ultimate') && (
           <button className="btn btn-danger btn-sm"
             onClick={cancelSubscription} disabled={cancelling}>
             {cancelling ? 'Cancelling...' : 'Cancel subscription'}
@@ -216,7 +221,7 @@ export default function Subscription() {
 
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:'1rem',alignItems:'start'}}>
         {PLANS.map(plan => {
-          const isCurrent = user.plan === plan.id
+          const isCurrent = effPlan === plan.id
           // darker header/button colors so WHITE text stays readable on light background
           const headerColor = { basic:'#5B6B7B', pro:'#0A8F5C', ultimate:'#B07A0C' }[plan.id]
           return (
@@ -334,8 +339,6 @@ export default function Subscription() {
         Your card is never stored on our servers. Subscriptions renew monthly and can be cancelled anytime.
         <br /><br />
         By subscribing, you authorize Lajtner Code Pl to charge you according to the terms until you cancel your subscription.
-        <br /><br />
-        Questions? <a href="mailto:info@enyem.com" style={{color:'var(--green)'}}>info@enyem.com</a>
       </div>
     </div>
   )
