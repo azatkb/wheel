@@ -2301,6 +2301,49 @@ async def chip_confirm(request: Request):
             log.warning(f"[CHIP] confirm failed: {e}")
     return {"ok": True}
 
+@app.get("/chip/info")
+def chip_info(uid: str = "", email: str = ""):
+    """Public: look up chip details by UID or by the owner's email.
+    Returns serial, series, owner email, activation date, last counter."""
+    uid = (uid or "").strip().upper()
+    email = (email or "").strip().lower()
+    if not uid and not email:
+        raise HTTPException(400, "uid or email required")
+    from app.database import _sb
+    sb = _sb()
+    if not sb:
+        raise HTTPException(500, "DB unavailable")
+    try:
+        if uid:
+            r = sb.table("tags").select("uid, serial, account_email, last_counter, activated_at").eq("uid", uid).execute()
+        else:
+            r = sb.table("tags").select("uid, serial, account_email, last_counter, activated_at").eq("account_email", email).execute()
+        if not r.data:
+            return {"found": False}
+        chips = []
+        for row in r.data:
+            serial = row.get("serial") or ""
+            # Derive series from serial text
+            s = serial.lower()
+            series = "unknown"
+            if "pioneer" in s: series = "pioneer"
+            elif "spectrum" in s: series = "spectrum"
+            elif "founder" in s: series = "founder"
+            elif "core" in s: series = "core"
+            chips.append({
+                "uid": row.get("uid"),
+                "serial": serial,
+                "series": series,
+                "owner": row.get("account_email") or None,
+                "last_counter": row.get("last_counter"),
+                "activated_at": row.get("activated_at"),
+            })
+        return {"found": True, "chips": chips}
+    except Exception as e:
+        log.warning(f"[CHIP] info failed: {e}")
+        raise HTTPException(500, "lookup failed")
+
+
 @app.get("/chip/status")
 def chip_status(email: str = ""):
     """Is this email currently chip-verified (tapped a chip in the last 30 min)?"""

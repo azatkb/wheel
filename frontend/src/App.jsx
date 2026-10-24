@@ -23,6 +23,7 @@ import QuestionnaireViewer from './pages/QuestionnaireViewer'
 import PairAuthorize from './pages/PairAuthorize'
 import CatalogAdmin from './pages/CatalogAdmin'
 import PioneerProgram from './pages/PioneerProgram'
+import ChipInfo from './pages/ChipInfo'
 
 const MASTER_EMAILS = ['azatkb22@gmail.com', 'lajtnert@gmail.com']
 
@@ -36,6 +37,7 @@ const NAV_ALL = [
   { to: '/store',        icon: '🛒', label: 'Store' },
   { to: '/focus',        icon: '🧠', label: 'Focus Test' },
   { to: '/resonances',   icon: '📈', label: 'LR-LT-LJ' },
+  { to: '/my-chip',      icon: '📟', label: 'My Chip' },
   { to: '/pioneer',      icon: '🚀', label: 'Pioneer Program' },
   { to: 'https://mindpw.com/feedback.html', icon: '✉', label: 'Contact', external: true },
   { to: '/store-admin',   icon: '🏪', label: 'Store Admin', masterOnly: true },
@@ -227,6 +229,7 @@ function Shell() {
           <Route path="/users" element={<UserManagement />} />
           <Route path="/pair"          element={<PairAuthorize />} />
           <Route path="/catalog-admin" element={master ? <CatalogAdmin /> : <Navigate to="/upload" replace />} />
+          <Route path="/my-chip"        element={<ChipInfo />} />
           <Route path="/pioneer"       element={<PioneerProgram />} />
           <Route path="*"             element={<Navigate to="/upload" replace />} />
         </Routes>

@@ -14,13 +14,13 @@ Env:
 Series:
     --pioneer   Lajtner Pioneer #NN of 50          (default)
     --founder   Lajtner Founder Series - No. NN of 50
-    --alpha     Lajtner Alpha Series - No. NNN of 500
+    --spectrum  Lajtner Spectrum Series - No. NNN of 500
     --core      Lajtner Core Series                (no number)
 
 Usage:
-    python program_chip_sun.py 1 --founder                # Step A dry run
-    python program_chip_sun.py 2 --founder --sdm          # Step B, Founder No. 02
-    python program_chip_sun.py 3 --alpha  --sdm           # Step B, Alpha No. 003 of 500
+    python program_chip_sun.py 1 --founder                 # Step A dry run
+    python program_chip_sun.py 2 --founder --sdm           # Step B, Founder No. 02
+    python program_chip_sun.py 3 --spectrum --sdm          # Step B, Spectrum No. 003 of 500
     python program_chip_sun.py --core --sdm               # Step B, Core (no number)
     python program_chip_sun.py 1 --pioneer --change-key   # Step C
 """
@@ -39,11 +39,15 @@ DEFAULT_KEY     = bytes.fromhex("00000000000000000000000000000000")
 PICC_PLACEHOLDER = "0" * 32
 CMAC_PLACEHOLDER = "0" * 16
 
+# \u2500\u2500 Serial text written on each chip (EDIT THE TEXT IN QUOTES to change it) \u2500\u2500
+# {n:02d} = the number, zero-padded to 2 digits (01, 02 \u2026); {n:03d} = 3 digits.
+# NOTE: for the full Spectrum production run (500 units) change spectrum to
+#       "Lajtner Spectrum Series No. {n:03d} of 500".
 SERIES_SERIAL = {
-    "pioneer": "Lajtner Pioneer #{n:02d} of 50",
-    "founder": "Lajtner Founder Series \u2014 No. {n:02d} of 50",
-    "alpha":   "Lajtner Alpha Series \u2014 No. {n:03d} of 500",
-    "core":    "Lajtner Core Series",
+    "pioneer":  "Lajtner Pioneer Series #{n:02d} of 50",
+    "spectrum": "Lajtner Spectrum Series No. {n:02d} of 50",
+    "core":     "Core Series Lajtner #{n:02d} of 50",
+    "founder":  "Founder Series No. {n:02d} of 50",
 }
 
 def make_serial(series, n):
@@ -154,7 +158,7 @@ def configure_sdm(shim, picc_off, mac_off):
     return tag
 
 def _pick_series(args):
-    for s in ("pioneer", "founder", "alpha", "core"):
+    for s in ("pioneer", "founder", "spectrum", "core"):
         if f"--{s}" in args:
             return s
     return "pioneer"

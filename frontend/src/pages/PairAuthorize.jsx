@@ -22,13 +22,18 @@ export default function PairAuthorize() {
     setPairId(p || '')
   }, [])
 
-  // Ask the server whether this account is chip-verified (works across tabs).
+  // The phone counts as chip-verified if EITHER the server says so (chip_auth,
+  // works across tabs) OR this browser session was already device-authorized by
+  // a chip tap (sessionStorage) — so "already tapped" is respected even if the
+  // server round-trip hasn't landed yet.
   useEffect(() => {
     if (!user?.email) return
+    let local = false
+    try { local = !!(JSON.parse(sessionStorage.getItem('wt_device_auth') || '{}').authorized) } catch {}
     fetch(`${API}/chip/status?email=${encodeURIComponent(user.email)}`)
-      .then(r => r.json())
-      .then(d => setChipOk(!!d.chip_verified))
-      .catch(() => setChipOk(false))
+      .then(r => (r.ok ? r.json() : {}))
+      .then(d => setChipOk(!!d.chip_verified || local))
+      .catch(() => setChipOk(local))
   }, [user])
 
   const authorize = async () => {
