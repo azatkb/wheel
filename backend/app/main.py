@@ -2284,7 +2284,9 @@ CHIP_AUTH_TTL = 1800  # 30 minutes
 
 @app.post("/chip/confirm")
 async def chip_confirm(request: Request):
-    """Phone: after a genuine chip tap, mark this logged-in email as chip-verified."""
+    """Phone: after a genuine chip tap, mark this logged-in email as chip-verified.
+    Also stores the chip UID (looked up from the device-session token) so we can
+    show chip info on the 'My Chip' page without another tap."""
     body = await request.json()
     email = (body.get("email") or "").strip().lower()
     token = (body.get("token") or "").strip()
@@ -2292,14 +2294,23 @@ async def chip_confirm(request: Request):
         raise HTTPException(400, "email and token required")
     from app.database import _sb
     sb = _sb()
+    uid = ""
     if sb:
+        # look up UID from the device_sessions table using the token
         try:
-            sb.table("chip_auth").upsert(
-                {"email": email, "verified_at": int(_time.time())},
-                on_conflict="email").execute()
+            sr = sb.table("device_sessions").select("uid").eq("token", token).limit(1).execute()
+            if sr.data:
+                uid = sr.data[0].get("uid") or ""
+        except Exception as e:
+            log.warning(f"[CHIP] uid lookup from session failed: {e}")
+        try:
+            row = {"email": email, "verified_at": int(_time.time())}
+            if uid:
+                row["uid"] = uid
+            sb.table("chip_auth").upsert(row, on_conflict="email").execute()
         except Exception as e:
             log.warning(f"[CHIP] confirm failed: {e}")
-    return {"ok": True}
+    return {"ok": True, "uid": uid}
 
 @app.get("/chip/info")
 def chip_info(uid: str = "", email: str = ""):
@@ -2346,23 +2357,25 @@ def chip_info(uid: str = "", email: str = ""):
 
 @app.get("/chip/status")
 def chip_status(email: str = ""):
-    """Is this email currently chip-verified (tapped a chip in the last 30 min)?"""
+    """Is this email currently chip-verified (tapped a chip in the last 30 min)?
+    Also returns the UID of the last tapped chip (stored by /chip/confirm)."""
     email = (email or "").strip().lower()
     if not email:
-        return {"chip_verified": False}
+        return {"chip_verified": False, "uid": None}
     from app.database import _sb
     sb = _sb()
     if not sb:
-        return {"chip_verified": False}
+        return {"chip_verified": False, "uid": None}
     try:
-        r = sb.table("chip_auth").select("verified_at").eq("email", email).execute()
+        r = sb.table("chip_auth").select("verified_at, uid").eq("email", email).execute()
         if not r.data:
-            return {"chip_verified": False}
-        ok = int(_time.time()) - int(r.data[0].get("verified_at") or 0) < CHIP_AUTH_TTL
-        return {"chip_verified": ok}
+            return {"chip_verified": False, "uid": None}
+        row = r.data[0]
+        ok = int(_time.time()) - int(row.get("verified_at") or 0) < CHIP_AUTH_TTL
+        return {"chip_verified": ok, "uid": row.get("uid") or None}
     except Exception as e:
         log.warning(f"[CHIP] status failed: {e}")
-        return {"chip_verified": False}
+        return {"chip_verified": False, "uid": None}
 
 
 # ── Block / unblock users (admin) ───────────────────────────────────────────
