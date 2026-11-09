@@ -2527,12 +2527,120 @@ async def questionnaire_save(req: Request):
 
 @app.get("/questionnaire/my")
 def questionnaire_my(email: str = ""):
-    """Get a user's own questionnaire responses."""
+    """Get a user's own questionnaire responses + whether they have a complete one."""
     from app.database import _sb
     if not email: raise HTTPException(400, "email required")
     sb = _sb()
-    resp = sb.table("focus_questionnaire").select("*")        .eq("user_email", email).order("created_at", desc=True).execute()
-    return {"responses": resp.data or []}
+    resp = sb.table("focus_questionnaire").select("*") \
+        .eq("user_email", email).order("created_at", desc=True).execute()
+    rows = resp.data or []
+    # Check if any submission has all 8 answered
+    completed = any(r.get("answered_count", 0) >= 8 for r in rows)
+    return {"responses": rows, "completed": completed}
+
+
+@app.get("/questionnaire/count")
+def questionnaire_count():
+    """Public: how many complete questionnaires (answered_count=8) exist."""
+    from app.database import _sb
+    sb = _sb()
+    if not sb: return {"count": 0}
+    try:
+        resp = sb.table("focus_questionnaire").select("id", count="exact") \
+            .gte("answered_count", 8).execute()
+        return {"count": resp.count if resp.count is not None else len(resp.data or [])}
+    except Exception as e:
+        log.warning(f"[Q-COUNT] {e}")
+        return {"count": 0}
+
+
+@app.get("/questionnaire/results")
+def questionnaire_results(email: str = ""):
+    """User-facing: correlations between focus factors and performance.
+    Requires the user to have completed the questionnaire (all 8)."""
+    from app.database import _sb, get_group_averages
+    if not email: raise HTTPException(400, "email required")
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+
+    # Check user completed questionnaire
+    my = sb.table("focus_questionnaire").select("*") \
+        .eq("user_email", email).order("created_at", desc=True).limit(1).execute()
+    my_rows = my.data or []
+    if not my_rows or my_rows[0].get("answered_count", 0) < 8:
+        raise HTTPException(403, "Questionnaire not completed")
+
+    my_latest = my_rows[0]
+
+    # Total complete questionnaires
+    cnt = sb.table("focus_questionnaire").select("id", count="exact") \
+        .gte("answered_count", 8).execute()
+    total_q = cnt.count if cnt.count is not None else len(cnt.data or [])
+
+    # Average power across all users
+    grp = get_group_averages()
+    avg_power = grp.get("P_peak_air", 0) or 0
+
+    # Per-user latest power
+    pr = sb.table("physics_results").select("email,p_peak_air").execute()
+    power_by_email = {}
+    for r in (pr.data or []):
+        e = r.get("email"); p = r.get("p_peak_air")
+        if e and p is not None:
+            power_by_email[e] = float(p)
+
+    if avg_power <= 0 and power_by_email:
+        avg_power = sum(power_by_email.values()) / len(power_by_email)
+
+    # All complete questionnaire answers
+    all_q = sb.table("focus_questionnaire").select("*") \
+        .gte("answered_count", 8).execute()
+
+    # Build factor analysis for each of 8 factors
+    factors = []
+    q_labels = {
+        "q1_illness": ("Illness and Immune Status", ["Yes", "No"]),
+        "q2_loneliness": ("Loneliness and Social Isolation", ["Lonely", "Company"]),
+        "q3_sleep": ("Sleep Biology and Circadian Rhythm", ["Good", "Bad"]),
+        "q4_homeostasis": ("Basic Homeostasis", ["Good", "Bad"]),
+        "q5_stimulants": ("Stimulants, Medications & Smoking", ["Regularly", "Occasionally"]),
+        "q6_digital": ("Digital Fragmentation", ["Yes", "No"]),
+        "q7_breathing": ("Breathing Technique and Oxygenation", ["Okay", "Not okay"]),
+        "q8_emotional": ("Emotional Background Noise and Anxiety", ["Problem", "No problem"]),
+    }
+    for f in Q_FIELDS:
+        A = B = C = D = 0
+        for r in (all_q.data or []):
+            e = r.get("user_email")
+            ans = r.get(f, 0)
+            if not ans or e not in power_by_email:
+                continue
+            is_high = power_by_email[e] >= avg_power
+            if ans == 1 and is_high:  A += 1
+            elif ans == 1:            B += 1
+            elif is_high:             C += 1
+            else:                     D += 1
+        total = A + B + C + D
+        label, opts = q_labels.get(f, (f, ["Opt1", "Opt2"]))
+        entry = {"factor": f, "title": label, "options": opts,
+                 "n": total, "my_answer": my_latest.get(f, 0)}
+        if total >= 4:
+            try:
+                entry.update(_odds_ratio(A, B, C, D))
+            except Exception:
+                entry["error"] = "Calculation error"
+        else:
+            entry["error"] = "Not enough data yet"
+        factors.append(entry)
+
+    return {
+        "total_questionnaires": total_q,
+        "total_users_with_power": len(power_by_email),
+        "avg_power": round(avg_power, 6) if avg_power else 0,
+        "my_answers": my_latest,
+        "factors": factors,
+        "reliable": total_q >= 30,
+    }
 
 
 @app.get("/questionnaire/all")
