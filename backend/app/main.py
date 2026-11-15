@@ -15,7 +15,7 @@ Endpoints:
 """
 
 from dotenv import load_dotenv; load_dotenv()
-import uuid, os, shutil, asyncio, json, logging, math, datetime, hashlib, secrets
+import uuid, os, shutil, asyncio, json, logging, math, datetime, hashlib, secrets, string as _string
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
@@ -683,6 +683,12 @@ def _run_job(job_id, raw_path, direction, medium, hand_visible,
 def _hash_pw(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
 
+def _generate_security_code():
+    """12-char alphanumeric code: XXXX-XXXX-XXXX"""
+    alphabet = _string.ascii_uppercase + _string.digits
+    raw = ''.join(secrets.choice(alphabet) for _ in range(12))
+    return f"{raw[:4]}-{raw[4:8]}-{raw[8:12]}"
+
 def _get_user(email: str):
     try:
         from app.database import _sb
@@ -1031,8 +1037,11 @@ async def auth_register(request: Request):
     email = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
     recaptcha_token = body.get("recaptcha_token") or ""
+    age_confirmed = body.get("age_confirmed", False)
     if not email or not password:
         raise HTTPException(400, "Email and password required")
+    if not age_confirmed:
+        raise HTTPException(400, "You must confirm that you are an adult where you live.")
     if not await _verify_recaptcha(recaptcha_token):
         raise HTTPException(400, "reCAPTCHA verification failed. Please try again.")
     if _get_user(email):
@@ -1045,6 +1054,7 @@ async def auth_register(request: Request):
             "password_hash": _hash_pw(password),
             "plan": "basic",
             "created_at": datetime.datetime.utcnow().isoformat(),
+            "age_confirmed": True,
         }).execute()
         return {"ok": True}
     except Exception as e:
@@ -1085,7 +1095,123 @@ async def auth_login(request: Request):
     if user.get("blocked"):
         raise HTTPException(403, "This account has been suspended.")
     token = secrets.token_hex(32)
-    return {"token": token, "email": email, "plan": user.get("plan", "basic")}
+
+    # --- Personal Security Code ---
+    security_code = user.get("security_code")
+    show_security_code = False
+    if not security_code:
+        from app.database import _sb
+        sb = _sb()
+        security_code = _generate_security_code()
+        sb.table("wt_users").update({
+            "security_code": security_code,
+            "security_code_shown": False
+        }).eq("email", email).execute()
+        show_security_code = True
+    elif not user.get("security_code_shown"):
+        show_security_code = True
+
+    result = {"token": token, "email": email, "plan": user.get("plan", "basic")}
+
+    if show_security_code:
+        result["security_code"] = security_code
+        result["security_code_first_show"] = True
+        from app.database import _sb
+        sb = _sb()
+        sb.table("wt_users").update({"security_code_shown": True}).eq("email", email).execute()
+
+    return result
+
+
+@app.post("/auth/delete-by-security-code")
+async def auth_delete_by_security_code(request: Request):
+    """Delete all user data using Personal Security Code (no chip needed)."""
+    from app.database import _sb
+    body = await request.json()
+    email = (body.get("email") or "").strip().lower()
+    code  = (body.get("security_code") or "").strip().upper()
+    if not email or not code:
+        raise HTTPException(400, "Email and security code required")
+    user = _get_user(email)
+    if not user:
+        raise HTTPException(404, "User not found")
+    if (user.get("security_code") or "").upper() != code:
+        raise HTTPException(403, "Invalid security code")
+    sb = _sb()
+    sb.table("physics_results").delete().eq("user_email", email).execute()
+    sb.table("focus_questionnaire").delete().eq("user_email", email).execute()
+    sb.table("forum_posts").delete().eq("user_email", email).execute()
+    sb.table("forum_comments").delete().eq("user_email", email).execute()
+    sb.table("wt_users").update({
+        "plan": "basic",
+        "security_code": None,
+        "security_code_shown": False,
+        "focus_consent": False,
+        "focus_consent_withdrawn": True,
+    }).eq("email", email).execute()
+    return {"ok": True, "message": "All your data has been deleted. You can re-register with a new Lajtner Scope."}
+
+
+@app.get("/auth/export-my-data")
+async def export_my_data(email: str = ""):
+    """GDPR: Export all personal data."""
+    from app.database import _sb
+    if not email:
+        raise HTTPException(400, "email required")
+    user = _get_user(email)
+    if not user:
+        raise HTTPException(404, "User not found")
+    sb = _sb()
+    user_safe = {
+        "email": user.get("email"),
+        "plan": user.get("plan"),
+        "created_at": user.get("created_at"),
+        "age_confirmed": user.get("age_confirmed"),
+    }
+    phys_resp = sb.table("physics_results").select("*") \
+        .eq("user_email", email).order("created_at", desc=True).execute()
+    measurements = []
+    for r in (phys_resp.data or []):
+        w_total = r.get("W_total_air") or r.get("W_total_water") or 0
+        measurements.append({
+            "date": r.get("created_at"),
+            "job_id": r.get("job_id"),
+            "medium": r.get("medium"),
+            "direction": r.get("direction"),
+            "duration_sec": r.get("duration_sec"),
+            "cumulative_deg": r.get("cumulative_deg"),
+            "rotational_speed_max": r.get("omega_max"),
+            "force_max_N": r.get("F_max_air") or r.get("F_max_water"),
+            "energy_joules": w_total,
+            "energy_eV": w_total / 1.602176634e-19 if w_total else 0,
+            "power_peak_W": r.get("P_peak_air") or r.get("P_peak_water"),
+            "lajtner_resonance": r.get("planck_freq"),
+            "lajtner_time": r.get("lajtner_time"),
+            "lajtner_point": r.get("lajtner_point"),
+            "lajtner_jerk": r.get("a_lajtner"),
+        })
+    fq_resp = sb.table("focus_questionnaire").select("*") \
+        .eq("user_email", email).order("created_at", desc=True).execute()
+    focus_answers = []
+    for r in (fq_resp.data or []):
+        focus_answers.append({
+            "date": r.get("created_at"),
+            "q1_illness": r.get("q1_illness"),
+            "q2_loneliness": r.get("q2_loneliness"),
+            "q3_sleep": r.get("q3_sleep"),
+            "q4_homeostasis": r.get("q4_homeostasis"),
+            "q5_stimulants": r.get("q5_stimulants"),
+            "q6_digital": r.get("q6_digital"),
+            "q7_breathing": r.get("q7_breathing"),
+            "q8_emotional": r.get("q8_emotional"),
+        })
+    return {
+        "export_date": datetime.datetime.utcnow().isoformat(),
+        "account": user_safe,
+        "measurements": measurements,
+        "focus_test_answers": focus_answers,
+    }
+
 
 def add_lr_overlay(video_path: str, planck_freq: float):
     """Add Lajtner Resonance text to last 3 seconds of video."""
@@ -2502,13 +2628,23 @@ Q_FIELDS = ["q1_illness","q2_loneliness","q3_sleep","q4_homeostasis",
 
 @app.post("/questionnaire")
 async def questionnaire_save(req: Request):
-    """Save a questionnaire response. Unanswered = 0."""
+    """Save a questionnaire response. Requires GDPR consent. Unanswered = 0."""
     from app.database import _sb
     body = await req.json()
     sb = _sb()
     if not sb: raise HTTPException(500, "DB unavailable")
     email = (body.get("user_email") or "").strip().lower()
     if not email: raise HTTPException(400, "email required")
+
+    # GDPR consent check
+    user = _get_user(email)
+    if not user:
+        raise HTTPException(404, "User not found")
+    if not user.get("focus_consent"):
+        raise HTTPException(403, "Focus Test requires your explicit consent before storing data. Please give consent first.")
+    if user.get("focus_consent_withdrawn"):
+        raise HTTPException(403, "You have withdrawn your Focus Test consent. This function is no longer available.")
+
     data = {"user_email": email, "is_measurement": bool(body.get("is_measurement", True))}
     answered = 0
     for f in Q_FIELDS:
@@ -2537,6 +2673,76 @@ def questionnaire_my(email: str = ""):
     # Check if any submission has all 8 answered
     completed = any(r.get("answered_count", 0) >= 8 for r in rows)
     return {"responses": rows, "completed": completed}
+
+
+@app.post("/questionnaire/consent")
+async def questionnaire_consent(req: Request):
+    """GDPR: Give or withdraw consent for Focus Test data storage."""
+    from app.database import _sb
+    body = await req.json()
+    email = (body.get("email") or "").strip().lower()
+    consent = body.get("consent", False)
+    if not email:
+        raise HTTPException(400, "email required")
+    sb = _sb()
+    if consent:
+        sb.table("wt_users").update({
+            "focus_consent": True,
+            "focus_consent_at": datetime.datetime.utcnow().isoformat(),
+            "focus_consent_withdrawn": False,
+        }).eq("email", email).execute()
+        return {"ok": True, "consent": True}
+    else:
+        sb.table("focus_questionnaire").delete().eq("user_email", email).execute()
+        sb.table("wt_users").update({
+            "focus_consent": False,
+            "focus_consent_withdrawn": True,
+        }).eq("email", email).execute()
+        return {"ok": True, "consent": False, "message": "Consent withdrawn. Your Focus Test data has been deleted."}
+
+
+@app.get("/questionnaire/consent-status")
+def questionnaire_consent_status(email: str = ""):
+    """Check user's Focus Test consent status."""
+    if not email: raise HTTPException(400, "email required")
+    user = _get_user(email)
+    if not user: raise HTTPException(404, "User not found")
+    return {
+        "consent": bool(user.get("focus_consent")),
+        "withdrawn": bool(user.get("focus_consent_withdrawn")),
+        "consent_at": user.get("focus_consent_at"),
+    }
+
+
+@app.put("/questionnaire/update")
+async def questionnaire_update(req: Request):
+    """Update user's latest Focus Test answers (e.g. stopped smoking)."""
+    from app.database import _sb
+    body = await req.json()
+    email = (body.get("email") or "").strip().lower()
+    if not email: raise HTTPException(400, "email required")
+    user = _get_user(email)
+    if not user or not user.get("focus_consent"):
+        raise HTTPException(403, "Focus Test consent required")
+    sb = _sb()
+    resp = sb.table("focus_questionnaire").select("*") \
+        .eq("user_email", email).order("created_at", desc=True).limit(1).execute()
+    if not resp.data:
+        raise HTTPException(404, "No questionnaire found to update")
+    latest = resp.data[0]
+    update_data = {}
+    answered = 0
+    for f in Q_FIELDS:
+        v = body.get(f)
+        if v is not None:
+            update_data[f] = int(v)
+        if (update_data.get(f) or latest.get(f, 0)) > 0:
+            answered += 1
+    update_data["answered_count"] = answered
+    update_data["updated_at"] = datetime.datetime.utcnow().isoformat()
+    sb.table("focus_questionnaire").update(update_data) \
+        .eq("id", latest["id"]).execute()
+    return {"ok": True, "updated_id": latest["id"]}
 
 
 @app.get("/questionnaire/count")
@@ -3339,33 +3545,50 @@ async def store_validate_coupon(req: Request):
     return {"ok": True, "coupon": c}
 
 
-# ── Shipping (DHL estimate) ──────────────────────────────────────
+# ── Shipping (hardware restricted to USA/Norway/Switzerland/UK) ───
+
+ALLOWED_SHIPPING = {
+    "US": ["CA", "NY"],       # California, New York
+    "NO": None,               # Norway — whole country
+    "CH": None,               # Switzerland — whole country
+    "GB": ["LONDON"],         # UK — London only
+}
+
+def _check_shipping_allowed(country: str, state_or_city: str = ""):
+    """Check if we ship hardware to this location."""
+    country = (country or "").upper().strip()
+    if country not in ALLOWED_SHIPPING:
+        return False, f"We currently ship hardware only to: USA (California, NYC), Norway, Switzerland, UK (London). We do not ship to {country}."
+    allowed = ALLOWED_SHIPPING[country]
+    if allowed is None:
+        return True, ""
+    loc = (state_or_city or "").strip().upper()
+    if not loc:
+        return True, ""
+    for a in allowed:
+        if a in loc:
+            return True, ""
+    return False, f"In {country}, we ship to {', '.join(allowed)} only."
+
 
 @app.get("/store/shipping-estimate")
-def store_shipping_estimate(country: str = "", postal_code: str = "", weight_kg: float = 0.3):
-    """Estimate DHL shipping cost."""
+def store_shipping_estimate(country: str = "", postal_code: str = "",
+                            city: str = "", state: str = "",
+                            weight_kg: float = 0.3, has_hardware: bool = False):
+    """Estimate shipping cost. Hardware ships only to allowed regions."""
+    if has_hardware:
+        allowed, msg = _check_shipping_allowed(country, state or city)
+        if not allowed:
+            raise HTTPException(400, msg)
     import os
     dhl_key = os.environ.get("DHL_API_KEY","")
     if not dhl_key:
-        # No DHL key → use the editable per-region flat rates from the admin panel
-        # (ship_eu / ship_usa / ship_asia / ship_other). Falls back to a legacy
-        # per-country table only if the region rate hasn't been set yet.
-        try:
-            from app.database import _sb
-            region_cost = _ship_cost(_sb(), country)
-        except Exception:
-            region_cost = 0.0
-        if region_cost > 0:
-            cost = region_cost
-        else:
-            rates = {
-                "HU": 5.0, "DE": 8.0, "AT": 8.0, "SK": 8.0,
-                "US": 25.0, "GB": 20.0, "FR": 15.0, "IT": 15.0,
-            }
-            cost = rates.get(country.upper(), 30.0)
+        rates = {"US": 25.0, "NO": 30.0, "CH": 28.0, "GB": 20.0}
+        cost = rates.get(country.upper(), 35.0)
         if weight_kg > 1.0: cost += (weight_kg - 1.0) * 8
         return {"cost_usd": round(cost, 2), "source": "flat_rate",
-                "note": "Exact price calculated at order confirmation"}
+                "allowed_regions": list(ALLOWED_SHIPPING.keys()),
+                "note": "Hardware ships to USA (CA, NYC), Norway, Switzerland, UK (London) only."}
     # DHL API integration
     try:
         import httpx as _hx
@@ -3418,6 +3641,16 @@ async def store_checkout(req: Request):
     product_ids = [i["product_id"] for i in items]
     prods_resp = sb.table("store_products").select("*").in_("id", product_ids).execute()
     prods = {p["id"]: p for p in (prods_resp.data or [])}
+
+    # Check hardware shipping restriction
+    has_hw = any(prods.get(i["product_id"], {}).get("type") == "physical" for i in items)
+    if has_hw and shipping_info:
+        ship_country = shipping_info.get("country", "")
+        ship_state = shipping_info.get("state", "")
+        ship_city = shipping_info.get("city", "")
+        ok, msg = _check_shipping_allowed(ship_country, ship_state or ship_city)
+        if not ok:
+            raise HTTPException(400, msg)
 
     # Calculate total
     subtotal = 0.0

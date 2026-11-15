@@ -44,15 +44,15 @@ CMAC_PLACEHOLDER = "0" * 16
 # NOTE: for the full Spectrum production run (500 units) change spectrum to
 #       "Lajtner Spectrum Series No. {n:03d} of 500".
 SERIES_SERIAL = {
-    "pioneer":  "Lajtner Pioneer Series #{n:02d} of 50",
-    "spectrum": "Lajtner Spectrum Series No. {n:02d} of 50",
-    "core":     "Core Series Lajtner #{n:02d} of 50",
-    "founder":  "Founder Series No. {n:02d} of 50",
+    "pioneer":  "Lajtner Pioneer Series #{n:02d} of {total}",
+    "spectrum": "Lajtner Spectrum Series No. {n:02d} of {total}",
+    "core":     "Lajtner Core Series #{n:02d} of {total}",
+    "founder":  "Lajtner Founder Series No. {n:02d} of {total}",
 }
 
-def make_serial(series, n):
+def make_serial(series, n, total=50):
     fmt = SERIES_SERIAL.get(series, SERIES_SERIAL["pioneer"])
-    return fmt.format(n=n) if "{n" in fmt else fmt
+    return fmt.format(n=n, total=total)
 
 NDEF_AID = [0xD2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x01]
 NDEF_FID = [0xE1, 0x04]
@@ -135,7 +135,7 @@ def _sdm_tag(shim):
     from pylibsdm.tag.ntag424dna import Tag
     return Tag(shim)
 
-def configure_sdm(shim, picc_off, mac_off):
+def configure_sdm(shim, picc_off, mac_off, write_access=0x0):
     from pylibsdm.tag.ntag424dna import (
         FileSettings, SDMOptions, SDMAccessRights, AccessRights, FileOption, CommMode)
     tag = _sdm_tag(shim)
@@ -146,7 +146,8 @@ def configure_sdm(shim, picc_off, mac_off):
     sdm_ar = SDMAccessRights(meta_read=0x0, file_read=0x0, ctr_ret=0xF)
     fs = FileSettings(
         file_option=FileOption(sdm_enabled=True, comm_mode=CommMode.PLAIN),
-        access_rights=AccessRights(read=0xE, write=0x0, read_write=0x0, change=0x0),
+        access_rights=AccessRights(read=0xE, write=write_access,
+                                   read_write=write_access, change=0x0),
         sdm_options=sdm_opts,
         sdm_access_rights=sdm_ar,
         picc_data_offset=picc_off,
@@ -185,6 +186,10 @@ def main():
     args = sys.argv[1:]
     nums = [a for a in args if a.isdigit()]
     n = int(nums[0]) if nums else 1
+    total = 50
+    for i, a in enumerate(args):
+        if a == "--total" and i + 1 < len(args):
+            total = int(args[i + 1])
     series  = _pick_series(args)
     do_sdm  = "--sdm" in args
     do_key  = "--change-key" in args
@@ -192,7 +197,7 @@ def main():
 
     url = build_url()
     file_bytes, picc_off, mac_off = build_ndef_file(url)
-    serial = make_serial(series, n)
+    serial = make_serial(series, n, total)
 
     print(f"series       : {series}")
     print(f"URL template : {url}")
@@ -212,7 +217,17 @@ def main():
 
     if do_sdm:
         print("\n[STEP B] writing NDEF + enabling SUN (default key kept - reversible)…")
-        write_ndef(conn, file_bytes)
+        try:
+            write_ndef(conn, file_bytes)
+        except RuntimeError as e:
+            if "6982" not in str(e):
+                raise
+            print("  Chip already programmed — unlocking for re-write…")
+            configure_sdm(tag, picc_off, mac_off, write_access=0xE)
+            conn.disconnect()
+            conn.connect()
+            write_ndef(conn, file_bytes)
+            tag = PyscardTag(conn)
         configure_sdm(tag, picc_off, mac_off)
         print("DONE. Now TAP the chip with a phone.")
         _register_db(uid, serial)

@@ -24,6 +24,7 @@ import PairAuthorize from './pages/PairAuthorize'
 import CatalogAdmin from './pages/CatalogAdmin'
 import PioneerProgram from './pages/PioneerProgram'
 import ChipInfo from './pages/ChipInfo'
+import FAQ from './pages/FAQ'
 
 const MASTER_EMAILS = ['azatkb22@gmail.com', 'lajtnert@gmail.com']
 
@@ -245,6 +246,7 @@ export default function App() {
       <FeedbackWidget />
       <Routes>
         <Route path="/login" element={<LoginGuard />} />
+        <Route path="/faq" element={<FAQ />} />
         <Route path="/*"    element={<Shell />} />
       </Routes>
     </AuthProvider>

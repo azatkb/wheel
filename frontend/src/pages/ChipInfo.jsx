@@ -2,8 +2,6 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth.jsx'
 import { API } from '../config'
 
-const MASTER_EMAILS = ['azatkb22@gmail.com', 'lajtnert@gmail.com']
-
 const SERIES_COLORS = {
   pioneer:  { bg: 'rgba(255,136,0,.12)', border: 'rgba(255,136,0,.4)', text: 'var(--amber)' },
   spectrum: { bg: 'rgba(0,200,255,.12)', border: 'rgba(0,200,255,.4)', text: 'var(--blue)' },
@@ -47,10 +45,20 @@ function ChipCard({ chip }) {
           <div style={{ fontSize: '.82rem', color: 'var(--muted)' }}>{chip.serial || '—'}</div>
         </div>
       </div>
+      {/* chip name = serial */}
+      {chip.serial && (
+        <div style={{
+          fontSize: '1.1rem', fontWeight: 600, color: 'var(--fg)',
+          marginBottom: '1rem', padding: '.6rem .8rem',
+          background: c.bg, borderRadius: 8, border: `1px solid ${c.border}`,
+        }}>
+          {chip.serial}
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.6rem .8rem' }}>
         <InfoRow label="UID" value={chip.uid} mono />
         <InfoRow label="Tap counter" value={chip.last_counter != null ? chip.last_counter : '—'} />
-        <InfoRow label="Owner" value={chip.owner || chip.account_email || 'not assigned'} />
         <InfoRow label="Activated"
           value={chip.activated_at ? new Date(chip.activated_at).toLocaleDateString() : '—'} />
       </div>
@@ -73,158 +81,64 @@ function InfoRow({ label, value, mono }) {
 
 export default function ChipInfo() {
   const { user } = useAuth()
-  const [chips, setChips]       = useState(null)  // null=idle, []=empty
-  const [error, setError]       = useState('')
-  const [manualUid, setManualUid] = useState('')
-  const [loading, setLoading]   = useState(false)
-  const [source, setSource]     = useState('')     // 'tap' | 'search' | 'all'
+  const [chip, setChip]       = useState(null)   // null=loading, false=none
+  const [error, setError]     = useState('')
+  const [loading, setLoading] = useState(true)
 
-  const master = user?.email && MASTER_EMAILS.includes(user.email.toLowerCase())
-
-  // On mount: check chip_auth for this user's last tapped UID,
-  // or sessionStorage as fallback; master sees all chips
+  // On mount: ask /chip/status by email → get uid → load chip info from tags
   useEffect(() => {
-    if (!user?.email) return
-
-    // 1) try sessionStorage (instant, from current session tap)
-    let localUid = null
-    try {
-      const d = JSON.parse(sessionStorage.getItem('wt_device_auth') || '{}')
-      if (d.authorized && d.uid) localUid = d.uid
-    } catch {}
-
-    if (localUid) {
-      lookupUid(localUid, 'tap')
-      return
-    }
-
-    // 2) ask server — chip_auth stores uid from the last tap (persists across sessions)
+    if (!user?.email) { setLoading(false); return }
+    setLoading(true)
     fetch(`${API}/chip/status?email=${encodeURIComponent(user.email)}`)
       .then(r => r.ok ? r.json() : {})
       .then(d => {
         if (d.uid) {
-          lookupUid(d.uid, 'tap')
-        } else if (master) {
-          loadAll()
+          return fetch(`${API}/chip/info?uid=${encodeURIComponent(d.uid)}`)
+            .then(r => r.ok ? r.json() : {})
+            .then(info => {
+              if (info.found && info.chips?.length) {
+                setChip(info.chips[0])
+              } else {
+                // uid known but not in tags — show basic info
+                setChip({ uid: d.uid, serial: '', series: 'unknown' })
+              }
+            })
+        } else {
+          setChip(false)
         }
       })
-      .catch(() => { if (master) loadAll() })
-  }, [user?.email, master])
-
-  async function lookupUid(uid, src) {
-    setError(''); setLoading(true); setSource(src || 'search')
-    try {
-      const r = await fetch(`${API}/chip/info?uid=${encodeURIComponent(uid)}`)
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      const d = await r.json()
-      setChips(d.found ? d.chips : [])
-    } catch (e) {
-      setError(`Could not reach server: ${e.message}`)
-      setChips([])
-    } finally { setLoading(false) }
-  }
-
-  async function loadAll() {
-    setError(''); setLoading(true); setSource('all')
-    try {
-      const token = 'wt_master_2026'
-      const r = await fetch(
-        `${API}/master/chips?email=${encodeURIComponent(user.email)}&token=${encodeURIComponent(token)}`)
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      const d = await r.json()
-      const list = (d.chips || []).map(row => ({
-        ...row,
-        series: parseSeries(row.serial),
-        owner: row.account_email || null,
-      }))
-      setChips(list)
-    } catch (e) {
-      setError(`Could not load chips: ${e.message}`)
-      setChips([])
-    } finally { setLoading(false) }
-  }
-
-  function handleManual(e) {
-    e.preventDefault()
-    const v = manualUid.trim().toUpperCase()
-    if (v.length >= 4) lookupUid(v, 'search')
-  }
+      .catch(() => setError('Could not reach server.'))
+      .finally(() => setLoading(false))
+  }, [user?.email])
 
   const box = { maxWidth: 560, margin: '2rem auto', padding: '0 1rem' }
 
   return (
     <div style={box}>
       <h2 style={{ display: 'flex', alignItems: 'center', gap: '.5rem', marginBottom: '.3rem' }}>
-        <span style={{ fontSize: '1.4rem' }}>📟</span> Chip Identifier
+        <span style={{ fontSize: '1.4rem' }}>📟</span> My Chip
       </h2>
-      <p style={{ color: 'var(--muted)', fontSize: '.85rem', marginBottom: '1.5rem' }}>
-        {source === 'tap'
-          ? 'Showing chip detected from your last tap.'
-          : 'Enter a chip UID to look up its details, or tap your NFC chip on this device.'}
-      </p>
 
-      {/* UID lookup */}
-      <form onSubmit={handleManual} style={{ display: 'flex', gap: '.5rem', marginBottom: '1.5rem' }}>
-        <input type="text" placeholder="Enter chip UID (e.g. 04A1420ABD2390)"
-          value={manualUid} onChange={e => setManualUid(e.target.value)}
-          style={{
-            flex: 1, padding: '.55rem .75rem', background: 'var(--bg2)',
-            border: '1px solid var(--border)', borderRadius: 8, color: 'var(--fg)',
-            fontFamily: 'monospace', fontSize: '.85rem',
-          }} />
-        <button type="submit" className="btn btn-primary" disabled={loading}
-          style={{ padding: '.55rem 1rem', whiteSpace: 'nowrap' }}>
-          {loading ? '...' : 'Look up'}
-        </button>
-      </form>
-
-      {error && <p style={{ color: 'var(--red)', fontSize: '.85rem', marginBottom: '1rem' }}>{error}</p>}
+      {error && <p style={{ color: 'var(--red)', fontSize: '.85rem' }}>{error}</p>}
 
       {loading && (
         <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '2rem 0' }}>Loading...</p>
       )}
 
-      {/* results */}
-      {!loading && chips !== null && chips.length > 0 && (
-        <>
-          {source === 'all' && (
-            <p style={{ color: 'var(--dim)', fontSize: '.78rem', marginBottom: '.5rem' }}>
-              {chips.length} registered chip(s)
-            </p>
-          )}
-          {chips.map(c => <ChipCard key={c.uid} chip={c} />)}
-        </>
+      {!loading && chip && (
+        <ChipCard chip={chip} />
       )}
 
-      {/* searched but nothing found */}
-      {!loading && chips !== null && chips.length === 0 && !error && (
-        <div style={{
-          textAlign: 'center', padding: '2.5rem 1rem',
-          background: 'var(--bg2)', borderRadius: 14, border: '1px solid var(--border)',
-        }}>
-          <div style={{ fontSize: '2.5rem', marginBottom: '.5rem' }}>🏷</div>
-          <p style={{ color: 'var(--muted)' }}>
-            {source === 'all' ? 'No chips registered yet.' : 'No chip found for this UID.'}
-          </p>
-          <p style={{ color: 'var(--dim)', fontSize: '.82rem' }}>
-            {source === 'all'
-              ? 'Write chips with write_chips.py, then they will appear here.'
-              : 'Check the UID and try again, or tap your NFC chip on this device.'}
-          </p>
-        </div>
-      )}
-
-      {/* idle — no search yet, no tap */}
-      {!loading && chips === null && !error && (
+      {!loading && chip === false && !error && (
         <div style={{
           textAlign: 'center', padding: '2.5rem 1rem',
           background: 'var(--bg2)', borderRadius: 14, border: '1px solid var(--border)',
         }}>
           <div style={{ fontSize: '2.5rem', marginBottom: '.5rem' }}>📟</div>
-          <p style={{ color: 'var(--muted)', fontWeight: 600 }}>Chip Number Identifier</p>
+          <p style={{ color: 'var(--muted)', fontWeight: 600 }}>No chip linked yet</p>
           <p style={{ color: 'var(--dim)', fontSize: '.82rem', maxWidth: 340, margin: '.5rem auto 0' }}>
-            Enter a chip UID above to see its series, serial number, owner and tap history.
-            Or tap your NFC chip on this phone to identify it automatically.
+            Tap your NFC chip on this device to link it to your account.
+            After that, your chip info will appear here automatically.
           </p>
         </div>
       )}
