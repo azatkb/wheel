@@ -5,7 +5,7 @@
  */
 import { useState, useEffect } from 'react';
 
-const API = import.meta.env.VITE_API_URL || 'https://wheelttt.xyz';
+import { API } from '../config'
 
 export default function FocusConsent({ email, onConsented }) {
   const [status, setStatus] = useState(null); // null=loading, obj=loaded

@@ -25,6 +25,9 @@ import CatalogAdmin from './pages/CatalogAdmin'
 import PioneerProgram from './pages/PioneerProgram'
 import ChipInfo from './pages/ChipInfo'
 import FAQ from './pages/FAQ'
+import DeleteAccountByCode from './pages/DeleteAccountByCode'
+import Settings from './pages/Settings'
+import { CookieGate } from './components/CookieConsent'
 
 const MASTER_EMAILS = ['azatkb22@gmail.com', 'lajtnert@gmail.com']
 
@@ -40,6 +43,8 @@ const NAV_ALL = [
   { to: '/resonances',   icon: '📈', label: 'LR-LT-LJ' },
   { to: '/my-chip',      icon: '📟', label: 'My Chip' },
   { to: '/pioneer',      icon: '🚀', label: 'Pioneer Program' },
+  { to: '/settings',     icon: '⚙', label: 'Settings' },
+  { to: 'https://lajtner.com/terms-privacy.html', icon: '📜', label: 'Terms & Privacy', external: true },
   { to: 'https://mindpw.com/feedback.html', icon: '✉', label: 'Contact', external: true },
   { to: '/store-admin',   icon: '🏪', label: 'Store Admin', masterOnly: true },
   { to: '/catalog-admin', icon: '🧾', label: 'Catalog', masterOnly: true },
@@ -232,6 +237,7 @@ function Shell() {
           <Route path="/catalog-admin" element={master ? <CatalogAdmin /> : <Navigate to="/upload" replace />} />
           <Route path="/my-chip"        element={<ChipInfo />} />
           <Route path="/pioneer"       element={<PioneerProgram />} />
+          <Route path="/settings"      element={<Settings />} />
           <Route path="*"             element={<Navigate to="/upload" replace />} />
         </Routes>
       </main>
@@ -242,13 +248,16 @@ function Shell() {
 export default function App() {
   return (
     <AuthProvider>
-      <TawkWidget />
-      <FeedbackWidget />
-      <Routes>
-        <Route path="/login" element={<LoginGuard />} />
-        <Route path="/faq" element={<FAQ />} />
-        <Route path="/*"    element={<Shell />} />
-      </Routes>
+      <CookieGate>
+        <TawkWidget />
+        <FeedbackWidget />
+        <Routes>
+          <Route path="/login" element={<LoginGuard />} />
+          <Route path="/faq" element={<FAQ />} />
+          <Route path="/delete-account" element={<DeleteAccountByCode />} />
+          <Route path="/*"    element={<Shell />} />
+        </Routes>
+      </CookieGate>
     </AuthProvider>
   )
 }

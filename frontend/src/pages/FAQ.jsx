@@ -24,6 +24,10 @@ const FAQ_SECTIONS = [
       {
         q: 'Why is it this shape?',
         a: 'Because after many experiments, this shape proved to be the best. We developed many rotors in other shapes, both centrally symmetric and asymmetric, but none matched the practical value of the current version.'
+      },
+      {
+        q: 'Does it only work in air?',
+        a: 'No. As mentioned above, the Lajtner Scope works in both water and air. The hardware video that comes with the Lajtner Scope shows you how to switch it to underwater mode. Please note: the Lajtner Scope has a sharp, pointed part. Always cover it with the protective cap when you handle the device, especially when you switch between air mode and water mode. A separate warning label supplied with the Lajtner Scope also draws your attention to this.'
       }
     ]
   },
@@ -60,7 +64,7 @@ const FAQ_SECTIONS = [
       },
       {
         q: 'Is it dangerous to my health?',
-        a: 'Based on our research and experience, we are not aware of any harm from the conscious use of thought force, and many people feel better after practicing. However, rotating the star requires a kind of concentration you are not used to. If you have a condition affecting the brain, nervous system, eyes, ears or any other part of the head, please talk to your doctor before you start. The Lajtner Scope is not a medical device.'
+        a: 'Based on our research and experience, we are not aware of any harm from the conscious use of thought force, and many people feel better after practicing. However, rotating the star requires a kind of concentration you are not used to. The Lajtner Scope is meant for healthy users. If you have a disease of the brain or nervous system or another serious illness, a condition affecting the eyes, ears or any other part of the head, and/or fluctuating blood pressure, please talk to your doctor before you use the Lajtner Scope, to find out whether you may use it. The Lajtner Scope is not a medical device.'
       },
       {
         q: 'Is L-Thinking by Lajtner tiring?',
@@ -125,8 +129,12 @@ const FAQ_SECTIONS = [
         a: 'Yes. Every Lajtner Scope contains an NFC chip that gives you access to the Lajtner Code, including the free plan. Without the chip, no version of the Lajtner Code works, not even the free one.'
       },
       {
+        q: 'Do I need the Lajtner Code to use the Lajtner Scope?',
+        a: 'No. The Lajtner Scope also works without the Lajtner Code, but then you do not get measured data.'
+      },
+      {
         q: 'How does a measurement work?',
-        a: 'You record a video of the spinning star, either by uploading a video file or using your webcam for a live stream. The AI model identifies the star and tracks its spokes in every frame. From this frame-by-frame angular data, the system computes angular velocity, acceleration, force, energy, peak power and Lajtner Resonance. No simulated data is used: every result is calculated from your real video.'
+        a: 'You record a video of the spinning star, either by uploading a video file or using your webcam for a live stream. The AI model identifies the star and tracks its spokes in every frame. From this frame-by-frame angular data, the system computes angular velocity, acceleration, force, energy, peak power and Lajtner Resonance. No simulated data is used: every result is calculated from your real video. The video is stored as long as your account exists. Please do not show yourself in the video, because your image is personal data. If you do appear in it, you consent to your image being recorded.'
       },
       {
         q: 'What environments are supported for measurements?',
@@ -216,19 +224,23 @@ const FAQ_SECTIONS = [
       },
       {
         q: 'How long does delivery take?',
-        a: 'We ship with DHL or other international shipping companies, so delivery times depend on the shipping company.'
+        a: 'We ship with DHL or other international shipping companies, so delivery times depend on the shipping company. For legal reasons, we currently ship primarily, but not exclusively, to the United States, and within the United States to California.'
       },
       {
         q: 'If I order and it is out of stock, how long will it take?',
-        a: 'We accept an order only after the full amount has been paid. If the Lajtner Scope is not in stock, we manufacture it specifically for you, based on your order. This can take several weeks; we will let you know by email. The Lajtner Scope is a rarity, and it is worth the wait.'
+        a: 'We accept an order only after the full amount has been paid. If the Lajtner Scope is not in stock, we manufacture it specifically for you, based on your order. This can take several weeks or several months, because some of our suppliers are very slow. We will let you know by email exactly how long it will take. As long as our suppliers have not officially refused to deliver the parts, we consider your order active. If you withdraw from your order after three months, you will get your money back after deduction of our costs. The Lajtner Scope is a rarity, and it is worth the wait.'
       },
       {
-        q: 'How long is the return period?',
-        a: 'For EU/EEA/UK customers: you can withdraw within 14 days of delivery without giving a reason. Send the product back within 14 days of telling us. We refund the purchase price, including standard delivery costs, within 14 days. You pay the cost of returning the product. For customers outside the EU/EEA/UK: we accept returns of unopened boxes sent back within 14 days of delivery with proof of payment.'
+        q: 'How long is the return period, and is there a money-back guarantee?',
+        a: 'For customers in the EU, the EEA and the UK: because of certain open legal issues, we currently do not ship to these areas, and therefore we do not accept orders from these countries. Once these issues have been resolved, we will ship there too. From then on, the following rules apply: you can withdraw from your purchase within 14 days of delivery without giving a reason. Send the product back within 14 days of telling us. We refund the purchase price, including standard delivery costs, within 14 days. You pay the cost of returning the product. For customers outside the EU/EEA/UK: we accept returns of unopened boxes sent back within 14 days of delivery with proof of payment.'
       },
       {
         q: 'Is there a warranty?',
         a: 'Yes. If the Lajtner Scope is used as intended, we provide a 2-year warranty for manufacturing defects. The warranty does not cover damage that happens after delivery, for example if the Lajtner Scope is dropped, broken or used improperly.'
+      },
+      {
+        q: 'Do the prices include VAT or sales tax?',
+        a: 'The prices shown in the shop do not include VAT or sales tax. When you add a product to your cart, you see the full price there, including VAT or sales tax (depending on where you live) and shipping costs. The same full price appears on your invoice, in line with common online practice.'
       },
       {
         q: 'Do I have to pay customs duties?',
@@ -236,7 +248,7 @@ const FAQ_SECTIONS = [
       },
       {
         q: 'What happens if my Lajtner Scope is lost?',
-        a: 'If lost after delivery, we cannot replace it. If lost or damaged during shipping to you, that is our responsibility: we will send a new one or refund you. You also lose access to its data. Everyone receives a personal security code at their first login — with this code, you can contact support even without your chip, cancel your subscription and have your data deleted. Data that has not been accessed for 12 months is deleted automatically.'
+        a: 'If lost after delivery, we cannot replace it. If lost or damaged during shipping to you, that is our responsibility: we will send a new one or refund you. You also lose access to its data. Everyone receives a personal security code at their first login — with this code, you can contact support even without your chip, cancel your subscription and have your data deleted. If you have lost your personal security code, your data will still be deleted automatically: data stored in the Lajtner Code that has not been accessed (no login with the chip) for 12 months is deleted automatically at the end of that period, unless you have an active subscription. We will send you a reminder by email before your data is deleted. Invoicing and accounting data are kept for the period required by law.'
       }
     ]
   },
@@ -257,7 +269,7 @@ const FAQ_SECTIONS = [
       },
       {
         q: 'Is my measured data public?',
-        a: 'No. We never publish any user\'s measured data in a way that could identify them personally. The anonymous leaderboard only shows, in numbers, how many users have better and weaker results and where you stand. You can delete your data at any time from within the Lajtner Code when you are logged in with your chip.'
+        a: 'No. We never publish any user\'s measured data in a way that could identify them personally. The anonymous leaderboard only shows, in numbers, how many users have better and weaker results and where you stand. You can delete your data at any time from within the Lajtner Code when you are logged in with your chip. Data that has not been accessed (no login with the chip) for 12 months is deleted automatically at the end of that period, unless you have an active subscription. We will send you a reminder by email before your data is deleted. Invoicing and accounting data are kept for the period required by law.'
       },
       {
         q: 'Can I download my data or get a copy of it?',
@@ -266,6 +278,10 @@ const FAQ_SECTIONS = [
       {
         q: 'Can children use the Lajtner Scope and the Lajtner Code?',
         a: 'The Lajtner Code is designed for users who are adults where they live and who can take full legal responsibility for their use of the app. We do not support use by minors. When you register, you confirm that you are an adult. We ask parents to supervise their children\'s online activities.'
+      },
+      {
+        q: 'Can I reject cookies?',
+        a: 'Partly. Some cookies are strictly necessary: the Lajtner Code does not work without them, so they cannot be rejected. Other cookies are optional, and you can reject them; the Lajtner Code still works without them. We do not use cookies for advertising or to track you on other websites, and we do not collect data for third parties. For details, see our Privacy Policy.'
       },
       {
         q: 'Can I switch between dark and light mode?',

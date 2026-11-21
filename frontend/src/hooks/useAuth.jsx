@@ -19,34 +19,20 @@ export function AuthProvider({ children }) {
     const u = { email, token: data.token, plan: data.plan || 'free' }
     localStorage.setItem('wt_user', JSON.stringify(u))
     setUser(u)
-    return u
+    // Return full response so Login.jsx can check security_code
+    return data
   }
 
-  const register = async (email, password, recaptcha_token = '') => {
+  const register = async (email, password, recaptcha_token = '', age_confirmed = false) => {
     const r = await fetch(API + '/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, recaptcha_token })
+      body: JSON.stringify({ email, password, recaptcha_token, age_confirmed })
     })
     const data = await r.json()
     if (!r.ok) throw new Error(data.detail || 'Registration failed')
     return login(email, password, recaptcha_token)
   }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
   // Listen for plan updates from Subscription page
   useEffect(() => {
@@ -55,14 +41,6 @@ export function AuthProvider({ children }) {
         const u = JSON.parse(localStorage.getItem('wt_user'))
         if (u) setUser(u)
       } catch {}
-
-
-
-
-
-
-
-
     }
     window.addEventListener('wt_plan_updated', handler)
     return () => window.removeEventListener('wt_plan_updated', handler)
@@ -80,15 +58,4 @@ export function AuthProvider({ children }) {
   )
 }
 
-
-
-
-
-
-
-
-
-
-
-export const useAuth = () => useContext(AuthContext) 
-
+export const useAuth = () => useContext(AuthContext)

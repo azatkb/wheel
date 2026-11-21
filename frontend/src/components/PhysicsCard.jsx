@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { fSI } from '../hooks/useChart'
 import LajtnerStats from './LajtnerStats'
+import PlanckDisclaimer from './PlanckDisclaimer'
 
 // SI prefix formatters
 const fmtOmega = (v) => {
@@ -463,6 +464,9 @@ export default function PhysicsCard({ msg, result, jobId, isPaid, showTable = tr
           The brain&apos;s electromagnetic waves do not exceed <strong>800 Hz (8.00×10²)</strong>, according to mainstream science.
         </div>
       )}
+
+      {/* Planck formula disclaimer */}
+      {msg?.display?.planck_freq_Hz != null && <PlanckDisclaimer />}
 
       {/* Power verdict: weak / strong vs average */}
       {msg?.power_verdict && (

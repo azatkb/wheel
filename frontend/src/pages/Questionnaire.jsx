@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth.jsx'
 import { API } from '../config'
+import FocusConsent from '../components/FocusConsent'
+import QuestionnaireEdit from '../components/QuestionnaireEdit'
 
 // The 8 Primary Factors Governing Mental Focus
 const QUESTIONS = [
@@ -243,18 +245,38 @@ function ResultsView({ user }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [info, setInfo] = useState(null)
+  const [editing, setEditing] = useState(false)
 
-  useEffect(() => {
+  const loadResults = () => {
+    setLoading(true)
     fetch(`${API}/questionnaire/results?email=${encodeURIComponent(user.email)}`)
       .then(r => { if (!r.ok) throw new Error('Failed'); return r.json() })
       .then(d => setData(d))
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [user.email])
+  }
+
+  useEffect(() => { loadResults() }, [user.email])
 
   if (loading) return <div className="card" style={{textAlign:'center', padding:'2rem'}}>Loading results...</div>
   if (error) return <div className="card" style={{color:'var(--red)'}}>Error loading results: {error}</div>
   if (!data) return null
+
+  if (editing) {
+    return (
+      <div>
+        <div className="page-header">
+          <h1>Focus Test — Edit Answers</h1>
+        </div>
+        <QuestionnaireEdit
+          email={user.email}
+          questions={QUESTIONS}
+          onSaved={() => { setEditing(false); loadResults() }}
+          onCancel={() => setEditing(false)}
+        />
+      </div>
+    )
+  }
 
   const { factors, total_questionnaires, reliable, my_answers } = data
 
@@ -265,6 +287,9 @@ function ResultsView({ user }) {
         <p>Correlations between the 8 focus factors and physical performance, based
           on {total_questionnaires} completed questionnaire{total_questionnaires !== 1 ? 's' : ''}.</p>
       </div>
+
+      {/* GDPR consent status */}
+      <FocusConsent email={user.email} onConsented={() => {}} />
 
       {/* Reliability notice */}
       {!reliable && (
@@ -283,11 +308,17 @@ function ResultsView({ user }) {
         </div>
       )}
 
-      {/* Your answers summary */}
+      {/* Your answers summary + Edit button */}
       <div className="card" style={{marginBottom:'1rem'}}>
-        <h3 style={{fontSize:'1rem', fontWeight:700, color:'var(--green)', marginBottom:'.75rem'}}>
-          ✓ Your Answers
-        </h3>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'.75rem'}}>
+          <h3 style={{fontSize:'1rem', fontWeight:700, color:'var(--green)', margin:0}}>
+            ✓ Your Answers
+          </h3>
+          <button onClick={() => setEditing(true)} className="btn btn-secondary btn-sm"
+            style={{fontSize:'.78rem', padding:'.3rem .8rem'}}>
+            ✏️ Edit My Answers
+          </button>
+        </div>
         <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(240px, 1fr))', gap:'.5rem'}}>
           {factors.map(f => {
             const myAns = f.my_answer
@@ -380,12 +411,18 @@ function ResultsView({ user }) {
 /* ═══════════════════════════════════════════════════
    GATE — show message if questionnaire not completed
    ═══════════════════════════════════════════════════ */
-function NotCompletedGate({ onFillOut }) {
+function NotCompletedGate({ user, onFillOut }) {
+  const [consented, setConsented] = useState(false)
+
   return (
     <div>
       <div className="page-header">
         <h1>Focus Test</h1>
       </div>
+
+      {/* GDPR Consent — must give consent before filling out */}
+      <FocusConsent email={user.email} onConsented={(v) => setConsented(v)} />
+
       <div className="card" style={{
         borderColor:'rgba(255,149,0,.4)', background:'rgba(255,149,0,.06)',
         textAlign:'center', padding:'2rem 1.5rem'
@@ -401,8 +438,9 @@ function NotCompletedGate({ onFillOut }) {
           Our community is growing, and we'd love for you to join us!
           Explore all the data and use the results to improve your quality of life.
         </p>
-        <button onClick={onFillOut} className="btn btn-primary" style={{padding:'.7rem 2rem'}}>
-          Fill Out Questionnaire
+        <button onClick={onFillOut} className="btn btn-primary" style={{padding:'.7rem 2rem'}}
+          disabled={!consented}>
+          {consented ? 'Fill Out Questionnaire' : 'Give consent above first'}
         </button>
       </div>
     </div>
@@ -438,7 +476,7 @@ export default function Questionnaire() {
 
   if (status === 'results') return <ResultsView user={user} />
   if (status === 'form')   return <QuestionnaireForm user={user} onCompleted={() => setStatus('results')} />
-  if (status === 'gate')   return <NotCompletedGate onFillOut={() => setStatus('form')} />
+  if (status === 'gate')   return <NotCompletedGate user={user} onFillOut={() => setStatus('form')} />
 
   return null
 }

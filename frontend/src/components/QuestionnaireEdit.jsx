@@ -1,124 +1,117 @@
 /**
  * QuestionnaireEdit.jsx
  * Edit Focus Test answers (e.g., user stopped smoking).
- * Separate page/modal reachable from Focus Test section.
+ * Uses the same binary options (1/2) as the original questionnaire.
+ * Props: email, questions (QUESTIONS array from parent), onSaved, onCancel
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react'
+import { API } from '../config'
 
-const API = import.meta.env.VITE_API_URL || 'https://wheelttt.xyz';
-
-const FIELDS = [
-  { key: 'illness', label: 'Illness', desc: 'How much does illness affect your daily life?' },
-  { key: 'loneliness', label: 'Loneliness', desc: 'How often do you feel lonely?' },
-  { key: 'sleep', label: 'Sleep', desc: 'How well do you sleep on average?' },
-  { key: 'homeostasis', label: 'Homeostasis', desc: 'How balanced does your body feel?' },
-  { key: 'stimulants', label: 'Stimulants', desc: 'How often do you use stimulants (coffee, nicotine, etc.)?' },
-  { key: 'digital', label: 'Digital', desc: 'How much time do you spend on screens daily?' },
-  { key: 'breathing', label: 'Breathing', desc: 'How is your breathing quality?' },
-  { key: 'emotions', label: 'Emotions', desc: 'How stable are your emotions?' },
-];
-
-const OPTIONS = [
-  { value: 1, label: '1 — Very low / None' },
-  { value: 2, label: '2 — Low' },
-  { value: 3, label: '3 — Moderate' },
-  { value: 4, label: '4 — High' },
-  { value: 5, label: '5 — Very high' },
-];
-
-export default function QuestionnaireEdit({ email, onSaved, onCancel }) {
-  const [answers, setAnswers] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
+export default function QuestionnaireEdit({ email, questions, onSaved, onCancel }) {
+  const [answers, setAnswers] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
 
   useEffect(() => {
     fetch(`${API}/questionnaire/my?email=${encodeURIComponent(email)}`)
       .then(r => r.json())
       .then(data => {
-        if (data.length > 0) {
-          const latest = data[0];
-          const a = {};
-          FIELDS.forEach(f => { a[f.key] = latest[f.key] || 0; });
-          setAnswers(a);
-        }
-        setLoading(false);
+        // data.answers or data itself might have q1_illness, q2_loneliness etc.
+        const src = data.answers || data
+        const a = {}
+        questions.forEach(q => { a[q.id] = src[q.id] || 0 })
+        setAnswers(a)
+        setLoading(false)
       })
-      .catch(() => setLoading(false));
-  }, [email]);
+      .catch(() => setLoading(false))
+  }, [email])
 
   const handleSave = async () => {
-    setSaving(true);
-    setError('');
+    setSaving(true)
+    setError('')
     try {
       const res = await fetch(`${API}/questionnaire/update`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, ...answers })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Save failed');
-      setSuccess(true);
-      setTimeout(() => onSaved?.(), 1500);
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || 'Save failed')
+      setSuccess(true)
+      setTimeout(() => onSaved?.(), 1500)
     } catch (e) {
-      setError(e.message);
+      setError(e.message)
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
-  };
+  }
 
-  if (loading) return <p style={{ color: '#aaa' }}>Loading your answers...</p>;
+  if (loading) return <div className="card" style={{textAlign:'center',padding:'2rem',color:'var(--muted)'}}>Loading your answers...</div>
 
   return (
-    <div style={{
-      background: '#1a1a2e', borderRadius: 12, padding: 24,
-      border: '1px solid #2a2a4a', maxWidth: 560
-    }}>
-      <h3 style={{ color: '#fff', margin: '0 0 4px' }}>✏️ Edit Focus Test Answers</h3>
-      <p style={{ color: '#aaa', fontSize: 13, marginBottom: 20 }}>
+    <div>
+      <p style={{color:'var(--muted)', fontSize:'.85rem', marginBottom:'1rem'}}>
         Update your answers if your lifestyle has changed (e.g., you stopped smoking).
       </p>
 
-      {FIELDS.map(f => (
-        <div key={f.key} style={{ marginBottom: 16 }}>
-          <label style={{ color: '#ccc', fontSize: 14, fontWeight: 500 }}>
-            {f.label}
-          </label>
-          <p style={{ color: '#888', fontSize: 12, margin: '2px 0 6px' }}>{f.desc}</p>
+      {questions.map(q => (
+        <div key={q.id} className="card" style={{
+          marginBottom:'.75rem',
+          borderColor: answers[q.id] > 0 ? 'rgba(0,204,102,.3)' : undefined
+        }}>
+          <div style={{display:'flex', alignItems:'center', gap:'.5rem', marginBottom:'.5rem'}}>
+            <span style={{
+              width:22, height:22, borderRadius:'50%',
+              background: answers[q.id] > 0 ? 'var(--green)' : 'var(--bg3)',
+              border:'1px solid var(--border)',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              fontSize:'.7rem', fontWeight:700,
+              color: answers[q.id] > 0 ? '#000' : 'var(--green)', flexShrink:0
+            }}>{answers[q.id] > 0 ? '✓' : q.num}</span>
+            <span style={{fontWeight:600, color:'var(--text)', fontSize:'.95rem'}}>
+              {q.title}
+            </span>
+          </div>
+          {q.subtitle && (
+            <div style={{fontSize:'.8rem', color:'var(--muted)', marginLeft:'1.8rem', marginBottom:'.5rem'}}>
+              {q.subtitle}
+            </div>
+          )}
           <select
-            value={answers[f.key] || 0}
-            onChange={e => setAnswers(prev => ({ ...prev, [f.key]: parseInt(e.target.value) }))}
-            style={{
-              width: '100%', background: '#0d0d1a', border: '1px solid #333',
-              borderRadius: 8, padding: '8px 12px', color: '#fff', fontSize: 14
-            }}
-          >
-            <option value={0}>— Not answered —</option>
-            {OPTIONS.map(o => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
+            value={answers[q.id] || ''}
+            onChange={e => setAnswers(a => ({...a, [q.id]: parseInt(e.target.value) || 0}))}
+            className="form-input"
+            style={{maxWidth:300}}>
+            <option value="" disabled hidden>— Choose an option —</option>
+            <option value="1">{q.options[0]}</option>
+            <option value="2">{q.options[1]}</option>
           </select>
         </div>
       ))}
 
-      {error && <p style={{ color: '#ff6b6b', fontSize: 13 }}>{error}</p>}
-      {success && <p style={{ color: '#6bff6b', fontSize: 13 }}>✅ Saved successfully!</p>}
+      {error && (
+        <div style={{padding:'.5rem .85rem', borderRadius:6, marginBottom:'.75rem', fontSize:'.85rem',
+          background:'rgba(255,68,68,.1)', color:'var(--red)'}}>
+          {error}
+        </div>
+      )}
+      {success && (
+        <div style={{padding:'.5rem .85rem', borderRadius:6, marginBottom:'.75rem', fontSize:'.85rem',
+          background:'rgba(0,255,136,.1)', color:'var(--green)'}}>
+          ✅ Saved successfully!
+        </div>
+      )}
 
-      <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
-        <button onClick={onCancel} style={{
-          flex: 1, background: '#333', color: '#aaa', border: 'none',
-          padding: '10px', borderRadius: 8, cursor: 'pointer'
-        }}>
+      <div style={{display:'flex', gap:'.75rem', marginTop:'1rem'}}>
+        <button onClick={onCancel} className="btn btn-secondary" style={{flex:1}}>
           Cancel
         </button>
-        <button onClick={handleSave} disabled={saving} style={{
-          flex: 1, background: '#4a90d9', color: '#fff', border: 'none',
-          padding: '10px', borderRadius: 8, cursor: 'pointer', fontWeight: 600
-        }}>
+        <button onClick={handleSave} disabled={saving} className="btn btn-primary" style={{flex:1}}>
           {saving ? 'Saving...' : 'Save Changes'}
         </button>
       </div>
     </div>
-  );
+  )
 }

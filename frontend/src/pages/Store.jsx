@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth.jsx'
 import { API } from '../config'
+import { MailingSubscribe } from '../components/MailingList'
 
 const MASTER_EMAILS = ['azatkb22@gmail.com', 'lajtnert@gmail.com']
 const isMaster = e => MASTER_EMAILS.includes((e||'').toLowerCase())
@@ -201,6 +202,7 @@ function Cart({ items, onRemove, onCheckout, user }) {
   const [shipping, setShipping] = useState({ name:'', addr:'', city:'', country:'', zip:'' })
   const [billing, setBilling] = useState({ same: true, name:'', addr:'', city:'', country:'', zip:'' })
   const [shippingCost, setShippingCost] = useState(0)
+  const [importFees, setImportFees] = useState(null)
   const [loadingShip, setLoadingShip] = useState(false)
 
   const hasPhysical = items.some(i => i.type === 'physical')
@@ -213,6 +215,7 @@ function Cart({ items, onRemove, onCheckout, user }) {
        : couponData.type === 'fixed'  ? Math.min(couponData.value, subtotal)
        : couponData.type === 'free'   ? subtotal : 0)
     : 0
+  const totalImport = importFees?.total_import_fees || 0
   const total = Math.max(0, subtotal - discount + shippingCost)
 
   const validateCoupon = async () => {
@@ -233,9 +236,12 @@ function Cart({ items, onRemove, onCheckout, user }) {
     setLoadingShip(true)
     const weight = items.filter(i=>i.type==='physical')
       .reduce((s,i) => s + (i.metadata?.weight_kg || 0.3) * (i.qty||1), 0)
-    const r = await fetch(`${API}/store/shipping-estimate?country=${shipping.country}&postal_code=${shipping.zip}&weight_kg=${weight}`)
+    const physicalValue = items.filter(i=>i.type==='physical')
+      .reduce((s,i) => s + (i.price_usd || 0) * (i.qty||1), 0)
+    const r = await fetch(`${API}/store/shipping-estimate?country=${shipping.country}&postal_code=${shipping.zip}&weight_kg=${weight}&declared_value=${physicalValue}&has_hardware=true`)
     const d = await r.json()
     setShippingCost(d.cost_usd || 0)
+    setImportFees(d.import_fees || null)
     setLoadingShip(false)
   }
 
@@ -349,9 +355,54 @@ function Cart({ items, onRemove, onCheckout, user }) {
             )}
           </div>
           {shippingCost > 0 && (
-            <div style={{fontSize:'.8rem',color:'var(--blue)',marginTop:'.5rem',
-              padding:'.4rem .7rem',background:'rgba(68,170,255,.08)',borderRadius:6}}>
-              📦 Estimated shipping: ${shippingCost.toFixed(2)}
+            <div style={{marginTop:'.75rem',padding:'.75rem',background:'var(--bg2)',
+              borderRadius:8,border:'1px solid var(--border)'}}>
+              <div style={{fontSize:'.75rem',fontWeight:600,color:'var(--muted)',
+                marginBottom:'.5rem',textTransform:'uppercase',letterSpacing:'.05em'}}>
+                📦 Shipping & Import Fees Estimate
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:'.82rem',
+                color:'var(--text)',marginBottom:'.25rem'}}>
+                <span>DHL Express shipping</span>
+                <span>${shippingCost.toFixed(2)}</span>
+              </div>
+              {importFees && importFees.customs_duty_usd > 0 && (
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:'.82rem',
+                  color:'var(--text)',marginBottom:'.25rem'}}>
+                  <span title={importFees.duty_note}>
+                    Customs duty ({importFees.customs_duty_pct}%)
+                  </span>
+                  <span>${importFees.customs_duty_usd.toFixed(2)}</span>
+                </div>
+              )}
+              {importFees && importFees.sales_tax_usd > 0 && (
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:'.82rem',
+                  color:'var(--text)',marginBottom:'.25rem'}}>
+                  <span title={importFees.tax_note}>
+                    Sales/use tax ({importFees.sales_tax_pct}%)
+                  </span>
+                  <span>${importFees.sales_tax_usd.toFixed(2)}</span>
+                </div>
+              )}
+              {importFees && importFees.brokerage_usd > 0 && (
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:'.82rem',
+                  color:'var(--text)',marginBottom:'.25rem'}}>
+                  <span>Customs clearance fee</span>
+                  <span>${importFees.brokerage_usd.toFixed(2)}</span>
+                </div>
+              )}
+              {importFees && (
+                <div style={{fontSize:'.72rem',color:'var(--dim)',marginTop:'.4rem',
+                  lineHeight:1.5,borderTop:'1px solid var(--border)',paddingTop:'.4rem'}}>
+                  ⓘ Import fees are estimates. Actual customs duty and taxes are
+                  collected by the carrier (DHL) upon delivery. {importFees.duty_note && (
+                    <span style={{display:'block',marginTop:'.2rem'}}>{importFees.duty_note}</span>
+                  )}
+                  {importFees.tax_note && (
+                    <span style={{display:'block'}}>{importFees.tax_note}</span>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </>
@@ -377,8 +428,22 @@ function Cart({ items, onRemove, onCheckout, user }) {
         )}
         <div style={{display:'flex',justifyContent:'space-between',fontWeight:800,
           fontSize:'1.1rem',color:'var(--text)',borderTop:'1px solid var(--border)',paddingTop:'.5rem'}}>
-          <span>Total</span><span style={{color:'var(--green)'}}>{fmtPrice(total)}</span>
+          <span>Total (charged now)</span><span style={{color:'var(--green)'}}>{fmtPrice(total)}</span>
         </div>
+        {importFees && totalImport > 0 && (
+          <>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:'.8rem',
+              color:'var(--amber)',marginTop:'.4rem'}}>
+              <span>+ Est. import fees (paid on delivery)</span>
+              <span>${totalImport.toFixed(2)}</span>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:'.85rem',
+              fontWeight:700,color:'var(--muted)',marginTop:'.2rem'}}>
+              <span>Est. total landed cost</span>
+              <span>${(total + totalImport).toFixed(2)}</span>
+            </div>
+          </>
+        )}
       </div>
 
       <button onClick={() => onCheckout({ coupon_code: coupon, couponData,
@@ -895,6 +960,11 @@ export default function Store() {
             {prodList.map(p => <ProductCard key={p.id} product={p} onAdd={addToCart} />)}
           </>
         )}
+      </div>
+
+      {/* Mailing list subscribe */}
+      <div style={{ marginTop: '1rem' }}>
+        <MailingSubscribe />
       </div>
 
       {/* Cart panel */}

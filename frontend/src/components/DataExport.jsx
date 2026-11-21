@@ -5,7 +5,7 @@
  */
 import { useState } from 'react';
 
-const API = import.meta.env.VITE_API_URL || 'https://wheelttt.xyz';
+import { API } from '../config'
 
 export default function DataExport({ email }) {
   const [loading, setLoading] = useState(false);

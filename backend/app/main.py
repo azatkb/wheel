@@ -1037,10 +1037,11 @@ async def auth_register(request: Request):
     email = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
     recaptcha_token = body.get("recaptcha_token") or ""
-    age_confirmed = body.get("age_confirmed", False)
+    age_confirmed = body.get("age_confirmed")  # None esli frontend ne posylal
     if not email or not password:
         raise HTTPException(400, "Email and password required")
-    if not age_confirmed:
+    # Proverka tol'ko esli frontend prislal pole (= novyy frontend s checkbox)
+    if age_confirmed is not None and not age_confirmed:
         raise HTTPException(400, "You must confirm that you are an adult where you live.")
     if not await _verify_recaptcha(recaptcha_token):
         raise HTTPException(400, "reCAPTCHA verification failed. Please try again.")
@@ -1054,7 +1055,7 @@ async def auth_register(request: Request):
             "password_hash": _hash_pw(password),
             "plan": "basic",
             "created_at": datetime.datetime.utcnow().isoformat(),
-            "age_confirmed": True,
+            "age_confirmed": bool(age_confirmed),
         }).execute()
         return {"ok": True}
     except Exception as e:
@@ -3571,52 +3572,137 @@ def _check_shipping_allowed(country: str, state_or_city: str = ""):
     return False, f"In {country}, we ship to {', '.join(allowed)} only."
 
 
+# ── Import fees — customs duty & tax rates by destination ──────────────────
+# EU-origin goods (Hungary). Rates are estimates; admin can override in laj_config.
+# duty_pct  = US customs duty for HTS Chapter 90 (scientific/measuring instruments)
+#             from EU member states: 10 % effective rate (9903.05.39 floor).
+# tax_pct   = destination sales/use tax applied on (product value + duty).
+# brokerage = flat customs-clearance fee charged by carrier (DHL Express: included
+#             for most shipments; shown separately so the buyer knows).
+_IMPORT_FEES = {
+    "US": {"duty_pct": 10.0, "tax_pct": 8.5, "brokerage": 0.0,
+           "duty_note": "US Customs duty 10 % (HTS Ch. 90, EU origin)",
+           "tax_note":  "California use tax ~8.5 % (varies by county, 7.25–10.25 %)"},
+    "NO": {"duty_pct": 0.0, "tax_pct": 25.0, "brokerage": 12.0,
+           "duty_note": "Norway: EU-origin scientific instruments duty-free under EEA",
+           "tax_note":  "Norwegian MVA (VAT) 25 %"},
+    "CH": {"duty_pct": 0.0, "tax_pct": 8.1, "brokerage": 15.0,
+           "duty_note": "Switzerland: most EU scientific instruments duty-free under FTA",
+           "tax_note":  "Swiss VAT 8.1 %"},
+    "GB": {"duty_pct": 0.0, "tax_pct": 20.0, "brokerage": 12.0,
+           "duty_note": "UK: scientific instruments 0 % duty (UK Global Tariff)",
+           "tax_note":  "UK VAT 20 %"},
+}
+
 @app.get("/store/shipping-estimate")
 def store_shipping_estimate(country: str = "", postal_code: str = "",
                             city: str = "", state: str = "",
-                            weight_kg: float = 0.3, has_hardware: bool = False):
-    """Estimate shipping cost. Hardware ships only to allowed regions."""
+                            weight_kg: float = 0.3, has_hardware: bool = False,
+                            declared_value: float = 0.0):
+    """Estimate shipping cost + import fees (customs duty, taxes, brokerage).
+    declared_value is the product price in USD used to compute duty & tax."""
     if has_hardware:
         allowed, msg = _check_shipping_allowed(country, state or city)
         if not allowed:
             raise HTTPException(400, msg)
+
+    cc = country.upper()
+
+    # ── 1. Shipping cost ──────────────────────────────────────────
     import os
     dhl_key = os.environ.get("DHL_API_KEY","")
-    if not dhl_key:
-        rates = {"US": 25.0, "NO": 30.0, "CH": 28.0, "GB": 20.0}
-        cost = rates.get(country.upper(), 35.0)
-        if weight_kg > 1.0: cost += (weight_kg - 1.0) * 8
-        return {"cost_usd": round(cost, 2), "source": "flat_rate",
-                "allowed_regions": list(ALLOWED_SHIPPING.keys()),
-                "note": "Hardware ships to USA (CA, NYC), Norway, Switzerland, UK (London) only."}
-    # DHL API integration
-    try:
-        import httpx as _hx
-        headers = {"DHL-API-Key": dhl_key, "Content-Type": "application/json"}
-        payload = {
-            "plannedShippingDateAndTime": "2026-01-01T12:00:00GMT+01:00",
-            "unitOfMeasurement": "metric",
-            "isCustomsDeclarable": True,
-            "monetaryAmount": [{"typeCode":"declaredValue","value":50,"currency":"USD"}],
-            "requestedPackages": [{"weight": weight_kg, "dimensions":{"length":15,"width":15,"height":5}}],
-            "accounts": [{"typeCode":"shipper","number": os.environ.get("DHL_ACCOUNT_NUMBER","")}],
-            "customerDetails": {
-                "shipperDetails": {"postalCode": DHL_ORIGIN["postalCode"],
-                                   "cityName": DHL_ORIGIN["city"],
-                                   "countryCode": DHL_ORIGIN["country"]},
-                "receiverDetails": {"postalCode": postal_code,
-                                    "cityName": "", "countryCode": country.upper()}
+    ship_cost = None
+    ship_source = "flat_rate"
+
+    if dhl_key:
+        try:
+            import httpx as _hx
+            headers = {"DHL-API-Key": dhl_key, "Content-Type": "application/json"}
+            payload = {
+                "plannedShippingDateAndTime": "2026-01-01T12:00:00GMT+01:00",
+                "unitOfMeasurement": "metric",
+                "isCustomsDeclarable": True,
+                "monetaryAmount": [{"typeCode":"declaredValue","value": max(50, declared_value),"currency":"USD"}],
+                "requestedPackages": [{"weight": weight_kg, "dimensions":{"length":15,"width":15,"height":5}}],
+                "accounts": [{"typeCode":"shipper","number": os.environ.get("DHL_ACCOUNT_NUMBER","")}],
+                "customerDetails": {
+                    "shipperDetails": {"postalCode": DHL_ORIGIN["postalCode"],
+                                       "cityName": DHL_ORIGIN["city"],
+                                       "countryCode": DHL_ORIGIN["country"]},
+                    "receiverDetails": {"postalCode": postal_code,
+                                        "cityName": "", "countryCode": cc}
+                }
             }
-        }
-        r = _hx.post("https://api.dhl.com/rates", json=payload, headers=headers, timeout=8)
-        if r.status_code == 200:
-            products = r.json().get("products",[])
-            if products:
-                price = products[0].get("totalPrice",[{}])[0].get("price", 0)
-                return {"cost_usd": round(float(price), 2), "source": "dhl"}
-    except Exception as _e:
-        log.warning(f"[DHL] estimate failed: {_e}")
-    return {"cost_usd": 30.0, "source": "fallback"}
+            r = _hx.post("https://api.dhl.com/rates", json=payload, headers=headers, timeout=8)
+            if r.status_code == 200:
+                products = r.json().get("products",[])
+                if products:
+                    ship_cost = round(float(products[0].get("totalPrice",[{}])[0].get("price", 0)), 2)
+                    ship_source = "dhl"
+        except Exception as _e:
+            log.warning(f"[DHL] estimate failed: {_e}")
+
+    if ship_cost is None:
+        # Flat-rate fallback (admin-editable via laj_config ship_* keys)
+        from app.database import _sb
+        sb = _sb()
+        if sb:
+            ship_cost = _ship_cost(sb, cc)
+        if not ship_cost:
+            rates = {"US": 42.0, "NO": 38.0, "CH": 35.0, "GB": 28.0}
+            ship_cost = rates.get(cc, 45.0)
+        if weight_kg > 1.0:
+            ship_cost += (weight_kg - 1.0) * 8
+        ship_cost = round(ship_cost, 2)
+
+    # ── 2. Import fees (customs duty + destination tax + brokerage) ─
+    fees = _IMPORT_FEES.get(cc, {"duty_pct": 5.0, "tax_pct": 0.0, "brokerage": 0.0,
+                                  "duty_note": "Estimated import duty",
+                                  "tax_note":  ""})
+    # Admin can override rates in laj_config: import_duty_US, import_tax_US, etc.
+    from app.database import _sb
+    sb = _sb()
+    if sb:
+        override_duty = _cfg(sb, f"import_duty_{cc}")
+        override_tax  = _cfg(sb, f"import_tax_{cc}")
+        override_brok = _cfg(sb, f"import_brokerage_{cc}")
+        if override_duty is not None:
+            try: fees["duty_pct"] = float(override_duty)
+            except: pass
+        if override_tax is not None:
+            try: fees["tax_pct"] = float(override_tax)
+            except: pass
+        if override_brok is not None:
+            try: fees["brokerage"] = float(override_brok)
+            except: pass
+
+    duty_amt = round(declared_value * fees["duty_pct"] / 100, 2) if declared_value else 0
+    # Tax is applied on (product value + duty) in most jurisdictions
+    taxable = declared_value + duty_amt
+    tax_amt  = round(taxable * fees["tax_pct"] / 100, 2) if declared_value else 0
+    brokerage = fees["brokerage"]
+    total_import = round(duty_amt + tax_amt + brokerage, 2)
+    total_landed = round(declared_value + ship_cost + total_import, 2)
+
+    return {
+        "cost_usd": ship_cost,
+        "source": ship_source,
+        "allowed_regions": list(ALLOWED_SHIPPING.keys()),
+        "note": "Ships from Hungary via DHL Express (1–3 business days to USA).",
+        # Import fees breakdown
+        "import_fees": {
+            "customs_duty_pct": fees["duty_pct"],
+            "customs_duty_usd": duty_amt,
+            "duty_note": fees["duty_note"],
+            "sales_tax_pct": fees["tax_pct"],
+            "sales_tax_usd": tax_amt,
+            "tax_note": fees["tax_note"],
+            "brokerage_usd": brokerage,
+            "total_import_fees": total_import,
+        },
+        "declared_value": declared_value,
+        "total_landed_cost": total_landed,
+    }
 
 
 # ── Checkout ─────────────────────────────────────────────────────
@@ -3864,6 +3950,178 @@ async def store_set_bundle(req: Request):
     else:
         sb.table("store_bundle_grants").insert(data).execute()
     return {"ok": True}
+
+
+# ── Mailing List ──────────────────────────────────────────────────────────────
+# Simple newsletter system: subscribe, verify, unsubscribe, admin send.
+# Table: wt_mailing_list (email, name, confirmed, unsub_token, subscribed_at, unsubscribed_at)
+# Admin sends plain-text or simple HTML newsletters to all confirmed subscribers.
+# Every email includes a one-click unsubscribe link.
+
+import secrets as _secrets
+import hashlib as _hashlib
+
+def _unsub_token(email: str) -> str:
+    """Deterministic unsubscribe token so the same email always gets the same link."""
+    salt = os.environ.get("UNSUB_SALT", "lajtner-unsub-2026")
+    return _hashlib.sha256(f"{salt}:{email.lower().strip()}".encode()).hexdigest()[:24]
+
+@app.post("/mailing/subscribe")
+async def mailing_subscribe(req: Request):
+    """Public: add email to mailing list. Auto-confirmed (no double opt-in for now)."""
+    body = await req.json()
+    email = (body.get("email") or "").strip().lower()
+    name  = (body.get("name") or "").strip()
+    if not email or "@" not in email:
+        raise HTTPException(400, "Valid email required")
+    from app.database import _sb
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+    # Check if already subscribed
+    existing = sb.table("wt_mailing_list").select("email,unsubscribed_at").eq("email", email).execute()
+    if existing.data:
+        row = existing.data[0]
+        if row.get("unsubscribed_at"):
+            # Re-subscribe
+            sb.table("wt_mailing_list").update({
+                "confirmed": True, "unsubscribed_at": None,
+                "subscribed_at": datetime.datetime.utcnow().isoformat(),
+                "name": name or row.get("name","")
+            }).eq("email", email).execute()
+            return {"ok": True, "message": "Welcome back! You've been re-subscribed."}
+        return {"ok": True, "message": "You're already subscribed."}
+    sb.table("wt_mailing_list").insert({
+        "email": email, "name": name, "confirmed": True,
+        "unsub_token": _unsub_token(email),
+        "subscribed_at": datetime.datetime.utcnow().isoformat(),
+    }).execute()
+    return {"ok": True, "message": "Successfully subscribed! You'll receive our updates."}
+
+@app.get("/mailing/unsubscribe")
+def mailing_unsubscribe(email: str = "", token: str = ""):
+    """One-click unsubscribe via link in emails."""
+    email = email.strip().lower()
+    expected = _unsub_token(email)
+    if token != expected:
+        raise HTTPException(400, "Invalid unsubscribe link.")
+    from app.database import _sb
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+    sb.table("wt_mailing_list").update({
+        "unsubscribed_at": datetime.datetime.utcnow().isoformat()
+    }).eq("email", email).execute()
+    # Return simple HTML confirmation page
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(f"""<!doctype html>
+    <html><head><meta charset="utf-8"><title>Unsubscribed</title>
+    <style>body{{background:#0d0d1a;color:#e0e0e0;font-family:system-ui;
+    display:flex;align-items:center;justify-content:center;min-height:100vh;
+    margin:0;text-align:center;}}
+    .box{{background:#16162a;border:1px solid #2a2a4a;border-radius:16px;
+    padding:2rem;max-width:400px;}}
+    a{{color:#4a90d9;text-decoration:none;}}</style></head>
+    <body><div class="box">
+    <div style="font-size:2rem;margin-bottom:.5rem;">📧</div>
+    <h2 style="color:#fff;">Unsubscribed</h2>
+    <p>You ({email}) have been removed from our mailing list.</p>
+    <p>Changed your mind? <a href="https://mindpw.com/kinetic">Visit Lajtner Code</a> to re-subscribe.</p>
+    </div></body></html>""")
+
+@app.get("/mailing/subscribers")
+def mailing_subscribers(email: str = "", token: str = ""):
+    """Admin: list all subscribers."""
+    if not _master_ok(email, token): raise HTTPException(401, "Unauthorized")
+    from app.database import _sb
+    sb = _sb()
+    if not sb: return {"subscribers": []}
+    r = sb.table("wt_mailing_list").select("*").is_("unsubscribed_at", "null").eq("confirmed", True).order("subscribed_at", desc=True).execute()
+    return {"subscribers": r.data or [], "count": len(r.data or [])}
+
+@app.post("/mailing/send")
+async def mailing_send(req: Request):
+    """Admin: send newsletter to all confirmed, non-unsubscribed subscribers.
+    Uses Resend API (free tier: 100 emails/day) or SMTP fallback."""
+    body = await req.json()
+    if not _master_ok(body.get("admin_email",""), body.get("token","")): raise HTTPException(401,"Unauthorized")
+    subject = body.get("subject","")
+    content = body.get("content","")  # HTML or plain text
+    if not subject or not content:
+        raise HTTPException(400, "Subject and content required")
+    from app.database import _sb
+    sb = _sb()
+    if not sb: raise HTTPException(500, "DB unavailable")
+    subs = sb.table("wt_mailing_list").select("email,name").is_("unsubscribed_at", "null").eq("confirmed", True).execute()
+    recipients = subs.data or []
+    if not recipients:
+        return {"ok": False, "message": "No subscribers"}
+
+    sent = 0; errors = []
+    app_url = os.environ.get("APP_URL", "https://wheelttt.xyz")
+
+    for sub in recipients:
+        to_email = sub["email"]
+        to_name = sub.get("name","")
+        unsub_link = f"{app_url}/mailing/unsubscribe?email={to_email}&token={_unsub_token(to_email)}"
+        # Append unsubscribe footer to content
+        full_html = f"""{content}
+        <div style="margin-top:2rem;padding-top:1rem;border-top:1px solid #333;
+          font-size:12px;color:#888;text-align:center;">
+          You are receiving this because you subscribed to Lajtner Code updates.<br>
+          <a href="{unsub_link}" style="color:#4a90d9;">Unsubscribe</a> at any time.
+        </div>"""
+        try:
+            ok = await _send_newsletter_email(to_email, to_name, subject, full_html)
+            if ok: sent += 1
+            else: errors.append(to_email)
+        except Exception as e:
+            errors.append(f"{to_email}: {e}")
+
+    # Log the send
+    sb.table("wt_newsletter_log").insert({
+        "subject": subject, "sent_count": sent,
+        "total_recipients": len(recipients),
+        "sent_at": datetime.datetime.utcnow().isoformat(),
+        "admin_email": body.get("admin_email","")
+    }).execute()
+
+    return {"ok": True, "sent": sent, "total": len(recipients),
+            "errors": errors if errors else None}
+
+async def _send_newsletter_email(to_email, to_name, subject, html_body):
+    """Send one newsletter email via Resend API or SMTP fallback."""
+    import os
+    resend_key = os.environ.get("RESEND_API_KEY","")
+    from_email = os.environ.get("NEWSLETTER_FROM", "Lajtner Code <news@lajtner.com>")
+
+    if resend_key:
+        import httpx as _hx
+        r = await _hx.AsyncClient().post("https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
+            json={"from": from_email, "to": [to_email], "subject": subject,
+                  "html": html_body,
+                  "headers": {"List-Unsubscribe": f"<mailto:unsubscribe@lajtner.com?subject=unsubscribe>"}},
+            timeout=10)
+        return r.status_code in (200, 201)
+
+    # SMTP fallback
+    smtp_host = os.environ.get("SMTP_HOST","")
+    if smtp_host:
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = from_email
+        msg["To"] = to_email
+        msg["List-Unsubscribe"] = f"<mailto:unsubscribe@lajtner.com?subject=unsubscribe>"
+        msg.attach(MIMEText(html_body, "html"))
+        with smtplib.SMTP_SSL(smtp_host, int(os.environ.get("SMTP_PORT","465"))) as s:
+            s.login(os.environ.get("SMTP_USER",""), os.environ.get("SMTP_PASS",""))
+            s.send_message(msg)
+        return True
+
+    log.warning(f"[Newsletter] No email provider configured. Skipping {to_email}")
+    return False
 
 
 @app.get("/health")

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth.jsx'
 import { API } from '../config'
+import SecurityCodeModal from './SecurityCodeModal'
 
 // Google reCAPTCHA v2 Site Key.
 // On localhost → Google's official TEST key (always passes, for testing).
@@ -25,6 +26,8 @@ export default function Login() {
   const [newPass, setNewPass] = useState('')
   const [newConfirm, setNewConfirm] = useState('')
   const [consented, setConsented] = useState(false)
+  const [ageConfirmed, setAgeConfirmed] = useState(false)
+  const [securityCode, setSecurityCode] = useState(null)
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
   const [loading, setLoading] = useState(false)
@@ -93,10 +96,19 @@ export default function Login() {
     if (!consented) { setError('You must accept the Terms of Use, Privacy Policy and cookies to continue.'); return }
     if (RECAPTCHA_SITE_KEY && !recaptchaToken) { setError('Please verify you are not a robot.'); return }
     if (mode === 'register' && password !== confirm) { setError('Passwords do not match'); return }
+    if (mode === 'register' && !ageConfirmed) { setError('You must confirm that you are an adult where you live.'); return }
     setLoading(true)
     try {
-      if (mode === 'login') await login(email, password, recaptchaToken)
-      else await register(email, password, recaptchaToken)
+      if (mode === 'login') {
+        const data = await login(email, password, recaptchaToken)
+        // Show security code on first login
+        if (data?.security_code && data?.security_code_first_show) {
+          setSecurityCode(data.security_code)
+          return // don't navigate yet — modal first
+        }
+      } else {
+        await register(email, password, recaptchaToken, ageConfirmed)
+      }
       navigate('/upload')
     } catch (err) { setError(err.message); resetRecaptcha() }
     finally { setLoading(false) }
@@ -222,6 +234,20 @@ export default function Login() {
                   placeholder="••••••••" required />
               </div>
             )}
+            {mode === 'register' && (
+              <div style={{display:'flex',gap:'.6rem',alignItems:'flex-start',
+                margin:'.5rem 0',padding:'.7rem .85rem',
+                background:'rgba(74,144,217,.05)',border:'1px solid rgba(74,144,217,.2)',
+                borderRadius:6}}>
+                <input type="checkbox" id="age-confirm" checked={ageConfirmed}
+                  onChange={e => setAgeConfirmed(e.target.checked)}
+                  style={{marginTop:2,flexShrink:0,width:15,height:15,cursor:'pointer'}} />
+                <label htmlFor="age-confirm" style={{fontSize:'.76rem',color:'var(--muted)',
+                  lineHeight:1.5,cursor:'pointer'}}>
+                  I confirm that I am an adult where I live.
+                </label>
+              </div>
+            )}
             <ConsentBox />
             {/* reCAPTCHA widget — only shown when key is configured */}
             {RECAPTCHA_SITE_KEY && (
@@ -230,7 +256,7 @@ export default function Login() {
               </div>
             )}
             <button className="btn btn-primary" type="submit"
-              disabled={loading || !consented || (RECAPTCHA_SITE_KEY && !recaptchaToken)} style={{width:'100%'}}>
+              disabled={loading || !consented || (RECAPTCHA_SITE_KEY && !recaptchaToken) || (mode === 'register' && !ageConfirmed)} style={{width:'100%'}}>
               {loading ? '...' : mode === 'login' ? 'Sign In' : 'Create Account'}
             </button>
             {mode === 'login' && (
@@ -296,6 +322,16 @@ export default function Login() {
           )}
         </div>
       </div>
+
+      {securityCode && (
+        <SecurityCodeModal
+          code={securityCode}
+          onClose={() => {
+            setSecurityCode(null)
+            navigate('/upload')
+          }}
+        />
+      )}
     </div>
   )
 }

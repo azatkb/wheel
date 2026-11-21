@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth.jsx'
 import { API } from '../config'
+import { NewsletterAdmin } from '../components/MailingList'
 
 const MASTER_EMAILS = ['azatkb22@gmail.com', 'lajtnert@gmail.com']
 const isMaster = e => MASTER_EMAILS.includes((e||'').toLowerCase())
@@ -599,6 +600,7 @@ export default function StoreAdmin() {
     { id:'add_coupon',  label:'+ Coupon' },
     { id:'bundles',     label:'🎁 Bundles' },
     { id:'allocations', label:'🔢 Allocations' },
+    { id:'newsletter',  label:'📬 Newsletter' },
   ]
 
   return (
@@ -825,6 +827,11 @@ export default function StoreAdmin() {
       {/* ── Allocations (Notes / status mini-panel) ── */}
       {tab === 'allocations' && (
         <AllocationPanel user={user} showMsg={showMsg} />
+      )}
+
+      {/* ── Newsletter admin ── */}
+      {tab === 'newsletter' && (
+        <NewsletterAdmin adminEmail={user.email} token="wt_master_2026" />
       )}
 
       {/* Product Add/Edit Modal */}
