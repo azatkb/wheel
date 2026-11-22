@@ -4039,8 +4039,10 @@ def mailing_subscribers(email: str = "", token: str = ""):
 
 @app.post("/mailing/send")
 async def mailing_send(req: Request):
-    """Admin: send newsletter to all confirmed, non-unsubscribed subscribers.
-    Uses Resend API (free tier: 100 emails/day) or SMTP fallback."""
+    """Admin: send newsletter to selected (or all) confirmed subscribers.
+    Uses Resend API (free tier: 100 emails/day) or SMTP fallback.
+    Optional body field 'recipients': list of emails to send to.
+    If omitted, sends to all active subscribers."""
     body = await req.json()
     if not _master_ok(body.get("admin_email",""), body.get("token","")): raise HTTPException(401,"Unauthorized")
     subject = body.get("subject","")
@@ -4051,9 +4053,16 @@ async def mailing_send(req: Request):
     sb = _sb()
     if not sb: raise HTTPException(500, "DB unavailable")
     subs = sb.table("wt_mailing_list").select("email,name").is_("unsubscribed_at", "null").eq("confirmed", True).execute()
-    recipients = subs.data or []
+    all_subs = subs.data or []
+    # Filter to selected recipients if provided
+    selected_emails = body.get("recipients")
+    if selected_emails and isinstance(selected_emails, list):
+        selected_set = {e.strip().lower() for e in selected_emails}
+        recipients = [s for s in all_subs if s["email"].lower() in selected_set]
+    else:
+        recipients = all_subs
     if not recipients:
-        return {"ok": False, "message": "No subscribers"}
+        return {"ok": False, "message": "No subscribers selected"}
 
     sent = 0; errors = []
     app_url = os.environ.get("APP_URL", "https://wheelttt.xyz")

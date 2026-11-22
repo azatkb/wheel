@@ -132,6 +132,7 @@ export function NewsletterAdmin({ adminEmail, token }) {
   const [sending, setSending] = useState(false)
   const [result, setResult]   = useState(null)
   const [tab, setTab]         = useState('compose') // compose | subscribers
+  const [selected, setSelected] = useState(new Set()) // checked subscriber emails
 
   useEffect(() => { loadSubs() }, [])
 
@@ -140,15 +141,30 @@ export function NewsletterAdmin({ adminEmail, token }) {
     try {
       const r = await fetch(`${API}/mailing/subscribers?email=${encodeURIComponent(adminEmail)}&token=${encodeURIComponent(token)}`)
       const d = await r.json()
-      setSubs(d.subscribers || [])
+      const list = d.subscribers || []
+      setSubs(list)
       setSubCount(d.count || 0)
+      // Select all by default
+      setSelected(new Set(list.map(s => s.email)))
     } catch {}
     setLoading(false)
   }
 
+  const toggleOne = (email) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(email)) next.delete(email); else next.add(email)
+      return next
+    })
+  }
+  const selectAll   = () => setSelected(new Set(subs.map(s => s.email)))
+  const selectNone  = () => setSelected(new Set())
+
   const sendNewsletter = async () => {
     if (!subject.trim() || !content.trim()) return
-    if (!confirm(`Send newsletter to ${subCount} subscribers?`)) return
+    const recipients = [...selected]
+    if (recipients.length === 0) { alert('No subscribers selected'); return }
+    if (!confirm(`Send newsletter to ${recipients.length} selected subscriber${recipients.length !== 1 ? 's' : ''}?`)) return
     setSending(true); setResult(null)
     try {
       const r = await fetch(`${API}/mailing/send`, {
@@ -157,6 +173,7 @@ export function NewsletterAdmin({ adminEmail, token }) {
         body: JSON.stringify({
           admin_email: adminEmail, token,
           subject: subject.trim(), content: content.trim(),
+          recipients,
         }),
       })
       const d = await r.json()
@@ -252,7 +269,7 @@ export function NewsletterAdmin({ adminEmail, token }) {
                 cursor: sending ? 'wait' : 'pointer',
                 opacity: (!subject || !content) ? .5 : 1,
               }}>
-              {sending ? 'Sending...' : `📤 Send to ${subCount}`}
+              {sending ? 'Sending...' : `📤 Send to ${selected.size}`}
             </button>
           </div>
           {result && (
@@ -283,9 +300,34 @@ export function NewsletterAdmin({ adminEmail, token }) {
             </p>
           ) : (
             <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+              <div style={{
+                display: 'flex', gap: '.5rem', marginBottom: '.5rem',
+                fontSize: '.72rem',
+              }}>
+                <button onClick={selectAll} style={{
+                  background: 'none', border: '1px solid var(--border)',
+                  color: 'var(--green, #00ff88)', borderRadius: 4,
+                  padding: '.2rem .5rem', fontSize: '.72rem', cursor: 'pointer',
+                }}>Select all</button>
+                <button onClick={selectNone} style={{
+                  background: 'none', border: '1px solid var(--border)',
+                  color: 'var(--muted)', borderRadius: 4,
+                  padding: '.2rem .5rem', fontSize: '.72rem', cursor: 'pointer',
+                }}>Select none</button>
+                <span style={{ color: 'var(--dim)', alignSelf: 'center' }}>
+                  {selected.size}/{subs.length} selected
+                </span>
+              </div>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                    <th style={{ width: 32, padding: '.4rem .3rem', textAlign: 'center' }}>
+                      <input type="checkbox"
+                        checked={selected.size === subs.length && subs.length > 0}
+                        onChange={() => selected.size === subs.length ? selectNone() : selectAll()}
+                        style={{ cursor: 'pointer', accentColor: 'var(--green, #00ff88)' }}
+                      />
+                    </th>
                     <th style={{ textAlign: 'left', padding: '.4rem .5rem', color: 'var(--muted)', fontWeight: 600 }}>Email</th>
                     <th style={{ textAlign: 'left', padding: '.4rem .5rem', color: 'var(--muted)', fontWeight: 600 }}>Name</th>
                     <th style={{ textAlign: 'right', padding: '.4rem .5rem', color: 'var(--muted)', fontWeight: 600 }}>Subscribed</th>
@@ -293,7 +335,17 @@ export function NewsletterAdmin({ adminEmail, token }) {
                 </thead>
                 <tbody>
                   {subs.map((s, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,.05)' }}>
+                    <tr key={i} style={{
+                      borderBottom: '1px solid rgba(255,255,255,.05)',
+                      opacity: selected.has(s.email) ? 1 : .5,
+                    }}>
+                      <td style={{ padding: '.4rem .3rem', textAlign: 'center' }}>
+                        <input type="checkbox"
+                          checked={selected.has(s.email)}
+                          onChange={() => toggleOne(s.email)}
+                          style={{ cursor: 'pointer', accentColor: 'var(--green, #00ff88)' }}
+                        />
+                      </td>
                       <td style={{ padding: '.4rem .5rem', color: 'var(--text)' }}>{s.email}</td>
                       <td style={{ padding: '.4rem .5rem', color: 'var(--muted)' }}>{s.name || '—'}</td>
                       <td style={{ padding: '.4rem .5rem', color: 'var(--dim)', textAlign: 'right', fontSize: '.75rem' }}>
