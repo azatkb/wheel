@@ -5,8 +5,7 @@
  *   2. NewsletterAdmin — admin panel for composing & sending newsletters
  */
 import { useState, useEffect } from 'react'
-
-const API = import.meta.env.VITE_API_URL || ''
+import { API } from '../config'
 
 // ─── Public Subscribe Form ────────────────────────────────────────────────────
 export function MailingSubscribe({ compact = false }) {

@@ -4103,20 +4103,30 @@ async def _send_newsletter_email(to_email, to_name, subject, html_body):
             timeout=10)
         return r.status_code in (200, 201)
 
-    # SMTP fallback
+    # SMTP fallback — supports SMTP_* or GMAIL_* env vars
     smtp_host = os.environ.get("SMTP_HOST","")
-    if smtp_host:
+    smtp_user = os.environ.get("SMTP_USER","")
+    smtp_pass = os.environ.get("SMTP_PASS","")
+    # Fallback to GMAIL_USER/GMAIL_PASS if SMTP_* not set
+    if not smtp_user:
+        smtp_user = os.environ.get("GMAIL_USER","")
+        smtp_pass = os.environ.get("GMAIL_PASS","")
+    if not smtp_host and smtp_user and "@gmail" in smtp_user:
+        smtp_host = "smtp.gmail.com"
+    if smtp_host and smtp_user and smtp_pass:
         import smtplib
         from email.mime.text import MIMEText
         from email.mime.multipart import MIMEMultipart
+        if not from_email or from_email == "Lajtner Code <news@lajtner.com>":
+            from_email = f"Lajtner Code <{smtp_user}>"
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"] = from_email
         msg["To"] = to_email
-        msg["List-Unsubscribe"] = f"<mailto:unsubscribe@lajtner.com?subject=unsubscribe>"
+        msg["List-Unsubscribe"] = f"<mailto:{smtp_user}?subject=unsubscribe>"
         msg.attach(MIMEText(html_body, "html"))
         with smtplib.SMTP_SSL(smtp_host, int(os.environ.get("SMTP_PORT","465"))) as s:
-            s.login(os.environ.get("SMTP_USER",""), os.environ.get("SMTP_PASS",""))
+            s.login(smtp_user, smtp_pass)
             s.send_message(msg)
         return True
 
