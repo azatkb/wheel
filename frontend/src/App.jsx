@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx'
+import { API } from './config'
 import UserManagement from './pages/UserManagement'
 import TawkWidget from './components/TawkWidget'
 import FeedbackWidget from './components/FeedbackWidget'
@@ -37,10 +38,10 @@ const NAV_ALL = [
   { to: '/stream',       icon: '◉', label: 'Stream' },
   { to: '/history',      icon: '≡', label: 'History' },
   { to: '/analytics',    icon: '◈', label: 'Analytics', masterOnly: true },
-  { to: '/forum',        icon: '💬', label: 'Forum' },
+  { to: '/forum',        icon: '💬', label: 'Forum', chipOnly: true },
   { to: '/store',        icon: '🛒', label: 'Store' },
   { to: '/focus',        icon: '🧠', label: 'Focus Test' },
-  { to: '/resonances',   icon: '📈', label: 'LR-LT-LJ' },
+  { to: '/resonances',   icon: '📈', label: 'LR-LT-LJ', chipOnly: true },
   { to: '/my-chip',      icon: '📟', label: 'My Chip' },
   { to: '/pioneer',      icon: '🚀', label: 'Pioneer Program' },
   { to: '/settings',     icon: '⚙', label: 'Settings' },
@@ -62,15 +63,51 @@ function isMaster(email) {
   return MASTER_EMAILS.some(m => e === m || e.startsWith(m.split('@')[0]))
 }
 
+function ChipRequired() {
+  return (
+    <div style={{
+      maxWidth: 480, margin: '3rem auto', padding: '2.5rem 1.5rem',
+      textAlign: 'center', background: 'var(--bg2)',
+      border: '1px solid var(--border)', borderRadius: 16,
+    }}>
+      <div style={{ fontSize: '2.5rem', marginBottom: '.75rem' }}>🔒</div>
+      <h2 style={{ color: 'var(--text)', margin: '0 0 .6rem', fontSize: '1.15rem' }}>
+        Chip Authorization Required
+      </h2>
+      <p style={{ color: 'var(--muted)', fontSize: '.88rem', lineHeight: 1.65, margin: '0 0 1.2rem' }}>
+        This feature is available only with a linked chip.
+        Please tap your NFC chip on this device to authorize access.
+      </p>
+      <NavLink to="/my-chip" style={{
+        display: 'inline-block', background: 'var(--green, #00ff88)',
+        color: '#000', padding: '.6rem 1.5rem', borderRadius: 10,
+        fontWeight: 700, fontSize: '.9rem', textDecoration: 'none',
+      }}>
+        📟 Go to My Chip
+      </NavLink>
+    </div>
+  )
+}
+
 function Shell() {
   const { user, logout } = useAuth()
   const [menuOpen, setMenuOpen]     = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [theme, setTheme] = useState(() => localStorage.getItem('wt_theme') || 'dark')
+  const [hasChip, setHasChip] = useState(false)
 
   if (!user) return <Navigate to="/login" replace />
   const initials = user.email.slice(0, 2).toUpperCase()
   const master = isMaster(user.email)
+
+  // Check chip authorization on mount
+  useEffect(() => {
+    if (!user?.email) return
+    fetch(`${API}/chip/status?email=${encodeURIComponent(user.email)}`)
+      .then(r => r.ok ? r.json() : {})
+      .then(d => setHasChip(!!d.uid))
+      .catch(() => setHasChip(false))
+  }, [user?.email])
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark'
@@ -83,7 +120,10 @@ function Shell() {
     document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : '')
   }
 
-  const NAV = NAV_ALL.filter(n => (!n.masterOnly || master) || (n.ultimateOk && user?.plan === 'ultimate'))
+  const NAV = NAV_ALL.filter(n => {
+    if (n.masterOnly && !master && !(n.ultimateOk && user?.plan === 'ultimate')) return false
+    return true
+  })
 
   return (
     <div className="app-shell">
@@ -165,20 +205,36 @@ function Shell() {
 
         <nav className="nav-section">
           <div className="nav-label">Navigation</div>
-          {NAV.map(({ to, icon, label, external }) => (
-            external
-              ? <a key={to} href={to} target="_blank" rel="noopener noreferrer"
+          {NAV.map(({ to, icon, label, external, chipOnly }) => {
+            const locked = chipOnly && !hasChip && !master
+            if (external) {
+              return (
+                <a key={to} href={to} target="_blank" rel="noopener noreferrer"
                   className="nav-item" onClick={() => setMenuOpen(false)}>
                   <span className="nav-icon">{icon}</span>
                   <span>{label}</span>
                 </a>
-              : <NavLink key={to} to={to}
-                  onClick={() => setMenuOpen(false)}
-                  className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                  <span className="nav-icon">{icon}</span>
+              )
+            }
+            if (locked) {
+              return (
+                <div key={to} className="nav-item" style={{
+                  opacity: .4, cursor: 'not-allowed', pointerEvents: 'none',
+                }} title="Chip authorization required">
+                  <span className="nav-icon">🔒</span>
                   <span>{label}</span>
-                </NavLink>
-          ))}
+                </div>
+              )
+            }
+            return (
+              <NavLink key={to} to={to}
+                onClick={() => setMenuOpen(false)}
+                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <span className="nav-icon">{icon}</span>
+                <span>{label}</span>
+              </NavLink>
+            )
+          })}
         </nav>
 
         <div className="sidebar-footer">
@@ -222,10 +278,10 @@ function Shell() {
           <Route path="/history"      element={<History />} />
           <Route path="/subscription" element={<Subscription />} />
           <Route path="/analytics"    element={<Analytics />} />
-          <Route path="/resonances"   element={<ResonanceList />} />
+          <Route path="/resonances"   element={(hasChip || master) ? <ResonanceList /> : <ChipRequired />} />
           <Route path="/master"       element={master ? <Master /> : <Navigate to="/upload" replace />} />
           <Route path="/fpe"          element={master ? <FPE /> : <Navigate to="/upload" replace />} />
-          <Route path="/forum"        element={<Forum />} />
+          <Route path="/forum"        element={(hasChip || master) ? <Forum /> : <ChipRequired />} />
           <Route path="/store"        element={<Store />} />
           <Route path="/store-admin"   element={master ? <StoreAdmin /> : <Navigate to="/upload" replace />} />
           <Route path="/statistics"    element={(master || user?.plan === 'ultimate') ? <Statistics /> : <Navigate to="/upload" replace />} />
