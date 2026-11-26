@@ -1088,7 +1088,8 @@ async def auth_login(request: Request):
     email = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
     recaptcha_token = body.get("recaptcha_token") or ""
-    if not await _verify_recaptcha(recaptcha_token):
+    is_mobile = body.get("platform") == "mobile"
+    if not is_mobile and not await _verify_recaptcha(recaptcha_token):
         raise HTTPException(400, "reCAPTCHA verification failed. Please try again.")
     user = _get_user(email)
     if not user or user.get("password_hash") != _hash_pw(password):
