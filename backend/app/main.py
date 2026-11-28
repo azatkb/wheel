@@ -2724,28 +2724,37 @@ async def questionnaire_update(req: Request):
     email = (body.get("email") or "").strip().lower()
     if not email: raise HTTPException(400, "email required")
     user = _get_user(email)
-    if not user or not user.get("focus_consent"):
+    if not user:
+        raise HTTPException(404, "User not found")
+    if not user.get("focus_consent"):
         raise HTTPException(403, "Focus Test consent required")
+    if user.get("focus_consent_withdrawn"):
+        raise HTTPException(403, "You have withdrawn your Focus Test consent.")
     sb = _sb()
-    resp = sb.table("focus_questionnaire").select("*") \
-        .eq("user_email", email).order("created_at", desc=True).limit(1).execute()
-    if not resp.data:
-        raise HTTPException(404, "No questionnaire found to update")
-    latest = resp.data[0]
-    update_data = {}
-    answered = 0
-    for f in Q_FIELDS:
-        v = body.get(f)
-        if v is not None:
-            update_data[f] = int(v)
-        if (update_data.get(f) or latest.get(f, 0)) > 0:
-            answered += 1
-    update_data["answered_count"] = answered
-    update_data["updated_at"] = datetime.datetime.utcnow().isoformat()
-    sb.table("focus_questionnaire").update(update_data) \
-        .eq("id", latest["id"]).execute()
-    return {"ok": True, "updated_id": latest["id"]}
-
+    if not sb: raise HTTPException(500, "DB unavailable")
+    try:
+        resp = sb.table("focus_questionnaire").select("*") \
+            .eq("user_email", email).order("created_at", desc=True).limit(1).execute()
+        if not resp.data:
+            raise HTTPException(404, "No questionnaire found to update")
+        latest = resp.data[0]
+        update_data = {}
+        answered = 0
+        for f in Q_FIELDS:
+            v = body.get(f)
+            if v is not None:
+                update_data[f] = int(v)
+            if (update_data.get(f) or latest.get(f, 0)) > 0:
+                answered += 1
+        update_data["answered_count"] = answered
+        sb.table("focus_questionnaire").update(update_data) \
+            .eq("id", latest["id"]).execute()
+        return {"ok": True, "updated_id": latest["id"]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"[QUESTIONNAIRE-UPDATE] error: {e}")
+        raise HTTPException(500, str(e))
 
 @app.get("/questionnaire/count")
 def questionnaire_count():
